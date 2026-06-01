@@ -319,7 +319,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
     text-shadow 0.25s ease;
 }
 
-/* Hover via JS class only - keeps WORK from looking selected when pointer crosses top bar */
+/* Hover via JS class only - orbit hover does not show the nav ▶ cursor */
 .nav-strip__item--hover {
   color: var(--nav-teal-muted);
   background: rgba(61, 139, 130, 0.08);
@@ -366,7 +366,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   white-space: nowrap;
 }
 
-/* WORK dropdown - top strip only */
+/* Legacy nav dropdown (unused — kept for reference) */
 .nav-dropdown {
   position: relative;
   display: flex;
@@ -741,8 +741,8 @@ body.is-ready:not(.vmu-booted) .loader__link {
 .file-panel {
   position: fixed;
   left: 50%;
-  bottom: 56px;
-  transform: translateX(-50%) translateY(12px);
+  top: 50%;
+  transform: translate(-50%, calc(-50% + 12px));
   width: min(420px, 90vw);
   background: rgba(20, 34, 28, 0.92);
   border: 1px solid var(--lcd-green-dim);
@@ -760,7 +760,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transform: translateX(-50%) translateY(0);
+  transform: translate(-50%, -50%);
 }
 
 .file-panel__header {
@@ -803,6 +803,89 @@ body.is-ready:not(.vmu-booted) .loader__link {
   color: var(--lcd-green-bright);
   text-decoration: none;
   border-bottom: 1px dotted var(--lcd-green-dim);
+}
+
+/* CONTACT — comms / transmission panel (file panel only) */
+.contact-comms__status {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--lcd-green-bright);
+  text-shadow: 0 0 8px rgba(106, 188, 178, 0.35);
+  margin-bottom: 6px;
+}
+
+.contact-comms__note,
+.contact-comms__aside {
+  color: var(--lcd-green-dim);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.contact-comms__signal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 10px;
+  margin-bottom: 4px;
+  border-top: 1px solid rgba(61, 107, 98, 0.35);
+  border-bottom: 1px solid rgba(61, 107, 98, 0.35);
+}
+
+.contact-comms__label {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--lcd-green-dim);
+}
+
+.contact-comms__email {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--lcd-green-bright);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--lcd-green-dim);
+  word-break: break-all;
+}
+
+.contact-comms__email:hover,
+.contact-comms__email:focus-visible {
+  color: #9ee8dc;
+  border-bottom-color: var(--lcd-green-bright);
+}
+
+.contact-comms__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.contact-comms__btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--lcd-green);
+  background: rgba(8, 14, 12, 0.6);
+  border: 1px solid var(--lcd-green-dim);
+  padding: 6px 10px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.contact-comms__btn:hover,
+.contact-comms__btn:focus-visible {
+  color: var(--lcd-green-bright);
+  border-color: var(--lcd-green-bright);
+  background: rgba(61, 139, 130, 0.12);
+}
+
+.contact-comms__feedback {
+  min-height: 1.2em;
+  margin-top: 8px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--lcd-green-bright);
 }
 
 .lcd__title {

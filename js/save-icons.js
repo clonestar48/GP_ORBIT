@@ -120,9 +120,11 @@ function buildGrin(materials) {
 
 const GLYPH_BUILDERS = {
   work: buildDiamond,
+  lab: buildFootball,
+  about: buildGrin,
+  contact: buildPortraitOval,
   nfl: buildFootball,
   portraits: buildPortraitOval,
-  about: buildGrin,
 };
 
 export function createIconMaterials(pearlAssets) {

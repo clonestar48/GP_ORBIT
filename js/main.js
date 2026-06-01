@@ -6,7 +6,7 @@
  */
 
 import * as THREE from '../assets/vendor/three.module.js';
-import { CONTENT, WORK_MENU } from './content.js';
+import { CONTENT, initContactPanel } from './content.js';
 import { audio } from './audio.js';
 import { buildGPEmblem, createPearlMaterialSet } from './emblem.js';
 import { initIntercom, startIntercomNoise, stopIntercomNoise } from './intercom.js';
@@ -20,9 +20,9 @@ if (typeof window.__vmuBoot === 'function') window.__vmuBoot();
 
 const SECTIONS = [
   { key: 'work', label: 'WORK', file: 'WORK.SAV' },
-  { key: 'nfl', label: 'NFL', file: 'NFL.SAV' },
-  { key: 'portraits', label: 'PORTRAITS', file: 'PORTRAITS.SAV' },
+  { key: 'lab', label: 'LAB', file: 'LAB.SAV' },
   { key: 'about', label: 'ABOUT', file: 'ABOUT.SAV' },
+  { key: 'contact', label: 'CONTACT', file: 'CONTACT.SAV' },
 ];
 /** SECTIONS index 0 = first clockwise slot; slots staggered in quadrants around hub. */
 
@@ -491,7 +491,7 @@ const panelTitle = document.getElementById('panel-title');
 const panelBody = document.getElementById('panel-body');
 const osHud = document.getElementById('os-hud');
 
-/** Build nav item button - used on both top and bottom strips */
+/** Build nav item button for the top strip */
 function buildNavItem(section, index) {
   const el = document.createElement('button');
   el.type = 'button';
@@ -504,56 +504,10 @@ function buildNavItem(section, index) {
   return el;
 }
 
-/** Top strip only - WORK gets a hover dropdown */
-function buildWorkDropdown(section, index) {
-  const wrap = document.createElement('div');
-  wrap.className = 'nav-dropdown';
-  wrap.dataset.section = section.key;
-
-  const btn = buildNavItem(section, index);
-  wrap.appendChild(btn);
-
-  const panel = document.createElement('div');
-  panel.className = 'nav-dropdown__panel';
-  panel.setAttribute('role', 'menu');
-  panel.setAttribute('aria-label', 'Work menu');
-
-  WORK_MENU.forEach((item) => {
-    const link = document.createElement('a');
-    link.className = 'nav-dropdown__link';
-    link.href = item.href;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.setAttribute('role', 'menuitem');
-    link.innerHTML =
-      `<span class="nav-dropdown__link-title">${item.title}</span>` +
-      `<span class="nav-dropdown__link-desc">${item.desc}</span>`;
-    panel.appendChild(link);
-  });
-
-  wrap.appendChild(panel);
-
-  panel.addEventListener('mouseenter', () => {
-    if (currentView !== 'browser') return;
-    setNavHover(index, false);
-  });
-
-  wrap.addEventListener('mouseleave', (e) => {
-    if (e.relatedTarget instanceof Node && wrap.contains(e.relatedTarget)) return;
-    if (currentView === 'browser') setNavHover(-1);
-  });
-
-  return wrap;
-}
-
 function buildNavStrips() {
   osHud.replaceChildren();
   SECTIONS.forEach((section, index) => {
-    if (section.key === 'work') {
-      osHud.appendChild(buildWorkDropdown(section, index));
-    } else {
-      osHud.appendChild(buildNavItem(section, index));
-    }
+    osHud.appendChild(buildNavItem(section, index));
   });
 }
 
@@ -575,12 +529,8 @@ function bindNavStripItem(btn) {
     audio.unlock();
     setNavHover(idx, true);
   });
-  btn.addEventListener('mouseleave', (e) => {
+  btn.addEventListener('mouseleave', () => {
     if (currentView !== 'browser') return;
-    const dropdown = btn.closest('.nav-dropdown');
-    if (dropdown && e.relatedTarget instanceof Node && dropdown.contains(e.relatedTarget)) {
-      return;
-    }
     setNavHover(-1);
   });
   btn.addEventListener('click', () => {
@@ -734,10 +684,6 @@ function applyStripUI() {
     el.classList.toggle('nav-strip__item--selected', isSelected);
     el.classList.toggle('nav-strip__item--hover', isPreview);
   });
-  const workDropdown = osHud.querySelector('.nav-dropdown');
-  if (workDropdown) {
-    workDropdown.classList.toggle('nav-dropdown--open', navHoverIndex === 0);
-  }
   osHud.classList.toggle('nav-strip--lit', previewIdx >= 0);
   if (previewIdx >= 0) revealNav();
 }
@@ -911,7 +857,7 @@ function openSection(sectionKey) {
   lcdStatus.textContent = 'LOADING';
 
   setTimeout(() => {
-    panelTitle.textContent = data.title + '.SAV';
+    panelTitle.textContent = SECTIONS[idx].file;
     panelBody.innerHTML = data.html;
     filePanelScrim.classList.add('file-panel-scrim--visible');
     filePanelScrim.setAttribute('aria-hidden', 'false');
@@ -920,6 +866,7 @@ function openSection(sectionKey) {
     lcdStatus.textContent = data.title;
     currentView = 'content';
     animateContentLines(panelBody);
+    if (sectionKey === 'contact') initContactPanel(panelBody);
   }, 180);
 
   setTimeout(() => {
@@ -1315,12 +1262,12 @@ function animate() {
       if (showEase > 0.01 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         const floatX = Math.sin(t * 0.414) * 12.1 * showEase;
         const floatY = Math.sin(t * 0.522 + 0.6) * 7.7 * showEase;
-        const settleY = -54 + showEase * 4;
+        const settleY = -50 + showEase * 4;
         const scale = 0.9 + showEase * 0.1;
         intercomEl.style.transform =
           `translate(calc(-50% + ${floatX}px), calc(${settleY}% + ${floatY}px)) scale(${scale})`;
       } else {
-        intercomEl.style.transform = 'translate(-50%, -54%) scale(0.9)';
+        intercomEl.style.transform = 'translate(-50%, -50%) scale(0.9)';
       }
     }
   }

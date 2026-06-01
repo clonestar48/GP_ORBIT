@@ -1,32 +1,21 @@
 /**
  * Portfolio content - one entry per SECTIONS key in main.js.
+ * Blocks marked CONTENT PENDING need owner-approved copy and links.
  */
 
 const SITE = 'https://gavinpetersen.co';
 
-/** WORK top-nav dropdown entries */
-export const WORK_MENU = [
-  {
-    title: 'PORTFOLIO HOME',
-    href: `${SITE}/`,
-    desc: 'GAVINPETERSEN.CO',
-  },
-  {
-    title: 'GRAPHIC DESIGN',
-    href: `${SITE}/`,
-    desc: 'BRANDING · IDENTITY · CAMPAIGNS',
-  },
-  {
-    title: 'ILLUSTRATION',
-    href: `${SITE}/`,
-    desc: 'EDITORIAL · CHARACTER · PRINT',
-  },
-  {
-    title: 'VIEW ALL WORK',
-    href: `${SITE}/`,
-    desc: 'FULL PROJECT INDEX',
-  },
-];
+export const CONTACT_EMAIL = 'gavin@gavinpetersen.co';
+
+const PENDING_DESC = 'Awaiting approved copy and links.';
+
+function pendingEntry() {
+  return `
+      <div class="lcd__entry lcd__line">
+        <div class="lcd__entry-title">CONTENT PENDING</div>
+        <div class="lcd__entry-desc">${PENDING_DESC}</div>
+      </div>`;
+}
 
 export const CONTENT = {
   work: {
@@ -39,66 +28,77 @@ export const CONTENT = {
       </div>
     `,
   },
-  nfl: {
-    title: 'NFL',
+  lab: {
+    title: 'LAB',
     html: `
-      <p class="lcd__line">Senior designer - NFL brand & campaign work.</p>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title"><a href="${SITE}/nfl" target="_blank" rel="noopener">VIEW NFL WORK</a></div>
-        <div class="lcd__entry-desc">gavinpetersen.co/nfl</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">SUPER BOWL LIX</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">SUPER BOWL LVII</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">NFL DRAFT 2022</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">NFL LONDON GAMES 2021</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">NFL FRANKFURT GAMES 2023</div>
-      </div>
-    `,
-  },
-  portraits: {
-    title: 'PORTRAITS',
-    html: `
-      <p class="lcd__line">Portrait & editorial illustration.</p>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title"><a href="${SITE}/portraits" target="_blank" rel="noopener">VIEW PORTRAITS</a></div>
-        <div class="lcd__entry-desc">gavinpetersen.co/portraits</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">JAYLEN BROWN</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">YOUNG NUDY</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">KHABIB NURMAGOMEDOV</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">ROBERT WILLIAMS III</div>
-      </div>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title">DERRICK LEWIS</div>
-      </div>
+      <p class="lcd__line">Experimental and prototype work.</p>
+      ${pendingEntry()}
     `,
   },
   about: {
     title: 'ABOUT',
     html: `
-      <p class="lcd__line">Artist & designer based in Brooklyn, NY.</p>
-      <p class="lcd__line">Over 10 years of experience in graphic design, branding, and illustration. Currently working for the NFL as a senior designer.</p>
-      <p class="lcd__line">Fan of traveling, dogs, & the Boston Celtics.</p>
-      <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title"><a href="${SITE}/about" target="_blank" rel="noopener">FULL BIO</a></div>
-        <div class="lcd__entry-desc">gavinpetersen.co/about</div>
+      <p class="lcd__line">Codec / intercom view (not file panel).</p>
+      ${pendingEntry()}
+    `,
+  },
+  contact: {
+    title: 'CONTACT',
+    html: `
+      <div class="contact-comms">
+        <p class="lcd__line contact-comms__status">CHANNEL OPEN</p>
+        <p class="lcd__line contact-comms__note">Direct transmission available. No form. No ticket system.</p>
+        <div class="lcd__line contact-comms__signal">
+          <span class="contact-comms__label">DIRECT SIGNAL</span>
+          <a class="contact-comms__email" href="mailto:${CONTACT_EMAIL}" data-contact-email>${CONTACT_EMAIL}</a>
+        </div>
+        <p class="lcd__line contact-comms__aside">Paperwork optional. Signal preferred.</p>
+        <div class="lcd__line contact-comms__actions">
+          <button type="button" class="contact-comms__btn" data-contact-copy>COPY ADDRESS</button>
+          <a class="contact-comms__btn contact-comms__btn--link" href="mailto:${CONTACT_EMAIL}">OPEN MAIL CLIENT</a>
+        </div>
+        <p class="lcd__line contact-comms__feedback" data-contact-feedback aria-live="polite"></p>
       </div>
     `,
   },
 };
+
+/** Wire copy button after CONTACT panel is injected (called from main.js only). */
+export function initContactPanel(root) {
+  if (!root) return;
+
+  const copyBtn = root.querySelector('[data-contact-copy]');
+  const feedback = root.querySelector('[data-contact-feedback]');
+  if (!copyBtn) return;
+
+  copyBtn.addEventListener('click', async () => {
+    const text = CONTACT_EMAIL;
+    let ok = false;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+    } catch {
+      ok = false;
+    }
+
+    if (feedback) {
+      feedback.textContent = ok ? 'SIGNAL COPIED TO BUFFER' : 'COPY FAILED — USE LINK OR SELECT ADDRESS';
+      window.setTimeout(() => {
+        feedback.textContent = '';
+      }, 2400);
+    }
+  });
+}

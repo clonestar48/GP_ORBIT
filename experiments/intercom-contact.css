@@ -1,0 +1,143 @@
+/* Standalone CONTACT comms experiment — overrides only */
+
+.experiment-page {
+  min-height: 100vh;
+  overflow: auto;
+  background: var(--bg-deep);
+}
+
+.experiment-page .atmosphere {
+  z-index: 0;
+}
+
+.experiment-intercom.intercom {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.experiment-intercom .intercom__screen {
+  --intercom-screen: min(52vw, 360px);
+  width: var(--intercom-screen);
+  height: var(--intercom-screen);
+}
+
+.experiment-intercom .intercom__portrait {
+  display: none;
+}
+
+.comms-readout {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  padding: 14px 12px;
+  font-family: var(--font-mono);
+  color: var(--lcd-green);
+  text-align: left;
+}
+
+.comms-readout__line {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  line-height: 1.55;
+  color: var(--lcd-green-dim);
+  margin-bottom: 6px;
+}
+
+.comms-readout__line--bright {
+  color: var(--lcd-green-bright);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-shadow: 0 0 8px rgba(106, 188, 178, 0.35);
+}
+
+.comms-readout__divider {
+  height: 1px;
+  margin: 8px 0;
+  background: rgba(61, 107, 98, 0.4);
+}
+
+.comms-readout__label {
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--lcd-green-dim);
+  margin-bottom: 4px;
+}
+
+.comms-readout__email {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--lcd-green-bright);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--lcd-green-dim);
+  word-break: break-all;
+}
+
+.comms-readout__email:hover,
+.comms-readout__email:focus-visible {
+  color: #9ee8dc;
+  border-bottom-color: var(--lcd-green-bright);
+}
+
+.comms-readout__line--spaced {
+  margin-top: 8px;
+}
+
+.comms-readout__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.comms-readout__btn {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--lcd-green);
+  background: rgba(8, 14, 12, 0.75);
+  border: 1px solid var(--lcd-green-dim);
+  padding: 5px 8px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.comms-readout__btn:hover,
+.comms-readout__btn:focus-visible {
+  color: var(--lcd-green-bright);
+  border-color: var(--lcd-green-bright);
+  background: rgba(61, 139, 130, 0.14);
+}
+
+.comms-readout__feedback {
+  min-height: 1.1em;
+  margin-top: 6px;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--lcd-green-bright);
+}
+
+.experiment-tag {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: rgba(106, 188, 178, 0.45);
+}
+
+.experiment-tag a {
+  color: rgba(122, 210, 198, 0.7);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(61, 139, 130, 0.35);
+}
+
+.experiment-tag a:hover {
+  color: var(--lcd-green-bright);
+}
