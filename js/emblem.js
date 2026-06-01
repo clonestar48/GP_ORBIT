@@ -101,7 +101,7 @@ function makeSparkleTexture(size = 512, base = '#707070', seed = 1) {
 }
 
 function attachPearlSparkle(material, storeKey) {
-  material.customProgramCacheKey = () => `gp-pearl-sparkle-v8-${storeKey}`;
+  material.customProgramCacheKey = () => `gp-pearl-sparkle-v12-${storeKey}`;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = { value: 0 };
     shader.uniforms.uMotion = { value: 0 };
@@ -147,8 +147,9 @@ function attachPearlSparkle(material, storeKey) {
         float wellMask = smoothstep(0.02, 0.82, innerBias) * (0.5 + (1.0 - faceSheen) * 0.5);
         float sparkleMask = mix(0.84, 1.0, wellMask);
         float sparkleStrength = sparkleMask * (0.9 + uMotion * 0.1);
-        outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.82, 0.98, 1.08) + pearl * 0.34, faceSheen * 0.32);
-        outgoingLight += pearl * edgeLight * 0.44;
+        vec3 faceTint = vec3(0.56, 0.9, 0.84);
+        outgoingLight = mix(outgoingLight, outgoingLight * faceTint + pearl * 0.26, faceSheen * 0.34);
+        outgoingLight += pearl * edgeLight * 0.38;
         vec3 N = normalize(normal);
         float bevelStrip = edgeLight * (1.0 - faceSheen * 0.7);
         float gleamX = dot(vViewPosition.xy, vec2(0.14, 0.028)) + N.x * 2.15 + N.z * 0.62 + uTime * 0.4;
@@ -163,7 +164,7 @@ function attachPearlSparkle(material, storeKey) {
         float vMask = smoothstep(0.1, 0.74, abs(N.x) + abs(N.z) * 0.42);
         float dMask = smoothstep(0.18, 0.82, abs(N.x) + abs(N.y));
         float bevelGleam = bevelStrip * (streakH * hMask + streakV * vMask + streakD * dMask * 0.58);
-        vec3 gleamColor = mix(pearl, vec3(0.72, 0.86, 1.0), 0.42);
+        vec3 gleamColor = mix(pearl, vec3(0.42, 0.9, 0.78), 0.32);
         outgoingLight += gleamColor * bevelGleam * (0.38 + uMotion * 0.09);
         #ifdef USE_UV
           vec2 grainUv = vUv + normal.xy * 0.22 + vViewPosition.xy * 0.014;
@@ -173,7 +174,7 @@ function attachPearlSparkle(material, storeKey) {
           float speckD = gpSpeck(grainUv + vec2(0.23, -0.17), 149.0, vec2(3.9, 6.4));
           float speckle = (speckA + speckB * 0.9 + speckC * 0.82 + speckD * 0.76) / 3.48;
           float twinkle = 0.62 + 0.38 * sin(uTime * 5.4 + dot(grainUv, vec2(48.0, 36.0)));
-          vec3 sparkColor = mix(pearl, vec3(1.0), 0.82);
+          vec3 sparkColor = mix(pearl, vec3(1.0), 0.24);
           outgoingLight += sparkColor * speckle * twinkle * sparkleStrength * 2.85;
         #endif
         #include <opaque_fragment>`

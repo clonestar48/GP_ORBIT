@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#080a0e">
   <title>GAVIN PETERSEN</title>
   <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/intercom.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -79,7 +80,7 @@
   </div>
 
   <footer class="footer">
-    <span class="footer__text">COPYRIGHT GAVIN PETERSEN 2027</span>
+    <span class="footer__text"><span class="footer__mark">©</span> 2027 GAVIN PETERSEN. ALL RIGHTS RESERVED.</span>
   </footer>
 
   <aside class="controls" id="controls" hidden aria-hidden="true">
@@ -93,6 +94,33 @@
   </aside>
 
   <div class="file-panel-scrim" id="file-panel-scrim" aria-hidden="true"></div>
+
+  <!-- ABOUT codec / intercom panel (replaces GP emblem when active) -->
+  <div class="intercom" id="intercom" hidden aria-hidden="true">
+    <div class="intercom__bezel">
+      <div class="intercom__bezel-face" aria-hidden="true"></div>
+      <div class="intercom__bezel-gem" aria-hidden="true"></div>
+      <div class="intercom__chrome-rim" aria-hidden="true"></div>
+      <div class="intercom__chrome-gleam" aria-hidden="true"></div>
+      <div class="intercom__header">
+        <span>Codec</span>
+        <span class="intercom__signal">● Signal</span>
+      </div>
+      <div class="intercom__screen">
+        <div class="intercom__screen-face" aria-hidden="true"></div>
+        <div class="intercom__chrome-rim intercom__chrome-rim--screen" aria-hidden="true"></div>
+        <div class="intercom__chrome-gleam intercom__chrome-gleam--screen" aria-hidden="true"></div>
+        <img class="intercom__portrait" alt="" width="322" height="322">
+        <canvas class="intercom__noise" aria-hidden="true"></canvas>
+        <div class="intercom__scanlines" aria-hidden="true"></div>
+        <div class="intercom__vignette" aria-hidden="true"></div>
+        <div class="intercom__flicker" aria-hidden="true"></div>
+        <div class="intercom__interference" aria-hidden="true"></div>
+        <div class="intercom__prism" aria-hidden="true"></div>
+      </div>
+      <div class="intercom__footer">Freq 142.80 · Encrypted</div>
+    </div>
+  </div>
 
   <div class="file-panel" id="file-panel">
     <div class="file-panel__header">

@@ -9,6 +9,7 @@ import * as THREE from '../assets/vendor/three.module.js';
 import { CONTENT, WORK_MENU } from './content.js';
 import { audio } from './audio.js';
 import { buildGPEmblem, createPearlMaterialSet } from './emblem.js';
+import { initIntercom, startIntercomNoise, stopIntercomNoise } from './intercom.js';
 import { buildSectionSaveIcon, ICON_SCALE } from './save-icons.js';
 
 if (typeof window.__vmuBoot === 'function') window.__vmuBoot();
@@ -196,10 +197,39 @@ worldGroup.add(tealGlow);
 const pearlAssets = createPearlMaterialSet();
 const emblem = buildGPEmblem(pearlAssets);
 emblem.scale.setScalar(CONFIG.emblemScale);
+const emblemPivot = new THREE.Group();
+emblemPivot.add(emblem);
+const EMBLEM_HOME_Y = -0.22;
+const emblemMeshes = [];
 emblem.traverse((obj) => {
-  if (obj.isMesh) obj.layers.set(EMBLEM_LAYER);
+  if (obj.isMesh) {
+    obj.layers.set(EMBLEM_LAYER);
+    emblemMeshes.push(obj);
+  }
 });
-hubGroup.add(emblem);
+hubGroup.add(emblemPivot);
+
+const emblemSpin = {
+  active: false,
+  elapsed: 0,
+  duration: 0.52,
+};
+
+function triggerEmblemSpin() {
+  emblemSpin.active = true;
+  emblemSpin.elapsed = 0;
+  audio.spin();
+}
+
+function pickEmblemFromPointer() {
+  raycaster.layers.enable(EMBLEM_LAYER);
+  const hits = raycaster.intersectObjects(emblemMeshes, false);
+  raycaster.layers.disable(EMBLEM_LAYER);
+  if (hits.length) return true;
+
+  if (!raycaster.ray.intersectPlane(orbitPlane, orbitHit)) return false;
+  return orbitPlaneDistance(orbitHit.x, orbitHit.y) < CONFIG.orbitRadius * 0.36;
+}
 
 function setEmblemLightLayer(light) {
   light.layers.set(EMBLEM_LAYER);
@@ -218,7 +248,7 @@ const hubPinkRim = setEmblemLightLayer(new THREE.DirectionalLight(0xff9fce, 1.05
 hubPinkRim.position.set(1.15, 0.75, -0.55);
 
 // Tight teal spotlight on emblem - pulses in lockstep with selection beam
-const hubSpotlight = setEmblemLightLayer(new THREE.PointLight(0x5cffa8, 0.72, 3.6));
+const hubSpotlight = setEmblemLightLayer(new THREE.PointLight(0x52c8a0, 0.72, 3.6));
 hubSpotlight.position.set(0, 0.06, 0.38);
 
 // Accent wash - ramps when icons beam energy into the hub
@@ -321,7 +351,7 @@ function buildSaveIcon(section, index) {
   hit.userData.index = index;
   saveMeshes.push(hit);
 
-  group.userData.visual = { scale: 0.82, opacity: 0.26, zLift: 0 };
+  group.userData.visual = { scale: 0.8, opacity: 0, zLift: 0 };
   group.userData.target = { scale: 0.8, opacity: 0.22, zLift: 0 };
   group.renderOrder = 2;
 
@@ -400,10 +430,10 @@ scene.add(biosSpiral2);
 
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(14, 14),
-  new THREE.MeshStandardMaterial({ color: CONFIG.colors.bg, roughness: 0.9, transparent: true, opacity: 0.35 })
+  new THREE.MeshStandardMaterial({ color: CONFIG.colors.bg, roughness: 1, transparent: true, opacity: 0.08 })
 );
 ground.rotation.x = -Math.PI / 2;
-ground.position.y = -1.4;
+ground.position.y = -2.2;
 ground.receiveShadow = true;
 scene.add(ground);
 
@@ -419,6 +449,7 @@ const lcdStatus = document.getElementById('lcd-status');
 const bootBar = document.getElementById('boot-bar');
 const filePanel = document.getElementById('file-panel');
 const filePanelScrim = document.getElementById('file-panel-scrim');
+const intercomEl = document.getElementById('intercom');
 const panelTitle = document.getElementById('panel-title');
 const panelBody = document.getElementById('panel-body');
 const osHud = document.getElementById('os-hud');
@@ -599,6 +630,8 @@ window.addEventListener('touchmove', (e) => {
 }, { passive: true });
 
 let selectedIndex = 0;
+/** Teal gem frame - only after user selects an icon (not on initial load) */
+let frameRevealedIndex = -1;
 /** Top nav hover only - not driven by 3D orbit icons */
 let navHoverIndex = -1;
 /** 3D save-icon hover - independent from nav ▶ / selection */
@@ -609,6 +642,31 @@ let pointerInOrbit = false;
 const hubMagnetic = { x: 0, y: 0, z: 0, roll: 0, pitch: 0, yaw: 0 };
 let currentView = 'boot';
 let isTransitioning = false;
+let panelBlend = 0;
+let intercomTarget = 0;
+let intercomShow = 0;
+let hubRetreat = 0;
+const INTERCOM = {
+  transitionMs: 1020,
+  retreatRate: 1.28,
+  showInRate: 1.7,
+  showOutRate: 2.15,
+  /** Hub must clear this much before codec begins appearing */
+  hubLeadOpen: 0.44,
+  /** Codec must fade below this before hub returns */
+  codecReturnGate: 0.12,
+};
+
+function easeInOutSine(t) {
+  return -(Math.cos(Math.PI * t) - 1) / 2;
+}
+
+/** Opacity reaches ~0 by ~50% hub retreat — shrink continues invisibly behind */
+function codecNumeralFade(retreat) {
+  return 1 - easeInOutSine(Math.min(1, retreat / 0.5));
+}
+
+initIntercom(intercomEl);
 
 /** Normalize index to valid range */
 function wrapIndex(index) {
@@ -646,25 +704,52 @@ function applyStripUI() {
   if (previewIdx >= 0) revealNav();
 }
 
-/** 3D orbit icons - selection + orbit hover only */
-function applyOrbitVisuals() {
-  saveIcons.forEach(({ group }, i) => {
-    const hovered = i === orbitHoverIndex;
+/** 3D orbit icons - selection and nav/orbit preview (stable through panel open/close) */
+function applyIconTargets() {
+  const navPreview = currentView === 'browser' && navHoverIndex >= 0 ? navHoverIndex : -1;
+  const orbitPreview = currentView === 'browser' && orbitHoverIndex >= 0 ? orbitHoverIndex : -1;
+
+  saveIcons.forEach(({ frame, group }, i) => {
     const selected = i === selectedIndex;
+    const navHovered = i === navPreview;
+    const orbitHovered = i === orbitPreview;
+    const previewed = navHovered || orbitHovered;
+
+    frame.visible = i === frameRevealedIndex;
 
     if (selected) {
-      group.userData.target = orbitHoverIndex === selectedIndex
+      group.userData.target = previewed
         ? { scale: 1.0, opacity: 0.82, zLift: 0.18 }
         : { scale: 0.96, opacity: 0.76, zLift: 0.14 };
       return;
     }
 
     group.userData.target = {
-      scale: hovered ? 0.94 : 0.8,
-      opacity: hovered ? 0.52 : 0.22,
-      zLift: hovered ? 0.1 : 0,
+      scale: previewed ? 0.94 : 0.8,
+      opacity: previewed ? 0.52 : 0.22,
+      zLift: previewed ? 0.1 : 0,
     };
   });
+}
+
+function resolveBeamTargetAngle() {
+  if (isTransitioning || currentView !== 'browser') {
+    return orbitAngle(selectedIndex);
+  }
+  if (orbitHoverIndex >= 0) {
+    return orbitAngle(orbitHoverIndex);
+  }
+  if (navHoverIndex >= 0) {
+    return orbitAngle(navHoverIndex);
+  }
+  if (pointerInOrbit) {
+    return beamAngleTarget;
+  }
+  return orbitAngle(selectedIndex);
+}
+
+function syncBeamTarget() {
+  beamAngleTarget = resolveBeamTargetAngle();
 }
 
 function flashNav() {
@@ -675,32 +760,28 @@ function flashNav() {
 }
 
 /** Single source of truth - index drives orbit, top nav, LCD, 3D */
-function syncNavigation(index, playSound = false) {
+function syncNavigation(index, playSound = false, revealFrame = false) {
   const prev = selectedIndex;
   selectedIndex = wrapIndex(index);
   navHoverIndex = -1;
   orbitHoverIndex = -1;
+
+  if (revealFrame) {
+    frameRevealedIndex = selectedIndex;
+  }
 
   const section = SECTIONS[selectedIndex];
 
   applyStripUI();
 
   pointerInOrbit = false;
-  beamAngleTarget = orbitAngle(selectedIndex);
+  syncBeamTarget();
 
   currentFileEl.textContent = section.label;
   fileMetaEl.textContent = `${selectedIndex + 1}/${SECTIONS.length}`;
   lcdStatus.textContent = section.label;
 
-  saveIcons.forEach(({ frame, group }, i) => {
-    const selected = i === selectedIndex;
-    frame.visible = selected;
-    group.userData.target = {
-      scale: selected ? 0.98 : 0.8,
-      opacity: selected ? 0.78 : 0.22,
-      zLift: selected ? 0.16 : 0,
-    };
-  });
+  applyIconTargets();
 
   if (playSound && prev !== selectedIndex && currentView === 'browser') {
     audio.navigate();
@@ -720,6 +801,8 @@ function setNavHover(index, playSound = false) {
   const changed = next !== navHoverIndex;
   navHoverIndex = next;
   applyStripUI();
+  syncBeamTarget();
+  applyIconTargets();
 
   if (playSound && changed && navHoverIndex >= 0) {
     audio.hover();
@@ -730,7 +813,7 @@ function setNavHover(index, playSound = false) {
 function setOrbitHover(index, playSound = false) {
   if (currentView !== 'browser') {
     orbitHoverIndex = -1;
-    applyOrbitVisuals();
+    applyIconTargets();
     applyStripUI();
     return;
   }
@@ -745,20 +828,17 @@ function setOrbitHover(index, playSound = false) {
   fileMetaEl.textContent = `${previewIdx + 1}/${SECTIONS.length}`;
   lcdStatus.textContent = preview.label;
 
-  applyOrbitVisuals();
+  syncBeamTarget();
+  applyIconTargets();
   applyStripUI();
 
   if (playSound && changed && orbitHoverIndex >= 0) {
     audio.hover();
   }
-
-  if (orbitHoverIndex >= 0) {
-    beamAngleTarget = orbitAngle(orbitHoverIndex);
-  }
 }
 
 function selectSection(index, playSound = true) {
-  syncNavigation(index, playSound);
+  syncNavigation(index, playSound, true);
 }
 
 function flashLCD() {
@@ -767,10 +847,24 @@ function flashLCD() {
 }
 
 function openSection(sectionKey) {
+  if (sectionKey === 'about') {
+    openAboutIntercom();
+    return;
+  }
+
   const data = CONTENT[sectionKey];
   if (!data || currentView !== 'browser' || isTransitioning) return;
 
-  syncNavigation(indexFromKey(sectionKey), false);
+  const idx = indexFromKey(sectionKey);
+  if (idx !== selectedIndex) {
+    syncNavigation(idx, false, true);
+  } else {
+    navHoverIndex = -1;
+    orbitHoverIndex = -1;
+    pointerInOrbit = false;
+    syncBeamTarget();
+    applyIconTargets();
+  }
 
   isTransitioning = true;
   audio.confirm();
@@ -787,9 +881,58 @@ function openSection(sectionKey) {
     osHud.classList.remove('nav-strip--visible');
     lcdStatus.textContent = data.title;
     currentView = 'content';
-    isTransitioning = false;
     animateContentLines(panelBody);
   }, 180);
+
+  setTimeout(() => {
+    isTransitioning = false;
+  }, 420);
+}
+
+function openAboutIntercom() {
+  if (isTransitioning) return;
+  if (currentView === 'intercom') {
+    closeAboutIntercom();
+    return;
+  }
+  if (currentView !== 'browser') return;
+
+  syncNavigation(indexFromKey('about'), false, true);
+
+  isTransitioning = true;
+  audio.confirm();
+  flashNav();
+  lcdStatus.textContent = 'ABOUT';
+
+  intercomTarget = 1;
+  intercomEl.hidden = false;
+  intercomEl.setAttribute('aria-hidden', 'false');
+  intercomEl.classList.add('intercom--active');
+  startIntercomNoise();
+
+  setTimeout(() => {
+    currentView = 'intercom';
+    isTransitioning = false;
+  }, INTERCOM.transitionMs);
+}
+
+function closeAboutIntercom() {
+  if (currentView !== 'intercom' || isTransitioning) return;
+
+  isTransitioning = true;
+  audio.cancel();
+  flashNav();
+  intercomTarget = 0;
+  stopIntercomNoise();
+
+  setTimeout(() => {
+    intercomEl.classList.remove('intercom--active');
+    intercomEl.hidden = true;
+    intercomEl.setAttribute('aria-hidden', 'true');
+    currentView = 'browser';
+    lcdStatus.textContent = SECTIONS[selectedIndex].label;
+    isTransitioning = false;
+  }, INTERCOM.transitionMs);
 }
 
 function backToBrowser() {
@@ -805,8 +948,19 @@ function backToBrowser() {
   osHud.classList.add('nav-strip--visible');
   setNavRetracted(false);
   currentView = 'browser';
-  syncNavigation(selectedIndex, false);
-  isTransitioning = false;
+  navHoverIndex = -1;
+  orbitHoverIndex = -1;
+  pointerInOrbit = false;
+  applyStripUI();
+  lcdStatus.textContent = SECTIONS[selectedIndex].label;
+  currentFileEl.textContent = SECTIONS[selectedIndex].label;
+  fileMetaEl.textContent = `${selectedIndex + 1}/${SECTIONS.length}`;
+  syncBeamTarget();
+  applyIconTargets();
+
+  setTimeout(() => {
+    isTransitioning = false;
+  }, 420);
 }
 
 function finishBootSequence() {
@@ -859,10 +1013,20 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       backToBrowser();
     }
+  } else if (currentView === 'intercom') {
+    if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'b' || e.key === 'B') {
+      e.preventDefault();
+      closeAboutIntercom();
+    }
   }
 });
 
 function pickOrbitHoverFromPointer(clientX, clientY) {
+  if (isTransitioning || currentView !== 'browser') {
+    pointerInOrbit = false;
+    return -1;
+  }
+
   pointer.x = (clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
@@ -899,9 +1063,9 @@ window.addEventListener('pointermove', (e) => {
   mouse.x = (e.clientX / window.innerWidth - 0.5) * 2;
   mouse.y = (e.clientY / window.innerHeight - 0.5) * 2;
 
-  if (currentView !== 'browser') {
+  if (currentView !== 'browser' || isTransitioning) {
     pointerInOrbit = false;
-    setOrbitHover(-1);
+    if (orbitHoverIndex >= 0) setOrbitHover(-1);
     container.classList.remove('is-hovering');
     return;
   }
@@ -949,6 +1113,19 @@ window.addEventListener('pointerdown', (e) => {
     }
 
     backToBrowser();
+    return;
+  }
+
+  if (currentView === 'intercom') {
+    if (intercomEl.contains(e.target)) return;
+    closeAboutIntercom();
+    return;
+  }
+
+  if (isOverNavStrip(e.clientX, e.clientY)) return;
+
+  if (pickEmblemFromPointer()) {
+    triggerEmblemSpin();
     return;
   }
 
@@ -1002,34 +1179,31 @@ function animate() {
   const { chrome, darkChrome } = emblem.userData.materials;
   const { textures } = emblem.userData;
   const beamPulse = 0.5 + 0.5 * Math.sin(t * 3);
+  const pearlWarm = easeOutCubic(Math.min(1, t / 5.2));
 
-  const targetHubEnergy = currentView === 'browser'
-    ? (orbitHoverIndex >= 0 ? 1 : 0.78)
-    : 0.45;
-  hubEnergy += (targetHubEnergy - hubEnergy) * 0.12;
+  const targetPanelBlend = currentView === 'content' ? 1 : 0;
+  panelBlend += (targetPanelBlend - panelBlend) * (1 - Math.exp(-3.2 * delta));
+  const intercomEngage = codecNumeralFade(hubRetreat);
+  const orbitEngage = (1 - panelBlend * 0.92) * Math.max(0.04, intercomEngage);
+  orbitRing.material.opacity = 0.28 * Math.max(0.04, intercomEngage);
 
-  if (currentView === 'browser') {
-    let targetAngle;
-    if (orbitHoverIndex >= 0) {
-      const hp = saveIcons[orbitHoverIndex].group.position;
-      targetAngle = angleOnOrbit(hp.x, hp.y);
-    } else if (pointerInOrbit) {
-      targetAngle = beamAngleTarget;
-    } else {
-      const sp = saveIcons[selectedIndex].group.position;
-      targetAngle = angleOnOrbit(sp.x, sp.y);
-    }
-    const angleLerp = 1 - Math.exp(-10 * delta);
-    beamAngle = lerpAngle(beamAngle, targetAngle, angleLerp);
-  }
+  const browserHubEnergy = orbitHoverIndex >= 0 ? 1 : 0.78;
+  const targetHubEnergy = currentView === 'intercom'
+    ? THREE.MathUtils.lerp(0.68, 0.38, easeInOutSine(hubRetreat))
+    : THREE.MathUtils.lerp(browserHubEnergy, 0.68, panelBlend);
+  hubEnergy += (targetHubEnergy - hubEnergy) * (1 - Math.exp(-2.4 * delta));
 
-  const magLerp = 1 - Math.exp(-7 * delta);
-  const pullAmt = currentView === 'browser' ? 0.05 * (0.38 + hubEnergy * 0.62) : 0;
+  const targetAngle = resolveBeamTargetAngle();
+  const angleLerp = 1 - Math.exp(-4 * delta);
+  beamAngle = lerpAngle(beamAngle, targetAngle, angleLerp);
+
+  const magLerp = 1 - Math.exp(-4.5 * delta);
+  const pullAmt = 0.05 * (0.38 + hubEnergy * 0.62) * orbitEngage;
   const magTargetX = Math.cos(beamAngle) * pullAmt;
   const magTargetY = Math.sin(beamAngle) * pullAmt * CONFIG.orbitFlatten;
-  const magTargetRoll = Math.sin(beamAngle) * 0.08 * hubEnergy;
-  const magTargetPitch = -Math.cos(beamAngle) * 0.055 * hubEnergy;
-  const magTargetYaw = Math.sin(beamAngle) * 0.042 * hubEnergy;
+  const magTargetRoll = Math.sin(beamAngle) * 0.08 * hubEnergy * orbitEngage;
+  const magTargetPitch = -Math.cos(beamAngle) * 0.055 * hubEnergy * orbitEngage;
+  const magTargetYaw = Math.sin(beamAngle) * 0.042 * hubEnergy * orbitEngage;
   const magTargetZ = pullAmt * 0.5;
 
   hubMagnetic.x += (magTargetX - hubMagnetic.x) * magLerp;
@@ -1039,31 +1213,69 @@ function animate() {
   hubMagnetic.pitch += (magTargetPitch - hubMagnetic.pitch) * magLerp;
   hubMagnetic.yaw += (magTargetYaw - hubMagnetic.yaw) * magLerp;
 
-  if (currentView !== 'browser') {
-    const decay = 0.88;
-    hubMagnetic.x *= decay;
-    hubMagnetic.y *= decay;
-    hubMagnetic.z *= decay;
-    hubMagnetic.roll *= decay;
-    hubMagnetic.pitch *= decay;
-    hubMagnetic.yaw *= decay;
+  const idleSpinRate = 0.055;
+  const retreatLerp = 1 - Math.exp(-INTERCOM.retreatRate * delta);
+  const intercomInLerp = 1 - Math.exp(-INTERCOM.showInRate * delta);
+  const intercomOutLerp = 1 - Math.exp(-INTERCOM.showOutRate * delta);
+
+  if (intercomTarget === 1) {
+    hubRetreat += (1 - hubRetreat) * retreatLerp;
+    const showTarget = easeInOutSine(
+      Math.min(1, Math.max(0, (hubRetreat - INTERCOM.hubLeadOpen) / (1 - INTERCOM.hubLeadOpen)))
+    );
+    intercomShow += (showTarget - intercomShow) * intercomInLerp;
+  } else {
+    intercomShow += (0 - intercomShow) * intercomOutLerp;
+    if (intercomShow < INTERCOM.codecReturnGate) {
+      hubRetreat += (0 - hubRetreat) * retreatLerp;
+    }
   }
 
-  const idleSpinRate = currentView === 'browser' ? 0.055 : 0.12;
+  const emblemShow = 1 - easeInOutSine(hubRetreat);
+
+  if (intercomEl) {
+    const showEase = easeInOutSine(intercomShow);
+    intercomEl.style.opacity = String(showEase);
+    if (showEase > 0.01 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const floatX = Math.sin(t * 0.414) * 12.1 * showEase;
+      const floatY = Math.sin(t * 0.522 + 0.6) * 7.7 * showEase;
+      const settleY = -54 + showEase * 4;
+      const scale = 0.9 + showEase * 0.1;
+      intercomEl.style.transform =
+        `translate(calc(-50% + ${floatX}px), calc(${settleY}% + ${floatY}px)) scale(${scale})`;
+    } else {
+      intercomEl.style.transform = 'translate(-50%, -54%) scale(0.9)';
+    }
+  }
+
+  let spinProgress = 0;
+  if (emblemSpin.active) {
+    emblemSpin.elapsed += delta;
+    const spinP = Math.min(emblemSpin.elapsed / emblemSpin.duration, 1);
+    spinProgress = easeOutCubic(spinP);
+    emblemPivot.rotation.y = spinProgress * Math.PI * 2;
+    if (spinP >= 1) {
+      emblemPivot.rotation.y = 0;
+      emblemSpin.active = false;
+    }
+  }
+
   hubGroup.position.set(0, 0, 0);
   emblem.position.set(
     Math.cos(t * 0.24) * 0.025 + hubMagnetic.x,
     Math.sin(t * 0.62) * 0.045 + hubMagnetic.y,
     hubMagnetic.z
   );
-  emblem.rotation.y = -0.22 + t * idleSpinRate + parallax.x * 0.08 + hubMagnetic.yaw;
+  emblemPivot.scale.setScalar(Math.max(0.0001, emblemShow));
+  hubGroup.visible = emblemShow > 0.015;
+  emblem.rotation.y = EMBLEM_HOME_Y + t * idleSpinRate + parallax.x * 0.08 + hubMagnetic.yaw;
   emblem.rotation.x = Math.sin(t * 0.38) * 0.035 - parallax.y * 0.04 + hubMagnetic.pitch;
   emblem.rotation.z = Math.sin(t * 0.27) * 0.018 + hubMagnetic.roll;
 
   if (chrome && darkChrome) {
     const motionEnergy = Math.min(
       1,
-      hubEnergy * 0.72 + Math.abs(parallax.x) * 0.28 + (orbitHoverIndex >= 0 ? 0.22 : 0)
+      hubEnergy * 0.72 + Math.abs(parallax.x) * 0.28 + (orbitHoverIndex >= 0 ? 0.22 : 0) + spinProgress * 0.85
     );
 
     if (chrome.userData.shader) {
@@ -1077,8 +1289,9 @@ function animate() {
 
     const sparklePulse = 0.9 + 0.1 * Math.sin(t * 4.6) + motionEnergy * 0.08;
     const hubMul = 1 + hubEnergy * 0.65;
-    chrome.emissiveIntensity = 0.38 * sparklePulse * hubMul;
-    darkChrome.emissiveIntensity = 0.52 * sparklePulse * hubMul;
+    const warmMul = 0.78 + pearlWarm * 0.22;
+    chrome.emissiveIntensity = 0.38 * sparklePulse * hubMul * warmMul;
+    darkChrome.emissiveIntensity = 0.52 * sparklePulse * hubMul * warmMul;
 
     if (textures) {
       const { sparkleTexture, emissiveSparkleTexture } = textures;
@@ -1095,80 +1308,95 @@ function animate() {
     const bp = group.userData.basePos;
     const v = group.userData.visual;
     const tgt = group.userData.target || { scale: 0.8, opacity: 0.22, zLift: 0 };
-    const lerp = 0.1;
+    const lerp = 1 - Math.exp(-5 * delta);
+    const dim = i === selectedIndex ? 1 - panelBlend * 0.08 : 1 - panelBlend * 0.28;
+    const codecFade = codecNumeralFade(hubRetreat);
+    const codecPush = 1 + hubRetreat * 0.09;
+    const codecScale = 1 - hubRetreat * 0.05;
 
     v.scale += (tgt.scale - v.scale) * lerp;
     v.opacity += (tgt.opacity - v.opacity) * lerp;
     v.zLift += (tgt.zLift - v.zLift) * lerp;
 
-    root.scale.setScalar(v.scale * ICON_SCALE);
+    root.scale.setScalar(v.scale * ICON_SCALE * codecScale);
     const emissiveBase = [0.16, 0.24];
+    const warmOpacity = v.opacity * pearlWarm;
+    const warmEmissive = 0.48 + pearlWarm * 0.52;
     materials.forEach((mat, mi) => {
-      mat.opacity = v.opacity;
-      mat.emissiveIntensity = emissiveBase[mi] * (0.35 + v.opacity * 0.55);
+      if (mat.userData.baseEnv === undefined) mat.userData.baseEnv = mat.envMapIntensity;
+      mat.opacity = warmOpacity * dim * codecFade;
+      mat.emissiveIntensity = emissiveBase[mi] * (0.35 + v.opacity * 0.55) * dim * warmEmissive * codecFade;
+      mat.envMapIntensity = mat.userData.baseEnv * (0.72 + pearlWarm * 0.28) * (0.65 + codecFade * 0.35);
     });
 
     group.position.set(
-      bp.x + Math.sin(t * 0.5 + p) * 0.02,
-      bp.y + Math.sin(t * 0.7 + p) * 0.03,
-      bp.z + v.zLift
+      bp.x * codecPush + Math.sin(t * 0.5 + p) * 0.02,
+      bp.y * codecPush + Math.sin(t * 0.7 + p) * 0.03,
+      bp.z + v.zLift - hubRetreat * 0.14
     );
 
     if (frame.visible) {
-      frame.material.emissiveIntensity = 0.32 + Math.sin(t * 4) * 0.12;
+      frame.material.opacity = codecFade;
+      frame.material.transparent = true;
+      frame.material.emissiveIntensity = (0.32 + Math.sin(t * 4) * 0.12) * codecFade;
     }
   });
 
-  // Selection beam + hub lighting - sweeps the orbit with pointer, snaps on hover
+  // Selection beam + hub lighting - eases with panel open/close
   const hubCenter = new THREE.Vector3(0, 0, 0.02);
   const hubGlowPos = new THREE.Vector3(0, 0.1, 0.55);
 
-  if (currentView === 'browser') {
-    const beamTip = orbitPointAtAngle(beamAngle, 0.92);
-    if (orbitHoverIndex >= 0) {
-      const iconTip = saveIcons[orbitHoverIndex].group.position.clone().multiplyScalar(0.88);
-      beamTip.lerp(iconTip, 0.42);
-    } else {
-      beamTip.z = saveIcons[selectedIndex].group.position.z * 0.35;
-    }
-
-    selectionLine.geometry.setFromPoints([hubCenter, beamTip]);
-
-    const onTarget = orbitHoverIndex >= 0 || !pointerInOrbit;
-    selectionLine.material.opacity = onTarget
-      ? 0.28 + 0.34 * beamPulse * hubEnergy
-      : 0.18 + 0.22 * beamPulse;
-
-    selectionLine.visible = true;
-
-    hubSpotlight.position.set(
-      Math.cos(beamAngle) * 0.07,
-      Math.sin(beamAngle) * 0.07 * CONFIG.orbitFlatten + 0.06,
-      0.36 + hubMagnetic.z * 0.4
-    );
-
-    hubSpotlight.intensity = 0.62 + 0.48 * beamPulse + hubEnergy * 1.2;
-    hubAccentLight.intensity = 0.28 + hubEnergy * (1.1 + beamPulse * 0.4);
-    hubTealKey.intensity = 1.12 + hubEnergy * 0.52 + beamPulse * 0.2;
-    hubPinkRim.intensity = 0.88 + hubEnergy * 0.45 + beamPulse * 0.18;
-    hubTealRim.intensity = 0.78 + hubEnergy * 0.38;
-    hubChromaRim.intensity = 0.52 + hubEnergy * 0.28;
-    hubPurpleFill.intensity = 0.48 + hubEnergy * 0.22;
-
-    const glowOrbit = orbitPointAtAngle(beamAngle, 0.14);
-    const glowTarget = orbitHoverIndex >= 0
-      ? hubGlowPos
-      : new THREE.Vector3(glowOrbit.x, glowOrbit.y + 0.1, 0.58);
-    tealGlow.position.lerp(glowTarget, orbitHoverIndex >= 0 ? 0.14 : 0.1);
-    tealGlow.intensity = 0.48 + 0.24 * beamPulse + hubEnergy * 0.5;
+  const beamTip = orbitPointAtAngle(beamAngle, 0.92);
+  if (orbitHoverIndex >= 0 && orbitEngage > 0.05) {
+    const iconTip = saveIcons[orbitHoverIndex].group.position.clone().multiplyScalar(0.88);
+    beamTip.lerp(iconTip, 0.42 * orbitEngage);
   } else {
-    selectionLine.visible = false;
-    hubSpotlight.intensity = 0.55 + 0.2 * beamPulse;
-    hubAccentLight.intensity = 0.22;
-    hubTealKey.intensity = 0.95;
-    hubPinkRim.intensity = 0.72;
-    tealGlow.intensity = 0.42 + Math.sin(t * 1.8) * 0.08;
+    beamTip.z = saveIcons[selectedIndex].group.position.z * 0.35;
   }
+
+  selectionLine.geometry.setFromPoints([hubCenter, beamTip]);
+
+  const onTarget = orbitHoverIndex >= 0 || !pointerInOrbit;
+  const beamOpacity = (onTarget
+    ? 0.28 + 0.34 * beamPulse * hubEnergy
+    : 0.18 + 0.22 * beamPulse) * orbitEngage;
+  selectionLine.material.opacity = beamOpacity;
+  selectionLine.visible = orbitEngage > 0.02;
+
+  hubSpotlight.position.set(
+    Math.cos(beamAngle) * 0.07,
+    Math.sin(beamAngle) * 0.07 * CONFIG.orbitFlatten + 0.06,
+    0.36 + hubMagnetic.z * 0.4
+  );
+
+  const spotBrowser = 0.62 + 0.48 * beamPulse + hubEnergy * 1.2;
+  const spotContent = 0.56 + 0.28 * beamPulse + hubEnergy * 0.72;
+  hubSpotlight.intensity = THREE.MathUtils.lerp(spotContent, spotBrowser, orbitEngage);
+
+  const accentBrowser = 0.28 + hubEnergy * (1.1 + beamPulse * 0.4);
+  const accentContent = 0.22 + hubEnergy * 0.55;
+  hubAccentLight.intensity = THREE.MathUtils.lerp(accentContent, accentBrowser, orbitEngage);
+
+  const tealKeyBrowser = 1.12 + hubEnergy * 0.52 + beamPulse * 0.2;
+  const tealKeyContent = 0.98 + hubEnergy * 0.28;
+  hubTealKey.intensity = THREE.MathUtils.lerp(tealKeyContent, tealKeyBrowser, orbitEngage);
+
+  const pinkBrowser = 0.88 + hubEnergy * 0.45 + beamPulse * 0.18;
+  const pinkContent = 0.76 + hubEnergy * 0.22;
+  hubPinkRim.intensity = THREE.MathUtils.lerp(pinkContent, pinkBrowser, orbitEngage);
+
+  hubTealRim.intensity = THREE.MathUtils.lerp(0.66 + hubEnergy * 0.18, 0.78 + hubEnergy * 0.38, orbitEngage);
+  hubChromaRim.intensity = THREE.MathUtils.lerp(0.44 + hubEnergy * 0.14, 0.52 + hubEnergy * 0.28, orbitEngage);
+  hubPurpleFill.intensity = THREE.MathUtils.lerp(0.4 + hubEnergy * 0.12, 0.48 + hubEnergy * 0.22, orbitEngage);
+
+  const glowOrbit = orbitPointAtAngle(beamAngle, 0.14);
+  const glowTarget = orbitHoverIndex >= 0
+    ? hubGlowPos
+    : new THREE.Vector3(glowOrbit.x, glowOrbit.y + 0.1, 0.58);
+  tealGlow.position.lerp(glowTarget, orbitHoverIndex >= 0 ? 0.12 : 0.08);
+  const glowBrowser = 0.48 + 0.24 * beamPulse + hubEnergy * 0.5;
+  const glowContent = 0.4 + 0.14 * beamPulse + hubEnergy * 0.28;
+  tealGlow.intensity = THREE.MathUtils.lerp(glowContent, glowBrowser, orbitEngage);
 
   biosSpiral.rotation.z = t * 0.1;
   scene.children.filter(c => c.type === 'Points').forEach(p => { p.rotation.y = t * 0.012; });

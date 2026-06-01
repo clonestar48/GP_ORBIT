@@ -10,9 +10,12 @@
   --teal-soft:     #2a6b65;
   --teal-dim:      rgba(61, 139, 130, 0.15);
   --lcd-bg:        #0e181a;
-  --lcd-green:     #58a89e;
-  --lcd-green-dim: #3a7a74;
-  --lcd-green-bright: #7ad4cb;
+  --teal-ui:       #58a89e;
+  --teal-ui-dim:   #3a7a74;
+  --teal-ui-bright:#72c4b8;
+  --lcd-green:     var(--teal-ui);
+  --lcd-green-dim: var(--teal-ui-dim);
+  --lcd-green-bright: var(--teal-ui-bright);
   --nav-teal-muted:  rgba(74, 158, 148, 0.48);
   --nav-teal-hover:  rgba(122, 210, 198, 0.96);
   --nav-teal-glow:   rgba(61, 139, 130, 0.38);
@@ -58,7 +61,7 @@ body.is-ready:not(.vmu-booted) .loader__ring {
 
 body.is-ready:not(.vmu-booted) .loader__text {
   animation: none;
-  color: rgba(159, 212, 163, 0.85);
+  color: rgba(106, 200, 185, 0.85);
   letter-spacing: 0.1em;
   font-size: 10px;
 }
@@ -108,7 +111,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   letter-spacing: 0.08em;
   color: var(--lcd-green-bright);
   text-decoration: none;
-  border-bottom: 1px solid rgba(159, 212, 163, 0.4);
+  border-bottom: 1px solid rgba(106, 200, 185, 0.4);
   padding-bottom: 2px;
   margin-top: 8px;
   transition: border-color 0.15s ease, color 0.15s ease;
@@ -534,7 +537,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   pointer-events: auto;
   box-shadow:
     inset 0 0 20px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(122, 171, 126, 0.08);
+    inset 0 1px 0 rgba(106, 188, 178, 0.08);
   /* Pixel-crisp rendering */
   image-rendering: pixelated;
 }
@@ -678,7 +681,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
 .lcd__boot-progress {
   width: 80%;
   height: 3px;
-  background: rgba(74, 107, 78, 0.2);
+  background: rgba(61, 107, 98, 0.2);
   border-radius: 1px;
   overflow: hidden;
   margin-top: 6px;
@@ -688,7 +691,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   height: 100%;
   width: 0%;
   background: var(--lcd-green);
-  box-shadow: 0 0 6px rgba(122, 171, 126, 0.5);
+  box-shadow: 0 0 6px rgba(106, 188, 178, 0.5);
   transition: width 0.3s ease;
 }
 
@@ -697,7 +700,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   letter-spacing: 0.1em;
   color: var(--lcd-green-bright);
   margin: 12px 0 6px;
-  text-shadow: 0 0 6px rgba(122, 171, 126, 0.35);
+  text-shadow: 0 0 6px rgba(106, 188, 178, 0.35);
   min-height: 16px;
 }
 
@@ -741,7 +744,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   bottom: 56px;
   transform: translateX(-50%) translateY(12px);
   width: min(420px, 90vw);
-  background: rgba(26, 36, 24, 0.92);
+  background: rgba(20, 34, 28, 0.92);
   border: 1px solid var(--lcd-green-dim);
   border-radius: 2px;
   padding: 16px 20px;
@@ -808,7 +811,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
   color: var(--lcd-green-bright);
   margin-bottom: 10px;
   text-align: center;
-  text-shadow: 0 0 8px rgba(122, 171, 126, 0.4);
+  text-shadow: 0 0 8px rgba(106, 188, 178, 0.4);
 }
 
 /* Menu navigation */
@@ -840,7 +843,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
 .lcd__item--selected,
 .lcd__item:focus-visible {
   color: var(--lcd-green-bright);
-  background: rgba(122, 171, 126, 0.08);
+  background: rgba(106, 188, 178, 0.08);
   outline: none;
 }
 
@@ -967,7 +970,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
 
 .lcd__entry {
   padding: 4px 0;
-  border-bottom: 1px solid rgba(74, 107, 78, 0.3);
+  border-bottom: 1px solid rgba(61, 107, 98, 0.3);
 }
 
 .lcd__entry:last-child {
@@ -989,7 +992,7 @@ body.is-ready:not(.vmu-booted) .loader__link {
 /* LCD idle phosphor glow - very subtle */
 .lcd__title,
 .lcd__item--selected .lcd__label {
-  text-shadow: 0 0 6px rgba(122, 171, 126, 0.35);
+  text-shadow: 0 0 6px rgba(106, 188, 178, 0.35);
 }
 
 /* Screen transition flash - mimics VMU screen refresh */
@@ -1023,6 +1026,16 @@ body.is-ready:not(.vmu-booted) .loader__link {
   letter-spacing: 0.28em;
   text-transform: uppercase;
   color: rgba(74, 158, 148, 0.42);
+}
+
+.footer__mark {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0;
+  margin-right: 0.12em;
+  position: relative;
+  top: 1px;
+  vertical-align: baseline;
 }
 
 /* --------------------------------------------------------------------------
