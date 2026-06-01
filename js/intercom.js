@@ -15,9 +15,12 @@ let portraitController = null;
 let intercomScreen = null;
 let portraitEl = null;
 let acquireTimer = null;
+let staticStartTimer = null;
 let acquiringSignal = false;
 
 const SIGNAL_ACQUIRE_MS = 1650;
+/** Delay crackle until codec panel is visible enough for heavy static */
+const STATIC_CRACKLE_DELAY_MS = 320;
 
 function drawNoiseFrame() {
   if (!noiseCtx || !noiseCanvas) return;
@@ -61,14 +64,26 @@ function clearAcquireTimer() {
   }
 }
 
+function clearStaticStartTimer() {
+  if (staticStartTimer) {
+    clearTimeout(staticStartTimer);
+    staticStartTimer = null;
+  }
+}
+
 function beginSignalAcquire() {
   clearAcquireTimer();
+  clearStaticStartTimer();
   acquiringSignal = true;
   intercomScreen?.classList.add('intercom__screen--acquiring');
   if (portraitEl) portraitEl.hidden = true;
 
   resizeNoiseCanvas();
-  audio.startIntercomStatic();
+
+  staticStartTimer = setTimeout(() => {
+    staticStartTimer = null;
+    audio.startIntercomStatic();
+  }, STATIC_CRACKLE_DELAY_MS);
 
   acquireTimer = setTimeout(() => {
     acquiringSignal = false;
@@ -89,6 +104,7 @@ function beginSignalAcquire() {
 
 function endSignalAcquire() {
   clearAcquireTimer();
+  clearStaticStartTimer();
   audio.stopIntercomStatic();
   acquiringSignal = false;
   intercomScreen?.classList.remove('intercom__screen--acquiring');
@@ -215,6 +231,7 @@ export function startIntercomNoise() {
 
 export function stopIntercomNoise() {
   endSignalAcquire();
+  audio.playIntercomStaticBurst();
   if (noiseRaf) {
     cancelAnimationFrame(noiseRaf);
     noiseRaf = null;

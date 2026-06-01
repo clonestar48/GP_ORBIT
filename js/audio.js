@@ -120,7 +120,7 @@ function stopStaticCrackle(fadeMs = 100) {
   }
 }
 
-function beginStaticCrackle() {
+function beginStaticCrackle({ burst = false, targetVol = 0.013 } = {}) {
   if (!canPlay()) return;
 
   stopStaticCrackle(0);
@@ -149,15 +149,15 @@ function beginStaticCrackle() {
 
     const bandpass = ac.createBiquadFilter();
     bandpass.type = 'bandpass';
-    bandpass.frequency.value = 2900;
-    bandpass.Q.value = 0.55;
+    bandpass.frequency.value = burst ? 3400 : 2900;
+    bandpass.Q.value = burst ? 0.65 : 0.55;
 
     const gain = ac.createGain();
-    const targetVol = 0.013;
     const t = ac.currentTime;
+    const fadeIn = burst ? 0.025 : 0.07;
 
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(targetVol, t + 0.07);
+    gain.gain.exponentialRampToValueAtTime(targetVol, t + fadeIn);
 
     source.connect(highpass);
     highpass.connect(bandpass);
@@ -167,6 +167,10 @@ function beginStaticCrackle() {
 
     staticLayer = { source, gain, targetVol, crackleTimer: null };
     scheduleStaticCrackle();
+
+    if (burst) {
+      setTimeout(() => stopStaticCrackle(45), 120);
+    }
   } catch {
     disposeStaticLayer();
   }
@@ -229,5 +233,10 @@ export const audio = {
 
   stopIntercomStatic(fadeMs = 100) {
     stopStaticCrackle(fadeMs);
+  },
+
+  /** Short static pop when closing the intercom */
+  playIntercomStaticBurst() {
+    beginStaticCrackle({ burst: true, targetVol: 0.016 });
   },
 };

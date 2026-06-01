@@ -213,9 +213,46 @@ const emblemSpin = {
   active: false,
   elapsed: 0,
   duration: 0.52,
+  startPivotY: 0,
+  startEmblemY: 0,
+  totalSpin: Math.PI * 2,
 };
 
+/** Idle Y drift anchor — reset on spin land so drift resumes from front-facing, not pre-click angle */
+let emblemIdleAnchorT = 0;
+let emblemIdleBias = 0;
+
+function emblemYawOverlay() {
+  return parallax.x * 0.08 + hubMagnetic.yaw;
+}
+
+function emblemDriftYaw(t, idleSpinRate) {
+  return EMBLEM_HOME_Y
+    + emblemIdleBias
+    + (t - emblemIdleAnchorT) * idleSpinRate
+    + emblemYawOverlay();
+}
+
+function settleEmblemSpinDrift(t) {
+  emblemIdleAnchorT = t;
+  emblemIdleBias = emblem.rotation.y - EMBLEM_HOME_Y - emblemYawOverlay();
+}
+
+function computeEmblemSpinAmount() {
+  const currentTotal = emblemPivot.rotation.y + emblem.rotation.y;
+  let forward = normalizeAngle(EMBLEM_HOME_Y - currentTotal);
+  if (forward <= 0) forward += Math.PI * 2;
+  if (forward < Math.PI * 2) forward += Math.PI * 2;
+  return forward;
+}
+
 function triggerEmblemSpin() {
+  emblemSpin.startPivotY = emblemPivot.rotation.y;
+  emblemSpin.startOverlay = emblemYawOverlay();
+  emblemSpin.frozenBaseY = emblem.rotation.y - emblemSpin.startOverlay;
+  emblemSpin.startEmblemY = emblem.rotation.y;
+  emblemSpin.totalSpin = computeEmblemSpinAmount();
+  emblemSpin.duration = 0.52 * (emblemSpin.totalSpin / (Math.PI * 2));
   emblemSpin.active = true;
   emblemSpin.elapsed = 0;
   audio.spin();
@@ -648,6 +685,7 @@ let intercomShow = 0;
 let hubRetreat = 0;
 const INTERCOM = {
   transitionMs: 1020,
+  crtPowerOffMs: 780,
   retreatRate: 1.28,
   showInRate: 1.7,
   showOutRate: 2.15,
@@ -905,6 +943,7 @@ function openAboutIntercom() {
   lcdStatus.textContent = 'ABOUT';
 
   intercomTarget = 1;
+  intercomEl.classList.remove('intercom--power-off');
   intercomEl.hidden = false;
   intercomEl.setAttribute('aria-hidden', 'false');
   intercomEl.classList.add('intercom--active');
@@ -925,14 +964,45 @@ function closeAboutIntercom() {
   intercomTarget = 0;
   stopIntercomNoise();
 
-  setTimeout(() => {
-    intercomEl.classList.remove('intercom--active');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const powerOffMs = reducedMotion ? 320 : INTERCOM.crtPowerOffMs;
+
+  intercomEl.classList.add('intercom--power-off');
+
+  const finishClose = () => {
+    intercomEl.classList.remove('intercom--power-off', 'intercom--active');
     intercomEl.hidden = true;
     intercomEl.setAttribute('aria-hidden', 'true');
+    intercomEl.style.opacity = '';
+    intercomEl.style.transform = '';
+    intercomShow = 0;
     currentView = 'browser';
     lcdStatus.textContent = SECTIONS[selectedIndex].label;
     isTransitioning = false;
-  }, INTERCOM.transitionMs);
+  };
+
+  if (reducedMotion) {
+    setTimeout(finishClose, powerOffMs);
+    return;
+  }
+
+  const bezel = intercomEl.querySelector('.intercom__bezel');
+  let closed = false;
+
+  const finishOnce = () => {
+    if (closed) return;
+    closed = true;
+    bezel?.removeEventListener('animationend', onPowerOffEnd);
+    finishClose();
+  };
+
+  const onPowerOffEnd = (e) => {
+    if (e.target !== bezel || e.animationName !== 'intercom-crt-power-off') return;
+    finishOnce();
+  };
+
+  bezel?.addEventListener('animationend', onPowerOffEnd);
+  setTimeout(finishOnce, powerOffMs + 80);
 }
 
 function backToBrowser() {
@@ -1234,17 +1304,24 @@ function animate() {
   const emblemShow = 1 - easeInOutSine(hubRetreat);
 
   if (intercomEl) {
-    const showEase = easeInOutSine(intercomShow);
-    intercomEl.style.opacity = String(showEase);
-    if (showEase > 0.01 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const floatX = Math.sin(t * 0.414) * 12.1 * showEase;
-      const floatY = Math.sin(t * 0.522 + 0.6) * 7.7 * showEase;
-      const settleY = -54 + showEase * 4;
-      const scale = 0.9 + showEase * 0.1;
-      intercomEl.style.transform =
-        `translate(calc(-50% + ${floatX}px), calc(${settleY}% + ${floatY}px)) scale(${scale})`;
+    const poweringOff = intercomEl.classList.contains('intercom--power-off');
+
+    if (poweringOff) {
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      intercomEl.style.opacity = reducedMotion ? '' : '1';
     } else {
-      intercomEl.style.transform = 'translate(-50%, -54%) scale(0.9)';
+      const showEase = easeInOutSine(intercomShow);
+      intercomEl.style.opacity = String(showEase);
+      if (showEase > 0.01 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const floatX = Math.sin(t * 0.414) * 12.1 * showEase;
+        const floatY = Math.sin(t * 0.522 + 0.6) * 7.7 * showEase;
+        const settleY = -54 + showEase * 4;
+        const scale = 0.9 + showEase * 0.1;
+        intercomEl.style.transform =
+          `translate(calc(-50% + ${floatX}px), calc(${settleY}% + ${floatY}px)) scale(${scale})`;
+      } else {
+        intercomEl.style.transform = 'translate(-50%, -54%) scale(0.9)';
+      }
     }
   }
 
@@ -1253,11 +1330,16 @@ function animate() {
     emblemSpin.elapsed += delta;
     const spinP = Math.min(emblemSpin.elapsed / emblemSpin.duration, 1);
     spinProgress = easeOutCubic(spinP);
-    emblemPivot.rotation.y = spinProgress * Math.PI * 2;
+    emblemPivot.rotation.y = emblemSpin.startPivotY + spinProgress * emblemSpin.totalSpin;
+    emblem.rotation.y = emblemSpin.frozenBaseY + emblemYawOverlay();
     if (spinP >= 1) {
+      emblem.rotation.y += emblemPivot.rotation.y;
       emblemPivot.rotation.y = 0;
+      settleEmblemSpinDrift(t);
       emblemSpin.active = false;
     }
+  } else {
+    emblem.rotation.y = emblemDriftYaw(t, idleSpinRate);
   }
 
   hubGroup.position.set(0, 0, 0);
@@ -1268,7 +1350,6 @@ function animate() {
   );
   emblemPivot.scale.setScalar(Math.max(0.0001, emblemShow));
   hubGroup.visible = emblemShow > 0.015;
-  emblem.rotation.y = EMBLEM_HOME_Y + t * idleSpinRate + parallax.x * 0.08 + hubMagnetic.yaw;
   emblem.rotation.x = Math.sin(t * 0.38) * 0.035 - parallax.y * 0.04 + hubMagnetic.pitch;
   emblem.rotation.z = Math.sin(t * 0.27) * 0.018 + hubMagnetic.roll;
 
