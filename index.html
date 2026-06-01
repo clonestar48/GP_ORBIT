@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Gavin Petersen — portfolio experience.">
+  <meta name="theme-color" content="#080a0e">
+  <title>GAVIN PETERSEN</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Atmospheric background layers -->
+  <div class="atmosphere">
+    <div class="atmosphere__gradient"></div>
+    <div class="atmosphere__grid"></div>
+    <div class="atmosphere__scanlines"></div>
+    <div class="atmosphere__vignette"></div>
+    <div class="atmosphere__glow atmosphere__glow--left"></div>
+    <div class="atmosphere__glow atmosphere__glow--right"></div>
+  </div>
+
+  <!-- Three.js canvas mount -->
+  <div id="canvas-container"></div>
+
+  <!-- Page load veil -->
+  <div class="loader" id="loader">
+    <div class="loader__ring" id="loader-ring"></div>
+    <span class="loader__text" id="loader-text">INITIALIZING</span>
+    <a class="loader__link" id="loader-link" href="#" hidden></a>
+  </div>
+
+  <!-- Navigation — top strip (same controls as bottom) -->
+  <nav class="nav-strip nav-strip--top" id="os-hud" aria-label="Portfolio navigation"></nav>
+
+  <!-- LCD status readout — floats below center emblem -->
+  <div id="lcd-screen" class="lcd">
+    <!-- Boot / idle header -->
+    <div class="lcd__header">
+      <span class="lcd__brand">VMU</span>
+      <span class="lcd__status" id="lcd-status">BOOT</span>
+    </div>
+
+    <!-- BIOS boot view -->
+    <div class="lcd__view lcd__view--boot" id="view-boot">
+      <div class="lcd__boot-spiral" aria-hidden="true">
+        <svg viewBox="0 0 48 48" class="lcd__spiral-svg">
+          <path class="lcd__spiral-path" d="M24,24 m-1,0 a1,1 0 1,1 2,0 a2,2 0 1,1 -4,0 a3,3 0 1,1 6,0 a4,4 0 1,1 -8,0 a5,5 0 1,1 10,0 a6,6 0 1,1 -12,0 a7,7 0 1,1 14,0 a8,8 0 1,1 -16,0" />
+        </svg>
+      </div>
+      <div class="lcd__boot-label">SYSTEM BOOT</div>
+      <div class="lcd__boot-progress">
+        <div class="lcd__boot-bar" id="boot-bar"></div>
+      </div>
+    </div>
+
+    <!-- Browser view (mirrored on os-hud) -->
+    <div class="lcd__view lcd__view--browser lcd__view--hidden" id="view-browser">
+      <div class="lcd__title">FILE</div>
+      <div class="lcd__file" id="current-file">WORK</div>
+      <div class="lcd__meta" id="file-meta">1/4</div>
+    </div>
+
+    <!-- Content panel view -->
+    <div class="lcd__view lcd__view--content lcd__view--hidden" id="view-content">
+      <div class="lcd__content-header">
+        <button class="lcd__back" id="btn-back" aria-label="Back to menu">◀ BACK</button>
+        <span class="lcd__content-title" id="content-title">WORK</span>
+      </div>
+      <div class="lcd__content-body" id="content-body">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <!-- LCD glass reflection overlay -->
+    <div class="lcd__glass" aria-hidden="true"></div>
+  </div>
+
+  <!-- Subtle footer credit -->
+  <footer class="footer">
+    <span class="footer__text">GAVIN PETERSEN · gavinpetersen.co</span>
+  </footer>
+
+  <!-- Desktop control hints — fade after boot -->
+  <aside class="controls" id="controls" aria-hidden="true">
+    <span class="controls__item">←→ BROWSE</span>
+    <span class="controls__sep">·</span>
+    <span class="controls__item">CLICK FILE</span>
+    <span class="controls__sep">·</span>
+    <span class="controls__item">B BACK</span>
+    <span class="controls__sep">·</span>
+    <span class="controls__item">M MUTE</span>
+  </aside>
+
+  <!-- Primary navigation — same order as top strip and 3D orbit -->
+  <nav class="nav-strip nav-strip--bottom" id="file-strip" aria-label="Portfolio navigation"></nav>
+
+  <!-- File detail panel — opens when a save icon is selected -->
+  <div class="file-panel" id="file-panel">
+    <div class="file-panel__header">
+      <span class="file-panel__title" id="panel-title">WORK.SAV</span>
+      <button class="file-panel__back" id="panel-back" aria-label="Back to browser">◀ BACK</button>
+    </div>
+    <div class="file-panel__body" id="panel-body"></div>
+  </div>
+
+  <script>
+    (function () {
+      window.__vmuBoot = function () {
+        document.body.classList.add('vmu-booted');
+      };
+
+      function showError(message, showLink) {
+        document.body.classList.add('is-ready');
+        var text = document.getElementById('loader-text');
+        var link = document.getElementById('loader-link');
+        var ring = document.getElementById('loader-ring');
+        if (text) text.textContent = message;
+        if (ring) ring.hidden = true;
+        if (link && showLink) {
+          if (location.protocol === 'file:') {
+            link.href = './index.html';
+            link.textContent = 'Serve this folder, then open ./index.html via http (not file://)';
+          } else {
+            link.href = location.origin + location.pathname;
+            link.textContent = location.origin;
+          }
+          link.hidden = false;
+        }
+      }
+
+      window.__vmuError = showError;
+
+      if (location.protocol === 'file:') {
+        document.addEventListener('DOMContentLoaded', function () {
+          showError('Server required — open this URL:', true);
+        });
+      }
+
+      window.addEventListener('error', function (e) {
+        if (e.message && e.message.indexOf('CORS') !== -1) {
+          showError('CORS error — use: python3 serve.py', true);
+        }
+      });
+    })();
+  </script>
+  <script type="module">
+    import('./js/main.js').catch(function (e) {
+      var msg = e && e.message ? e.message : String(e);
+      if (typeof window.__vmuError === 'function') {
+        window.__vmuError('Load failed: ' + msg, true);
+      }
+    });
+  </script>
+</body>
+</html>
