@@ -1,5 +1,5 @@
 /**
- * Subtle UI audio — soft VMU-style tones via Web Audio API.
+ * Subtle UI audio - soft VMU-style tones via Web Audio API.
  * Respects prefers-reduced-motion and can be toggled with M key.
  */
 
@@ -44,7 +44,7 @@ function tone(frequency, duration = 0.06, volume = 0.04, type = 'square') {
     osc.start(ac.currentTime);
     osc.stop(ac.currentTime + duration);
   } catch {
-    // Audio unavailable — fail silently
+    // Audio unavailable - fail silently
   }
 }
 
@@ -75,7 +75,7 @@ export const audio = {
     tone(660, 0.03, 0.02, 'sine');
   },
 
-  /** Toggle audio on/off — returns new state */
+  /** Toggle audio on/off - returns new state */
   toggle() {
     enabled = !enabled;
     if (enabled) tone(990, 0.04, 0.02, 'sine');

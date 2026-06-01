@@ -1,5 +1,5 @@
 /**
- * Floating GP monogram — adapted from gp-numeral for portfolio hub focal point.
+ * Floating GP monogram - adapted from gp-numeral for portfolio hub focal point.
  */
 
 import * as THREE from '../assets/vendor/three.module.js';

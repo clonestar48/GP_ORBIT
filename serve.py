@@ -4,7 +4,7 @@
 import http.server
 import socketserver
 
-PORT = 8100
+PORT = 8112
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
@@ -34,5 +34,5 @@ if __name__ == '__main__':
     with httpd:
         print(f'Serving: {os.getcwd()}')
         print(f'Open → http://127.0.0.1:{PORT}')
-        print('(Use 127.0.0.1 — not file:// — then hard refresh Cmd+Shift+R)')
+        print('(Use 127.0.0.1 - not file:// - then hard refresh Cmd+Shift+R)')
         httpd.serve_forever()

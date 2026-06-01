@@ -1,15 +1,15 @@
 /**
- * VMU Portfolio — File Browser
+ * VMU Portfolio - File Browser
  *
  * Late-90s file manager aesthetic: floating save icons in 3D space,
  * small GP emblem hub as cursor, dark BIOS atmosphere.
  */
 
 import * as THREE from '../assets/vendor/three.module.js';
-import { CSS3DRenderer, CSS3DObject } from '../assets/vendor/renderers/CSS3DRenderer.js';
-import { CONTENT } from './content.js';
+import { CONTENT, WORK_MENU } from './content.js';
 import { audio } from './audio.js';
-import { buildGPEmblem } from './emblem.js';
+import { buildGPEmblem, createPearlMaterialSet } from './emblem.js';
+import { buildSectionSaveIcon, ICON_SCALE } from './save-icons.js';
 
 if (typeof window.__vmuBoot === 'function') window.__vmuBoot();
 
@@ -28,9 +28,9 @@ const SECTIONS = [
 const CONFIG = {
   emblemScale: 0.38,
   orbitRadius: 2.0,
-  /** Vertical inset — elliptical orbit clears top/bottom nav strips */
+  /** Vertical inset - elliptical orbit clears top/bottom nav strips */
   orbitFlatten: 0.65,
-  /** Rotate slots 45° off 12/3/6/9 — icons sit in quadrants, not on nav bars */
+  /** Rotate slots 45° off 12/3/6/9 - icons sit in quadrants, not on nav bars */
   orbitSlotOffset: Math.PI / 4,
   /** Index 0 leads clockwise from the first staggered slot */
   orbitStartAngle: Math.PI / 2,
@@ -101,37 +101,6 @@ function createBIOSSpiral(segments = 240) {
   );
 }
 
-/** Pixel-style icon texture — one label per block, baked into the face */
-function createSaveIconTexture(label) {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#0e181a';
-  ctx.fillRect(0, 0, 128, 128);
-
-  ctx.fillStyle = '#2d5c58';
-  for (let y = 12; y < 116; y += 12) {
-    for (let x = 12; x < 116; x += 12) {
-      if ((x + y) % 24 === 0) ctx.fillRect(x, y, 8, 8);
-    }
-  }
-
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#8fd4c8';
-  const fontSize = label.length > 5 ? 16 : 20;
-  ctx.font = `bold ${fontSize}px monospace`;
-  ctx.fillText(label, 64, 62);
-
-  ctx.fillStyle = '#3d6b65';
-  ctx.font = '10px monospace';
-  ctx.fillText('.SAV', 64, 84);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  return tex;
-}
-
 function animateContentLines(container) {
   container.querySelectorAll('.lcd__line').forEach((line, i) => {
     line.classList.remove('lcd__line--visible');
@@ -157,13 +126,6 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
-const cssRenderer = new CSS3DRenderer();
-cssRenderer.setSize(window.innerWidth, window.innerHeight);
-cssRenderer.domElement.style.position = 'absolute';
-cssRenderer.domElement.style.top = '0';
-cssRenderer.domElement.style.pointerEvents = 'none';
-container.appendChild(cssRenderer.domElement);
-
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.065);
 
@@ -171,7 +133,7 @@ const camera = new THREE.PerspectiveCamera(44, window.innerWidth / window.innerH
 camera.position.set(0, CONFIG.camera.endY, CONFIG.camera.startZ);
 camera.layers.enable(1);
 
-/** Emblem-only layer — keeps scene fill lights from washing chrome to ice white */
+/** Emblem-only layer - keeps scene fill lights from washing chrome to ice white */
 const EMBLEM_LAYER = 1;
 
 const mouse = { x: 0, y: 0 };
@@ -180,11 +142,11 @@ let introProgress = 0;
 let isIntroComplete = false;
 let cameraEndZ = getCameraEndZ();
 
-// World group — shared gentle drift
+// World group - shared gentle drift
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
 
-// Hub group — GP emblem focal point + LCD readout
+// Hub group - GP emblem focal point + LCD readout
 const hubGroup = new THREE.Group();
 worldGroup.add(hubGroup);
 
@@ -228,29 +190,11 @@ tealGlow.position.set(0, 0.2, 1);
 worldGroup.add(tealGlow);
 
 // ---------------------------------------------------------------------------
-// Materials — save icons
+// GP emblem - center of attraction
 // ---------------------------------------------------------------------------
 
-const saveBodyMat = new THREE.MeshStandardMaterial({
-  color: CONFIG.colors.saveBody,
-  roughness: 0.55,
-  metalness: 0.05,
-  transparent: true,
-});
-const selectFrameMat = new THREE.MeshStandardMaterial({
-  color: CONFIG.colors.teal,
-  emissive: CONFIG.colors.teal,
-  emissiveIntensity: 0.8,
-  transparent: true,
-  opacity: 1,
-  wireframe: false,
-});
-
-// ---------------------------------------------------------------------------
-// GP emblem — center of attraction
-// ---------------------------------------------------------------------------
-
-const emblem = buildGPEmblem();
+const pearlAssets = createPearlMaterialSet();
+const emblem = buildGPEmblem(pearlAssets);
 emblem.scale.setScalar(CONFIG.emblemScale);
 emblem.traverse((obj) => {
   if (obj.isMesh) obj.layers.set(EMBLEM_LAYER);
@@ -263,7 +207,7 @@ function setEmblemLightLayer(light) {
   return light;
 }
 
-// Chromatic hub lights — emblem layer only, no white scene fill
+// Chromatic hub lights - emblem layer only, no white scene fill
 const hubTealKey = setEmblemLightLayer(new THREE.DirectionalLight(0xadffff, 1.28));
 hubTealKey.position.set(-1.1, 1.3, 1.6);
 
@@ -273,11 +217,11 @@ hubPurpleFill.position.set(1.0, -0.65, 1.2);
 const hubPinkRim = setEmblemLightLayer(new THREE.DirectionalLight(0xff9fce, 1.05));
 hubPinkRim.position.set(1.15, 0.75, -0.55);
 
-// Tight teal spotlight on emblem — pulses in lockstep with selection beam
+// Tight teal spotlight on emblem - pulses in lockstep with selection beam
 const hubSpotlight = setEmblemLightLayer(new THREE.PointLight(0x5cffa8, 0.72, 3.6));
 hubSpotlight.position.set(0, 0.06, 0.38);
 
-// Accent wash — ramps when icons beam energy into the hub
+// Accent wash - ramps when icons beam energy into the hub
 const hubAccentLight = setEmblemLightLayer(new THREE.PointLight(0xe8a8ff, 0.32, 5));
 hubAccentLight.position.set(0, 0.14, 0.52);
 
@@ -287,22 +231,13 @@ hubTealRim.position.set(-1.5, 0.6, 0.9);
 const hubChromaRim = setEmblemLightLayer(new THREE.DirectionalLight(0xc4a8ff, 0.62));
 hubChromaRim.position.set(1.4, -0.15, 0.85);
 
-/** Smoothed 0–1 hub illumination driven by icon hover / selection */
+/** Smoothed 0-1 hub illumination driven by icon hover / selection */
 let hubEnergy = 0.62;
 
-// ---------------------------------------------------------------------------
-// CSS3D LCD — compact status readout below emblem
-// ---------------------------------------------------------------------------
-
+// LCD element - boot/status logic only (not rendered in 3D)
 const lcdElement = document.getElementById('lcd-screen');
-const lcdObject = new CSS3DObject(lcdElement);
-lcdObject.position.set(0, -0.48, 0.12);
-lcdObject.scale.setScalar(0.00056);
-hubGroup.add(lcdObject);
-lcdElement.style.pointerEvents = 'none';
-lcdElement.style.visibility = 'visible';
 
-// Selection link — center hub to active file (single line, updates each frame)
+// Selection link - center hub to active file (single line, updates each frame)
 const selectionLineGeo = new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(0, 0, 0),
   new THREE.Vector3(1, 0, 0),
@@ -314,7 +249,7 @@ const selectionLine = new THREE.Line(
 worldGroup.add(selectionLine);
 
 // ---------------------------------------------------------------------------
-// Floating save icons — portfolio sections as save blocks
+// Floating save icons - portfolio sections as save blocks
 // ---------------------------------------------------------------------------
 
 const saveIcons = [];
@@ -352,6 +287,24 @@ function lerpAngle(from, to, t) {
   return from + normalizeAngle(to - from) * t;
 }
 
+function nearestOrbitIndex(angle) {
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < SECTIONS.length; i++) {
+    const d = Math.abs(normalizeAngle(angle - orbitAngle(i)));
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function orbitPlaneDistance(x, y) {
+  const flat = CONFIG.orbitFlatten;
+  return Math.hypot(x, y / flat);
+}
+
 function buildSaveIcon(section, index) {
   const group = new THREE.Group();
   group.userData = { sectionKey: section.key, index };
@@ -361,40 +314,19 @@ function buildSaveIcon(section, index) {
   group.userData.basePos = basePos.clone();
   group.userData.phase = index * 1.4;
 
-  const bodyMat = saveBodyMat.clone();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.62, 0.1), bodyMat);
-  body.castShadow = true;
-  body.userData.isSave = true;
-  group.add(body);
-  saveMeshes.push(body);
+  const { root, materials, hit, frame } = buildSectionSaveIcon(section.key, pearlAssets);
+  group.add(root);
 
-  const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.44, 0.44),
-    new THREE.MeshStandardMaterial({
-      map: createSaveIconTexture(section.label),
-      roughness: 0.6,
-      transparent: true,
-    })
-  );
-  face.position.z = 0.051;
-  group.add(face);
+  hit.userData.isSave = true;
+  hit.userData.index = index;
+  saveMeshes.push(hit);
 
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(0.62, 0.72, 0.02),
-    selectFrameMat.clone()
-  );
-  frame.position.z = -0.015;
-  frame.visible = false;
-  group.userData.frame = frame;
-  group.add(frame);
-
-  // Label lives on the icon face texture only — avoids CSS3D label overlap bugs
-  group.userData.visual = { scale: 0.94, opacity: 0.38, faceOpacity: 0.45, zLift: 0 };
-  group.userData.target = { scale: 0.92, opacity: 0.32, faceOpacity: 0.4, zLift: 0 };
+  group.userData.visual = { scale: 0.82, opacity: 0.26, zLift: 0 };
+  group.userData.target = { scale: 0.8, opacity: 0.22, zLift: 0 };
   group.renderOrder = 2;
 
   savesGroup.add(group);
-  saveIcons.push({ group, section, body, frame, bodyMat, face });
+  saveIcons.push({ group, section, root, frame, materials });
   return group;
 }
 
@@ -485,15 +417,13 @@ const currentFileEl = document.getElementById('current-file');
 const fileMetaEl = document.getElementById('file-meta');
 const lcdStatus = document.getElementById('lcd-status');
 const bootBar = document.getElementById('boot-bar');
-const controlsHint = document.getElementById('controls');
 const filePanel = document.getElementById('file-panel');
+const filePanelScrim = document.getElementById('file-panel-scrim');
 const panelTitle = document.getElementById('panel-title');
 const panelBody = document.getElementById('panel-body');
-const panelBack = document.getElementById('panel-back');
 const osHud = document.getElementById('os-hud');
-const fileStrip = document.getElementById('file-strip');
 
-/** Build nav item button — used on both top and bottom strips */
+/** Build nav item button - used on both top and bottom strips */
 function buildNavItem(section, index) {
   const el = document.createElement('button');
   el.type = 'button';
@@ -506,38 +436,84 @@ function buildNavItem(section, index) {
   return el;
 }
 
+/** Top strip only - WORK gets a hover dropdown */
+function buildWorkDropdown(section, index) {
+  const wrap = document.createElement('div');
+  wrap.className = 'nav-dropdown';
+  wrap.dataset.section = section.key;
+
+  const btn = buildNavItem(section, index);
+  wrap.appendChild(btn);
+
+  const panel = document.createElement('div');
+  panel.className = 'nav-dropdown__panel';
+  panel.setAttribute('role', 'menu');
+  panel.setAttribute('aria-label', 'Work menu');
+
+  WORK_MENU.forEach((item) => {
+    const link = document.createElement('a');
+    link.className = 'nav-dropdown__link';
+    link.href = item.href;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.setAttribute('role', 'menuitem');
+    link.innerHTML =
+      `<span class="nav-dropdown__link-title">${item.title}</span>` +
+      `<span class="nav-dropdown__link-desc">${item.desc}</span>`;
+    panel.appendChild(link);
+  });
+
+  wrap.appendChild(panel);
+
+  panel.addEventListener('mouseenter', () => {
+    if (currentView !== 'browser') return;
+    setNavHover(index, false);
+  });
+
+  wrap.addEventListener('mouseleave', (e) => {
+    if (e.relatedTarget instanceof Node && wrap.contains(e.relatedTarget)) return;
+    if (currentView === 'browser') setNavHover(-1);
+  });
+
+  return wrap;
+}
+
 function buildNavStrips() {
   osHud.replaceChildren();
-  fileStrip.replaceChildren();
   SECTIONS.forEach((section, index) => {
-    osHud.appendChild(buildNavItem(section, index));
-    fileStrip.appendChild(buildNavItem(section, index));
+    if (section.key === 'work') {
+      osHud.appendChild(buildWorkDropdown(section, index));
+    } else {
+      osHud.appendChild(buildNavItem(section, index));
+    }
   });
 }
 
 buildNavStrips();
 
 const topItems = [...osHud.querySelectorAll('.nav-strip__item')];
-const stripItems = [...fileStrip.querySelectorAll('.nav-strip__item')];
-const allNavItems = [...topItems, ...stripItems];
 
 function isOverNavStrip(clientX, clientY) {
   const el = document.elementFromPoint(clientX, clientY);
-  return el != null && (osHud.contains(el) || fileStrip.contains(el));
+  return el != null && osHud.contains(el);
 }
 
-/** Shared click / hover handlers for top and bottom strips */
+/** Click / hover handlers for top nav */
 function bindNavStripItem(btn) {
   const idx = Number(btn.dataset.index);
 
   btn.addEventListener('mouseenter', () => {
     if (currentView !== 'browser') return;
     audio.unlock();
-    setHover(idx, true);
+    setNavHover(idx, true);
   });
-  btn.addEventListener('mouseleave', () => {
+  btn.addEventListener('mouseleave', (e) => {
     if (currentView !== 'browser') return;
-    setHover(-1);
+    const dropdown = btn.closest('.nav-dropdown');
+    if (dropdown && e.relatedTarget instanceof Node && dropdown.contains(e.relatedTarget)) {
+      return;
+    }
+    setNavHover(-1);
   });
   btn.addEventListener('click', () => {
     audio.unlock();
@@ -550,14 +526,86 @@ function bindNavStripItem(btn) {
   });
 }
 
-allNavItems.forEach(bindNavStripItem);
+topItems.forEach(bindNavStripItem);
+
+osHud.addEventListener('mouseleave', () => {
+  if (currentView === 'browser' && navHoverIndex >= 0) {
+    setNavHover(-1);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Top nav - reveal on scroll up / top edge; hide on scroll down
+// ---------------------------------------------------------------------------
+
+let navRetracted = false;
+
+function navBarIsPinned() {
+  return osHud.matches(':hover');
+}
+
+function setNavRetracted(retracted) {
+  if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) {
+    navRetracted = false;
+    osHud.classList.remove('nav-strip--retracted');
+    return;
+  }
+  if (retracted && navBarIsPinned()) return;
+  navRetracted = retracted;
+  osHud.classList.toggle('nav-strip--retracted', retracted);
+}
+
+function revealNav() {
+  setNavRetracted(false);
+}
+
+osHud.addEventListener('mouseenter', revealNav);
+
+window.addEventListener(
+  'wheel',
+  (e) => {
+    if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) return;
+    if (navBarIsPinned()) {
+      revealNav();
+      return;
+    }
+    if (e.deltaY > 6) setNavRetracted(true);
+    else if (e.deltaY < -6) revealNav();
+  },
+  { passive: true }
+);
+
+window.addEventListener('pointermove', (e) => {
+  if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) return;
+  if (e.clientY < 110 || navBarIsPinned()) revealNav();
+});
+
+let touchScrollY = 0;
+window.addEventListener('touchstart', (e) => {
+  touchScrollY = e.touches[0].clientY;
+}, { passive: true });
+window.addEventListener('touchmove', (e) => {
+  if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) return;
+  const y = e.touches[0].clientY;
+  const dy = touchScrollY - y;
+  if (navBarIsPinned()) {
+    revealNav();
+  } else if (dy > 10) {
+    setNavRetracted(true);
+  } else if (dy < -10) {
+    revealNav();
+  }
+  touchScrollY = y;
+}, { passive: true });
 
 let selectedIndex = 0;
-let hoverIndex = -1;
+/** Top nav hover only - not driven by 3D orbit icons */
+let navHoverIndex = -1;
+/** 3D save-icon hover - independent from nav ▶ / selection */
+let orbitHoverIndex = -1;
 let beamAngle = orbitAngle(0);
 let beamAngleTarget = beamAngle;
 let pointerInOrbit = false;
-/** Smoothed magnetic lean — emblem tugged toward active orbit angle */
 const hubMagnetic = { x: 0, y: 0, z: 0, roll: 0, pitch: 0, yaw: 0 };
 let currentView = 'boot';
 let isTransitioning = false;
@@ -577,29 +625,67 @@ function indexFromKey(key) {
   return SECTIONS.findIndex((s) => s.key === key);
 }
 
-/** Sync selection + hover classes on both strips by index */
-function applyStripUI(selIdx, hovIdx = -1) {
-  topItems.forEach((el, i) => {
-    el.classList.toggle('nav-strip__item--selected', i === selIdx);
-    el.classList.toggle('nav-strip__item--hover', hovIdx >= 0 && i === hovIdx);
+/** Top nav - selection (▶) + preview from nav bar or orbit dial */
+function applyStripUI() {
+  const selIdx = selectedIndex;
+  const previewIdx = navHoverIndex >= 0 ? navHoverIndex : orbitHoverIndex;
+
+  topItems.forEach((el) => {
+    const i = Number(el.dataset.index);
+    if (Number.isNaN(i)) return;
+    const isSelected = i === selIdx;
+    const isPreview = previewIdx >= 0 && i === previewIdx && !isSelected;
+    el.classList.toggle('nav-strip__item--selected', isSelected);
+    el.classList.toggle('nav-strip__item--hover', isPreview);
   });
-  stripItems.forEach((el, i) => {
-    el.classList.toggle('nav-strip__item--selected', i === selIdx);
-    el.classList.toggle('nav-strip__item--hover', hovIdx >= 0 && i === hovIdx);
-  });
-  osHud.classList.toggle('nav-strip--lit', hovIdx >= 0);
+  const workDropdown = osHud.querySelector('.nav-dropdown');
+  if (workDropdown) {
+    workDropdown.classList.toggle('nav-dropdown--open', navHoverIndex === 0);
+  }
+  osHud.classList.toggle('nav-strip--lit', previewIdx >= 0);
+  if (previewIdx >= 0) revealNav();
 }
 
-/** Single source of truth — index drives orbit, top strip, bottom strip, LCD, 3D */
+/** 3D orbit icons - selection + orbit hover only */
+function applyOrbitVisuals() {
+  saveIcons.forEach(({ group }, i) => {
+    const hovered = i === orbitHoverIndex;
+    const selected = i === selectedIndex;
+
+    if (selected) {
+      group.userData.target = orbitHoverIndex === selectedIndex
+        ? { scale: 1.0, opacity: 0.82, zLift: 0.18 }
+        : { scale: 0.96, opacity: 0.76, zLift: 0.14 };
+      return;
+    }
+
+    group.userData.target = {
+      scale: hovered ? 0.94 : 0.8,
+      opacity: hovered ? 0.52 : 0.22,
+      zLift: hovered ? 0.1 : 0,
+    };
+  });
+}
+
+function flashNav() {
+  osHud.classList.remove('nav-strip--flash');
+  void osHud.offsetWidth;
+  osHud.classList.add('nav-strip--flash');
+  setTimeout(() => osHud.classList.remove('nav-strip--flash'), 180);
+}
+
+/** Single source of truth - index drives orbit, top nav, LCD, 3D */
 function syncNavigation(index, playSound = false) {
   const prev = selectedIndex;
   selectedIndex = wrapIndex(index);
-  hoverIndex = -1;
+  navHoverIndex = -1;
+  orbitHoverIndex = -1;
 
   const section = SECTIONS[selectedIndex];
 
-  applyStripUI(selectedIndex, -1);
+  applyStripUI();
 
+  pointerInOrbit = false;
   beamAngleTarget = orbitAngle(selectedIndex);
 
   currentFileEl.textContent = section.label;
@@ -610,63 +696,64 @@ function syncNavigation(index, playSound = false) {
     const selected = i === selectedIndex;
     frame.visible = selected;
     group.userData.target = {
-      scale: selected ? 1.12 : 0.92,
-      opacity: selected ? 1 : 0.32,
-      faceOpacity: selected ? 1 : 0.4,
-      zLift: selected ? 0.32 : 0,
+      scale: selected ? 0.98 : 0.8,
+      opacity: selected ? 0.78 : 0.22,
+      zLift: selected ? 0.16 : 0,
     };
   });
 
   if (playSound && prev !== selectedIndex && currentView === 'browser') {
     audio.navigate();
+    flashNav();
   }
 }
 
-/** Hover preview — same index on top strip, bottom strip, LCD, and 3D */
-function setHover(index, playSound = false) {
+/** Top nav hover - strips only */
+function setNavHover(index, playSound = false) {
   if (currentView !== 'browser') {
-    hoverIndex = -1;
-    applyStripUI(selectedIndex, -1);
+    navHoverIndex = -1;
+    applyStripUI();
     return;
   }
 
   const next = index >= 0 ? wrapIndex(index) : -1;
-  const changed = next !== hoverIndex;
-  hoverIndex = next;
+  const changed = next !== navHoverIndex;
+  navHoverIndex = next;
+  applyStripUI();
 
-  applyStripUI(selectedIndex, hoverIndex);
+  if (playSound && changed && navHoverIndex >= 0) {
+    audio.hover();
+  }
+}
 
-  const previewIdx = hoverIndex >= 0 ? hoverIndex : selectedIndex;
+/** Orbit dial hover - 3D pop, beam snap, nav preview; ▶ stays on selection */
+function setOrbitHover(index, playSound = false) {
+  if (currentView !== 'browser') {
+    orbitHoverIndex = -1;
+    applyOrbitVisuals();
+    applyStripUI();
+    return;
+  }
+
+  const next = index >= 0 ? wrapIndex(index) : -1;
+  const changed = next !== orbitHoverIndex;
+  orbitHoverIndex = next;
+
+  const previewIdx = orbitHoverIndex >= 0 ? orbitHoverIndex : selectedIndex;
   const preview = SECTIONS[previewIdx];
   currentFileEl.textContent = preview.label;
   fileMetaEl.textContent = `${previewIdx + 1}/${SECTIONS.length}`;
   lcdStatus.textContent = preview.label;
 
-  saveIcons.forEach(({ group }, i) => {
-    const hovered = i === hoverIndex;
-    const selected = i === selectedIndex;
+  applyOrbitVisuals();
+  applyStripUI();
 
-    if (selected) {
-      group.userData.target = hoverIndex === selectedIndex
-        ? { scale: 1.16, opacity: 1, faceOpacity: 1, zLift: 0.36 }
-        : { scale: 1.12, opacity: 1, faceOpacity: 1, zLift: 0.32 };
-      return;
-    }
-
-    group.userData.target = {
-      scale: hovered ? 1.05 : 0.92,
-      opacity: hovered ? 0.75 : 0.32,
-      faceOpacity: hovered ? 0.85 : 0.4,
-      zLift: hovered ? 0.14 : 0,
-    };
-  });
-
-  if (playSound && changed && hoverIndex >= 0) {
+  if (playSound && changed && orbitHoverIndex >= 0) {
     audio.hover();
   }
 
-  if (hoverIndex >= 0) {
-    beamAngleTarget = orbitAngle(hoverIndex);
+  if (orbitHoverIndex >= 0) {
+    beamAngleTarget = orbitAngle(orbitHoverIndex);
   }
 }
 
@@ -688,13 +775,15 @@ function openSection(sectionKey) {
   isTransitioning = true;
   audio.confirm();
   flashLCD();
+  flashNav();
   lcdStatus.textContent = 'LOADING';
 
   setTimeout(() => {
     panelTitle.textContent = data.title + '.SAV';
     panelBody.innerHTML = data.html;
+    filePanelScrim.classList.add('file-panel-scrim--visible');
+    filePanelScrim.setAttribute('aria-hidden', 'false');
     filePanel.classList.add('file-panel--visible');
-    fileStrip.classList.remove('nav-strip--visible');
     osHud.classList.remove('nav-strip--visible');
     lcdStatus.textContent = data.title;
     currentView = 'content';
@@ -709,9 +798,12 @@ function backToBrowser() {
   isTransitioning = true;
   audio.cancel();
   flashLCD();
+  flashNav();
+  filePanelScrim.classList.remove('file-panel-scrim--visible');
+  filePanelScrim.setAttribute('aria-hidden', 'true');
   filePanel.classList.remove('file-panel--visible');
-  fileStrip.classList.add('nav-strip--visible');
   osHud.classList.add('nav-strip--visible');
+  setNavRetracted(false);
   currentView = 'browser';
   syncNavigation(selectedIndex, false);
   isTransitioning = false;
@@ -729,22 +821,22 @@ function finishBootSequence() {
     currentView = 'browser';
     syncNavigation(0, false);
 
-    fileStrip.classList.add('nav-strip--visible');
     osHud.classList.add('nav-strip--visible');
-    controlsHint.classList.add('controls--visible');
-    setTimeout(() => {
-      controlsHint.classList.remove('controls--visible');
-      controlsHint.classList.add('controls--hidden');
-    }, 6000);
+    setNavRetracted(false);
+    flashNav();
 
     setTimeout(() => viewBrowser.classList.remove('lcd__view--entering'), 300);
   }, 250);
 }
 
-panelBack.addEventListener('click', () => {
+filePanelScrim.addEventListener('click', () => {
   audio.unlock();
   backToBrowser();
 });
+
+function isClickInsideFilePanel(target) {
+  return target instanceof Node && filePanel.contains(target);
+}
 
 document.addEventListener('keydown', (e) => {
   audio.unlock();
@@ -770,16 +862,37 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function updatePointerOrbitAngle(clientX, clientY) {
+function pickOrbitHoverFromPointer(clientX, clientY) {
   pointer.x = (clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  if (raycaster.ray.intersectPlane(orbitPlane, orbitHit)) {
-    beamAngleTarget = angleOnOrbit(orbitHit.x, orbitHit.y);
-    pointerInOrbit = true;
-    return true;
+
+  if (!raycaster.ray.intersectPlane(orbitPlane, orbitHit)) {
+    pointerInOrbit = false;
+    return -1;
   }
-  return false;
+
+  pointerInOrbit = true;
+  const angle = angleOnOrbit(orbitHit.x, orbitHit.y);
+  beamAngleTarget = angle;
+
+  const dist = orbitPlaneDistance(orbitHit.x, orbitHit.y);
+  const r = CONFIG.orbitRadius;
+
+  if (dist < r * 0.4) {
+    return -1;
+  }
+
+  const hits = raycaster.intersectObjects(saveMeshes, false);
+  if (hits.length) {
+    return hits[0].object.userData.index;
+  }
+
+  if (dist <= r * 1.18) {
+    return nearestOrbitIndex(angle);
+  }
+
+  return -1;
 }
 
 window.addEventListener('pointermove', (e) => {
@@ -788,28 +901,23 @@ window.addEventListener('pointermove', (e) => {
 
   if (currentView !== 'browser') {
     pointerInOrbit = false;
-    setHover(-1);
+    setOrbitHover(-1);
     container.classList.remove('is-hovering');
     return;
   }
 
-  const overNav = isOverNavStrip(e.clientX, e.clientY);
-  if (!overNav) {
-    updatePointerOrbitAngle(e.clientX, e.clientY);
-  } else {
+  if (isOverNavStrip(e.clientX, e.clientY)) {
     pointerInOrbit = false;
-  }
-
-  if (overNav) {
+    if (orbitHoverIndex >= 0) {
+      setOrbitHover(-1);
+    }
     return;
   }
 
-  const hits = raycaster.intersectObjects(saveMeshes, false);
-
-  const nextHover = hits.length ? hits[0].object.parent.userData.index : -1;
+  const nextHover = pickOrbitHoverFromPointer(e.clientX, e.clientY);
   container.classList.toggle('is-hovering', nextHover >= 0);
-  if (nextHover !== hoverIndex) {
-    setHover(nextHover, nextHover >= 0);
+  if (nextHover !== orbitHoverIndex) {
+    setOrbitHover(nextHover, nextHover >= 0);
   }
 });
 
@@ -825,17 +933,33 @@ window.addEventListener('pointerdown', (e) => {
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
 
+  if (currentView === 'content') {
+    if (isClickInsideFilePanel(e.target)) return;
+
+    const hits = raycaster.intersectObjects(saveMeshes, false);
+    if (hits.length) {
+      const idx = hits[0].object.userData.index;
+      if (idx === selectedIndex) {
+        backToBrowser();
+        return;
+      }
+      selectSection(idx, false);
+      openSection(SECTIONS[idx].key);
+      return;
+    }
+
+    backToBrowser();
+    return;
+  }
+
   const hits = raycaster.intersectObjects(saveMeshes, false);
   if (!hits.length) return;
 
-  const idx = hits[0].object.parent.userData.index;
-
-  if (currentView === 'browser') {
-    if (idx === selectedIndex) {
-      openSection(SECTIONS[idx].key);
-    } else {
-      selectSection(idx);
-    }
+  const idx = hits[0].object.userData.index;
+  if (idx === selectedIndex) {
+    openSection(SECTIONS[idx].key);
+  } else {
+    selectSection(idx);
   }
 });
 
@@ -871,7 +995,7 @@ function animate() {
     camera.lookAt(0, 0, 0);
   }
 
-  // World drift — subtle
+  // World drift - subtle
   worldGroup.position.y = Math.sin(t * f.speedY) * f.amplitudeY;
   worldGroup.position.x = Math.sin(t * f.speedX) * f.amplitudeX;
 
@@ -880,15 +1004,14 @@ function animate() {
   const beamPulse = 0.5 + 0.5 * Math.sin(t * 3);
 
   const targetHubEnergy = currentView === 'browser'
-    ? (hoverIndex >= 0 ? 1 : 0.78)
+    ? (orbitHoverIndex >= 0 ? 1 : 0.78)
     : 0.45;
   hubEnergy += (targetHubEnergy - hubEnergy) * 0.12;
 
-  // Beam angle — emblem magnetism and selection line share this
   if (currentView === 'browser') {
     let targetAngle;
-    if (hoverIndex >= 0) {
-      const hp = saveIcons[hoverIndex].group.position;
+    if (orbitHoverIndex >= 0) {
+      const hp = saveIcons[orbitHoverIndex].group.position;
       targetAngle = angleOnOrbit(hp.x, hp.y);
     } else if (pointerInOrbit) {
       targetAngle = beamAngleTarget;
@@ -900,7 +1023,6 @@ function animate() {
     beamAngle = lerpAngle(beamAngle, targetAngle, angleLerp);
   }
 
-  // GP emblem — idle drift + magnetic pull toward beam / active icon
   const magLerp = 1 - Math.exp(-7 * delta);
   const pullAmt = currentView === 'browser' ? 0.05 * (0.38 + hubEnergy * 0.62) : 0;
   const magTargetX = Math.cos(beamAngle) * pullAmt;
@@ -941,7 +1063,7 @@ function animate() {
   if (chrome && darkChrome) {
     const motionEnergy = Math.min(
       1,
-      hubEnergy * 0.72 + Math.abs(parallax.x) * 0.28 + (hoverIndex >= 0 ? 0.22 : 0)
+      hubEnergy * 0.72 + Math.abs(parallax.x) * 0.28 + (orbitHoverIndex >= 0 ? 0.22 : 0)
     );
 
     if (chrome.userData.shader) {
@@ -967,22 +1089,24 @@ function animate() {
     }
   }
 
-  // Save icons — smooth lerp toward selection targets
-  saveIcons.forEach(({ group, body, bodyMat, face, frame }, i) => {
+  // Save icons - smooth lerp toward selection targets
+  saveIcons.forEach(({ group, root, materials, frame }, i) => {
     const p = group.userData.phase;
     const bp = group.userData.basePos;
     const v = group.userData.visual;
-    const tgt = group.userData.target || { scale: 0.92, opacity: 0.32, faceOpacity: 0.4, zLift: 0 };
+    const tgt = group.userData.target || { scale: 0.8, opacity: 0.22, zLift: 0 };
     const lerp = 0.1;
 
     v.scale += (tgt.scale - v.scale) * lerp;
     v.opacity += (tgt.opacity - v.opacity) * lerp;
-    v.faceOpacity += (tgt.faceOpacity - v.faceOpacity) * lerp;
     v.zLift += (tgt.zLift - v.zLift) * lerp;
 
-    body.scale.setScalar(v.scale);
-    bodyMat.opacity = v.opacity;
-    face.material.opacity = v.faceOpacity;
+    root.scale.setScalar(v.scale * ICON_SCALE);
+    const emissiveBase = [0.16, 0.24];
+    materials.forEach((mat, mi) => {
+      mat.opacity = v.opacity;
+      mat.emissiveIntensity = emissiveBase[mi] * (0.35 + v.opacity * 0.55);
+    });
 
     group.position.set(
       bp.x + Math.sin(t * 0.5 + p) * 0.02,
@@ -991,18 +1115,18 @@ function animate() {
     );
 
     if (frame.visible) {
-      frame.material.emissiveIntensity = 0.65 + Math.sin(t * 4) * 0.28;
+      frame.material.emissiveIntensity = 0.32 + Math.sin(t * 4) * 0.12;
     }
   });
 
-  // Selection beam + hub lighting — sweeps the orbit with pointer, snaps on hover
+  // Selection beam + hub lighting - sweeps the orbit with pointer, snaps on hover
   const hubCenter = new THREE.Vector3(0, 0, 0.02);
   const hubGlowPos = new THREE.Vector3(0, 0.1, 0.55);
 
   if (currentView === 'browser') {
     const beamTip = orbitPointAtAngle(beamAngle, 0.92);
-    if (hoverIndex >= 0) {
-      const iconTip = saveIcons[hoverIndex].group.position.clone().multiplyScalar(0.88);
+    if (orbitHoverIndex >= 0) {
+      const iconTip = saveIcons[orbitHoverIndex].group.position.clone().multiplyScalar(0.88);
       beamTip.lerp(iconTip, 0.42);
     } else {
       beamTip.z = saveIcons[selectedIndex].group.position.z * 0.35;
@@ -1010,7 +1134,7 @@ function animate() {
 
     selectionLine.geometry.setFromPoints([hubCenter, beamTip]);
 
-    const onTarget = hoverIndex >= 0 || !pointerInOrbit;
+    const onTarget = orbitHoverIndex >= 0 || !pointerInOrbit;
     selectionLine.material.opacity = onTarget
       ? 0.28 + 0.34 * beamPulse * hubEnergy
       : 0.18 + 0.22 * beamPulse;
@@ -1032,10 +1156,10 @@ function animate() {
     hubPurpleFill.intensity = 0.48 + hubEnergy * 0.22;
 
     const glowOrbit = orbitPointAtAngle(beamAngle, 0.14);
-    const glowTarget = hoverIndex >= 0
+    const glowTarget = orbitHoverIndex >= 0
       ? hubGlowPos
       : new THREE.Vector3(glowOrbit.x, glowOrbit.y + 0.1, 0.58);
-    tealGlow.position.lerp(glowTarget, hoverIndex >= 0 ? 0.14 : 0.1);
+    tealGlow.position.lerp(glowTarget, orbitHoverIndex >= 0 ? 0.14 : 0.1);
     tealGlow.intensity = 0.48 + 0.24 * beamPulse + hubEnergy * 0.5;
   } else {
     selectionLine.visible = false;
@@ -1050,7 +1174,6 @@ function animate() {
   scene.children.filter(c => c.type === 'Points').forEach(p => { p.rotation.y = t * 0.012; });
 
   renderer.render(scene, camera);
-  cssRenderer.render(scene, camera);
 }
 
 animate();
@@ -1060,7 +1183,6 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   cameraEndZ = getCameraEndZ();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  cssRenderer.setSize(window.innerWidth, window.innerHeight);
 });
 
 // ---------------------------------------------------------------------------

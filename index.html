@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Gavin Petersen — portfolio experience.">
+  <meta name="description" content="Gavin Petersen - portfolio experience.">
   <meta name="theme-color" content="#080a0e">
   <title>GAVIN PETERSEN</title>
   <link rel="stylesheet" href="css/styles.css">
@@ -32,11 +32,11 @@
     <a class="loader__link" id="loader-link" href="#" hidden></a>
   </div>
 
-  <!-- Navigation — top strip (same controls as bottom) -->
+  <!-- Primary navigation - top strip -->
   <nav class="nav-strip nav-strip--top" id="os-hud" aria-label="Portfolio navigation"></nav>
 
-  <!-- LCD status readout — floats below center emblem -->
-  <div id="lcd-screen" class="lcd">
+  <!-- LCD status (hidden - boot logic only) -->
+  <div id="lcd-screen" class="lcd" hidden aria-hidden="true">
     <!-- Boot / idle header -->
     <div class="lcd__header">
       <span class="lcd__brand">VMU</span>
@@ -78,30 +78,25 @@
     <div class="lcd__glass" aria-hidden="true"></div>
   </div>
 
-  <!-- Subtle footer credit -->
   <footer class="footer">
-    <span class="footer__text">GAVIN PETERSEN · gavinpetersen.co</span>
+    <span class="footer__text">COPYRIGHT GAVIN PETERSEN 2027</span>
   </footer>
 
-  <!-- Desktop control hints — fade after boot -->
-  <aside class="controls" id="controls" aria-hidden="true">
+  <aside class="controls" id="controls" hidden aria-hidden="true">
     <span class="controls__item">←→ BROWSE</span>
     <span class="controls__sep">·</span>
     <span class="controls__item">CLICK FILE</span>
     <span class="controls__sep">·</span>
-    <span class="controls__item">B BACK</span>
+    <span class="controls__item">CLICK OFF TO CLOSE</span>
     <span class="controls__sep">·</span>
     <span class="controls__item">M MUTE</span>
   </aside>
 
-  <!-- Primary navigation — same order as top strip and 3D orbit -->
-  <nav class="nav-strip nav-strip--bottom" id="file-strip" aria-label="Portfolio navigation"></nav>
+  <div class="file-panel-scrim" id="file-panel-scrim" aria-hidden="true"></div>
 
-  <!-- File detail panel — opens when a save icon is selected -->
   <div class="file-panel" id="file-panel">
     <div class="file-panel__header">
       <span class="file-panel__title" id="panel-title">WORK.SAV</span>
-      <button class="file-panel__back" id="panel-back" aria-label="Back to browser">◀ BACK</button>
     </div>
     <div class="file-panel__body" id="panel-body"></div>
   </div>
@@ -120,13 +115,8 @@
         if (text) text.textContent = message;
         if (ring) ring.hidden = true;
         if (link && showLink) {
-          if (location.protocol === 'file:') {
-            link.href = './index.html';
-            link.textContent = 'Serve this folder, then open ./index.html via http (not file://)';
-          } else {
-            link.href = location.origin + location.pathname;
-            link.textContent = location.origin;
-          }
+          link.href = 'http://127.0.0.1:8112';
+          link.textContent = 'http://127.0.0.1:8112';
           link.hidden = false;
         }
       }
@@ -135,13 +125,13 @@
 
       if (location.protocol === 'file:') {
         document.addEventListener('DOMContentLoaded', function () {
-          showError('Server required — open this URL:', true);
+          showError('Server required - open this URL:', true);
         });
       }
 
       window.addEventListener('error', function (e) {
         if (e.message && e.message.indexOf('CORS') !== -1) {
-          showError('CORS error — use: python3 serve.py', true);
+          showError('CORS error - use: python3 serve.py', true);
         }
       });
     })();
@@ -150,7 +140,7 @@
     import('./js/main.js').catch(function (e) {
       var msg = e && e.message ? e.message : String(e);
       if (typeof window.__vmuError === 'function') {
-        window.__vmuError('Load failed: ' + msg, true);
+        window.__vmuError('Load failed: ' + msg, location.protocol === 'file:');
       }
     });
   </script>
