@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Selected design work — Gavin Petersen">
+  <meta name="theme-color" content="#080a0e">
+  <title>Work — GAVIN PETERSEN</title>
+  <link rel="stylesheet" href="../css/fonts.css">
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/portfolio.css">
+</head>
+<body>
+  <div class="pf-atmosphere" aria-hidden="true">
+    <div class="pf-atmosphere__gradient"></div>
+    <div class="pf-atmosphere__grid"></div>
+    <div class="pf-atmosphere__vignette"></div>
+  </div>
+
+  <div class="pf-shell">
+    <header class="pf-header">
+      <a class="pf-header__brand" href="../index.html">Gavin Petersen</a>
+      <a class="pf-header__exit" href="../index.html">← Orbit</a>
+    </header>
+
+    <main class="pf-main">
+      <p class="pf-eyebrow">Portfolio</p>
+      <h1 class="pf-title">Work</h1>
+      <p class="pf-lead">Case studies open in a focused view. The orbit hub stays at the root.</p>
+
+      <div class="pf-grid">
+        <a class="pf-card" href="nfl/">
+          <div class="pf-card__thumb"></div>
+          <div class="pf-card__body">
+            <span class="pf-card__title">NFL</span>
+            <p class="pf-card__meta">Event design · branding · campaigns</p>
+          </div>
+        </a>
+
+        <a class="pf-card pf-card--external" href="https://gavinpetersen.co/luc-belaire" target="_blank" rel="noopener">
+          <div class="pf-card__thumb"></div>
+          <div class="pf-card__body">
+            <span class="pf-card__title">Luc Belaire</span>
+            <p class="pf-card__meta">On gavinpetersen.co</p>
+          </div>
+        </a>
+
+        <a class="pf-card pf-card--external" href="https://gavinpetersen.co/bumbu-rum" target="_blank" rel="noopener">
+          <div class="pf-card__thumb"></div>
+          <div class="pf-card__body">
+            <span class="pf-card__title">Bumbu Rum</span>
+            <p class="pf-card__meta">On gavinpetersen.co</p>
+          </div>
+        </a>
+      </div>
+    </main>
+
+    <footer class="pf-footer">
+      <span class="pf-footer__mark">©</span> <span id="footer-year"></span> Gavin Petersen
+    </footer>
+  </div>
+
+  <script>
+    document.getElementById('footer-year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

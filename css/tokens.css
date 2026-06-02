@@ -1,0 +1,26 @@
+/* Shared palette + type — orbit + portfolio pages */
+
+:root {
+  --bg-deep:       #080a0e;
+  --bg-charcoal:   #12151c;
+  --teal-glow:     #3d8b82;
+  --teal-soft:     #2a6b65;
+  --teal-rgb:      61, 139, 130;
+  --teal-rgb-lit:  95, 170, 162;
+  --teal-dim:      rgba(var(--teal-rgb), 0.15);
+  --lcd-bg:        #0e181a;
+  --panel-bg:      rgba(14, 24, 26, 0.94);
+  --teal-ui:       #4a9189;
+  --teal-ui-dim:   #356e68;
+  --teal-ui-bright:#5da396;
+  --teal-ui-hover: #6aab9f;
+  --lcd-green:     var(--teal-ui);
+  --lcd-green-dim: var(--teal-ui-dim);
+  --lcd-green-bright: var(--teal-ui-bright);
+  --plastic-white: #eceae4;
+  --font-mono:     'Alpha Lyrae', system-ui, sans-serif;
+  --font-features: 'calt' 1, 'liga' 1, 'dlig' 1;
+  --font-features-display: 'calt' 1, 'liga' 1, 'dlig' 1, 'ss01' 1;
+  --content-max:   1120px;
+  --content-narrow: 720px;
+}

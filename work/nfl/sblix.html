@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Super Bowl LIX — event design and branding by Gavin Petersen">
+  <meta name="theme-color" content="#080a0e">
+  <title>Super Bowl LIX — GAVIN PETERSEN</title>
+  <link rel="stylesheet" href="../../css/fonts.css">
+  <link rel="stylesheet" href="../../css/tokens.css">
+  <link rel="stylesheet" href="../../css/portfolio.css">
+</head>
+<body>
+  <div class="pf-atmosphere" aria-hidden="true">
+    <div class="pf-atmosphere__gradient"></div>
+    <div class="pf-atmosphere__grid"></div>
+    <div class="pf-atmosphere__vignette"></div>
+  </div>
+
+  <div class="pf-shell">
+    <header class="pf-header">
+      <a class="pf-header__brand" href="../../index.html">Gavin Petersen</a>
+      <a class="pf-header__exit" href="../../index.html">← Orbit</a>
+    </header>
+
+    <main class="pf-main pf-main--narrow">
+      <nav class="pf-breadcrumb" aria-label="Breadcrumb">
+        <a href="../">Work</a>
+        <span class="pf-breadcrumb__sep">/</span>
+        <a href="./">NFL</a>
+        <span class="pf-breadcrumb__sep">/</span>
+        <span>Super Bowl LIX</span>
+      </nav>
+
+      <p class="pf-eyebrow">NFL</p>
+      <h1 class="pf-title">Super Bowl LIX</h1>
+      <p class="pf-case__role">Event design &amp; branding</p>
+
+      <p class="pf-case__intro">
+        Concept and branding for 2025’s Super Bowl LIX — color palette, storytelling,
+        patterns, graphic elements, and overall look developed with the team.
+      </p>
+
+      <div class="pf-blocks">
+        <section class="pf-block">
+          <h2 class="pf-block__label">Conceptual</h2>
+          <p class="pf-block__text">
+            Inspired by the hand-crafted, beaded, stitched, and sewn pageantry seen in
+            New Orleans Second Line parades and celebrations.
+          </p>
+        </section>
+        <section class="pf-block">
+          <h2 class="pf-block__label">Graphic elements</h2>
+          <p class="pf-block__text">
+            Style guide elements, photographic treatments, and compositions used across
+            the event.
+          </p>
+        </section>
+        <section class="pf-block">
+          <h2 class="pf-block__label">Execution</h2>
+          <p class="pf-block__text">
+            Campaign rollout in progress. Imagery below links to the live case study until
+            assets are hosted here.
+          </p>
+        </section>
+      </div>
+
+      <p class="pf-eyebrow" style="margin-bottom: 14px;">Gallery</p>
+      <div class="pf-gallery" id="gallery">
+        <!-- Placeholders — swap src for local files in assets/work/nfl/sblix/ -->
+      </div>
+      <p class="pf-block__text" style="margin-bottom: 32px;">
+        <a href="https://gavinpetersen.co/nfl/sblix" target="_blank" rel="noopener">View full gallery on gavinpetersen.co ↗</a>
+      </p>
+
+      <nav class="pf-pager" aria-label="Project navigation">
+        <a href="./">← NFL</a>
+        <a href="https://gavinpetersen.co/nfl/sblix" target="_blank" rel="noopener">Live case study ↗</a>
+      </nav>
+    </main>
+
+    <footer class="pf-footer">
+      <span class="pf-footer__mark">©</span> <span id="footer-year"></span> Gavin Petersen
+    </footer>
+  </div>
+
+  <script>
+    document.getElementById('footer-year').textContent = new Date().getFullYear();
+
+    const PLACEHOLDERS = [
+      { label: 'Posters', wide: true },
+      { label: 'Stadium aerial' },
+      { label: 'Music Hall' },
+      { label: 'Bywater' },
+      { label: 'Stadium interior' },
+      { label: 'Secondary mark' },
+      { label: 'AP wire 01' },
+      { label: 'AP wire 02' },
+      { label: 'AP wire 03' },
+    ];
+
+    const gallery = document.getElementById('gallery');
+    PLACEHOLDERS.forEach(({ label, wide }) => {
+      const el = document.createElement('div');
+      el.className = 'pf-gallery__item' + (wide ? ' pf-gallery__item--wide' : '');
+      el.setAttribute('role', 'img');
+      el.setAttribute('aria-label', label);
+      el.style.display = 'flex';
+      el.style.alignItems = 'flex-end';
+      el.style.padding = '12px';
+      el.style.fontSize = '10px';
+      el.style.letterSpacing = '0.1em';
+      el.style.textTransform = 'uppercase';
+      el.style.color = 'rgba(var(--teal-rgb), 0.45)';
+      el.textContent = label;
+      gallery.appendChild(el);
+    });
+  </script>
+</body>
+</html>

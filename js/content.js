@@ -23,8 +23,16 @@ export const CONTENT = {
     html: `
       <p class="lcd__line">Selected graphic design, branding, and illustration.</p>
       <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title"><a href="${SITE}/" target="_blank" rel="noopener">GAVIN PETERSEN</a></div>
-        <div class="lcd__entry-desc">Portfolio home · gavinpetersen.co</div>
+        <div class="lcd__entry-title"><a href="work/">WORK INDEX</a></div>
+        <div class="lcd__entry-desc">Portfolio view · same site</div>
+      </div>
+      <div class="lcd__entry lcd__line">
+        <div class="lcd__entry-title"><a href="work/nfl/">NFL</a></div>
+        <div class="lcd__entry-desc">Client projects</div>
+      </div>
+      <div class="lcd__entry lcd__line">
+        <div class="lcd__entry-title"><a href="${SITE}/" target="_blank" rel="noopener">GAVINPETERSEN.CO</a></div>
+        <div class="lcd__entry-desc">Full archive ↗</div>
       </div>
     `,
   },
