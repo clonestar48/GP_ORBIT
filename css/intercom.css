@@ -695,7 +695,7 @@
   font-size: clamp(11px, 1.05vw, 13px);
   line-height: 1.62;
   letter-spacing: 0.1em;
-  font-feature-settings: var(--font-features-heavy);
+  font-feature-settings: var(--font-features-max);
   color: rgba(var(--teal-rgb-lit), 0.88);
   text-shadow:
     0 0 10px rgba(61, 139, 130, 0.45),
