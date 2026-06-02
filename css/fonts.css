@@ -1,0 +1,32 @@
+/* Alpha Lyrae — OFL, vegaprotocol/alpha-lyrae
+   Glitch: calt swaps every 4th glyph to pixel forms (SS01→SS02→SS05 via font logic). */
+
+@font-face {
+  font-family: 'Alpha Lyrae';
+  src: url('../fonts/AlphaLyrae-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Baseline: calt chain + pixel ligatures + SS01 pixel forms */
+  --font-features: 'calt' 1, 'liga' 1, 'dlig' 1, 'ss01' 1;
+  /* UI emphasis: glitched pixel set (SS03) */
+  --font-features-heavy: 'calt' 1, 'liga' 1, 'dlig' 1, 'ss01' 1, 'ss03' 1;
+  /* Peak: SS03 + SS05 displaced pixels */
+  --font-features-max: 'calt' 1, 'liga' 1, 'dlig' 1, 'ss01' 1, 'ss03' 1, 'ss05' 1;
+}
+
+html {
+  font-feature-settings: var(--font-features);
+  font-variant-ligatures: common-ligatures contextual;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --font-features: 'calt' 1, 'liga' 1, 'dlig' 1;
+    --font-features-heavy: 'calt' 1, 'liga' 1, 'dlig' 1, 'ss03' 1;
+    --font-features-max: 'calt' 1, 'liga' 1, 'dlig' 1, 'ss03' 1;
+  }
+}

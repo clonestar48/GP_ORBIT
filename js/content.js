@@ -45,19 +45,13 @@ export const CONTENT = {
   contact: {
     title: 'CONTACT',
     html: `
-      <div class="contact-comms">
-        <p class="lcd__line contact-comms__status">CHANNEL OPEN</p>
-        <p class="lcd__line contact-comms__note">Direct transmission available. No form. No ticket system.</p>
-        <div class="lcd__line contact-comms__signal">
-          <span class="contact-comms__label">DIRECT SIGNAL</span>
-          <a class="contact-comms__email" href="mailto:${CONTACT_EMAIL}" data-contact-email>${CONTACT_EMAIL}</a>
+      <div class="contact-panel">
+        <a class="contact-panel__email" href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a>
+        <div class="contact-panel__actions">
+          <button type="button" class="contact-panel__btn" data-contact-copy>COPY ADDRESS</button>
+          <a class="contact-panel__btn contact-panel__btn--mail" href="mailto:${CONTACT_EMAIL}">OPEN MAIL CLIENT</a>
         </div>
-        <p class="lcd__line contact-comms__aside">Paperwork optional. Signal preferred.</p>
-        <div class="lcd__line contact-comms__actions">
-          <button type="button" class="contact-comms__btn" data-contact-copy>COPY ADDRESS</button>
-          <a class="contact-comms__btn contact-comms__btn--link" href="mailto:${CONTACT_EMAIL}">OPEN MAIL CLIENT</a>
-        </div>
-        <p class="lcd__line contact-comms__feedback" data-contact-feedback aria-live="polite"></p>
+        <p class="contact-panel__feedback" data-contact-feedback aria-live="polite"></p>
       </div>
     `,
   },
@@ -95,10 +89,10 @@ export function initContactPanel(root) {
     }
 
     if (feedback) {
-      feedback.textContent = ok ? 'SIGNAL COPIED TO BUFFER' : 'COPY FAILED — USE LINK OR SELECT ADDRESS';
+      feedback.textContent = ok ? 'Copied' : 'Copy failed';
       window.setTimeout(() => {
         feedback.textContent = '';
-      }, 2400);
+      }, 2000);
     }
   });
 }

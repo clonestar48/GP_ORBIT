@@ -1,172 +1,66 @@
 /**
- * Orbit navigation glyphs - beveled silhouettes matching the GP emblem pearl chrome.
+ * Orbit navigation glyphs — GP pearl chrome (shared env + sparkle shader), diamond test shape.
  */
 
 import * as THREE from '../assets/vendor/three.module.js';
-import { extrudedPlate } from './emblem.js';
+import { clonePearlMaterialsForIcon, extrudedPlate } from './emblem.js';
 
-const TEAL_BOOST = 1.2;
-const GLYPH_DEPTH = 0.12;
-const GLYPH_ITALIC = 0.18;
-export const ICON_SCALE = 0.78;
-const BEVEL = {
+/** ~35% smaller than prior 0.78 orbit icon scale */
+export const ICON_SCALE = 0.51;
+
+/** Match GP numeral extrude bevel */
+const DIAMOND_EXTRUDE = {
+  depth: 0.38,
   bevelEnabled: true,
-  bevelThickness: 0.055,
-  bevelSize: 0.048,
-  bevelSegments: 2,
-  curveSegments: 2,
+  bevelThickness: 0.105,
+  bevelSize: 0.095,
+  bevelSegments: 3,
+  curveSegments: 1,
   material: 0,
   extrudeMaterial: 1,
 };
 
-function plate(w, h, cut = 0.03) {
-  return extrudedPlate(w, h, cut, GLYPH_DEPTH, GLYPH_ITALIC);
-}
-
-/** Extruded silhouette - same bevel recipe as emblem plates */
-function extrudedSilhouette(points, depth = GLYPH_DEPTH, italic = GLYPH_ITALIC) {
+function extrudedDiamond(size = 0.62, italic = 0.22) {
+  const s = size / 2;
   const shape = new THREE.Shape();
-  points.forEach(([x, y], i) => {
+  const pts = [
+    [0, s],
+    [s, 0],
+    [0, -s],
+    [-s, 0],
+  ];
+  pts.forEach(([x, y], i) => {
     const px = x + y * italic;
     if (i === 0) shape.moveTo(px, y);
     else shape.lineTo(px, y);
   });
   shape.closePath();
 
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth, ...BEVEL });
+  const geometry = new THREE.ExtrudeGeometry(shape, DIAMOND_EXTRUDE);
   geometry.center();
   geometry.computeVertexNormals();
   return geometry;
 }
 
-function addStroke(group, geometry, materials, x, y, z = 0, rotZ = 0) {
-  const mesh = new THREE.Mesh(geometry, materials);
-  mesh.position.set(x, y, z);
-  mesh.rotation.z = rotZ;
-  mesh.castShadow = true;
-  group.add(mesh);
-  return mesh;
-}
-
-function addSilhouette(group, points, materials, scale = 1) {
-  const pts = scale === 1 ? points : points.map(([x, y]) => [x * scale, y * scale]);
-  const mesh = new THREE.Mesh(extrudedSilhouette(pts), materials);
-  mesh.castShadow = true;
-  group.add(mesh);
-  return mesh;
-}
-
-function circlePoints(radius, segments = 22) {
-  const pts = [];
-  for (let i = 0; i < segments; i++) {
-    const a = (i / segments) * Math.PI * 2 - Math.PI / 2;
-    pts.push([Math.cos(a) * radius, Math.sin(a) * radius]);
-  }
-  return pts;
-}
-
-function ellipsePoints(rx, ry, segments = 24) {
-  const pts = [];
-  for (let i = 0; i < segments; i++) {
-    const a = (i / segments) * Math.PI * 2 - Math.PI / 2;
-    pts.push([Math.cos(a) * rx, Math.sin(a) * ry]);
-  }
-  return pts;
-}
-
-/** WORK - diamond / rhombus */
+/** Pearl diamond — same dual-material stack as emblem plates */
 function buildDiamond(materials) {
   const g = new THREE.Group();
-  const s = 0.88;
-  addSilhouette(g, [
-    [0, 0.32 * s],
-    [0.26 * s, 0],
-    [0, -0.32 * s],
-    [-0.26 * s, 0],
-  ], materials);
+  const mesh = new THREE.Mesh(extrudedDiamond(0.64), materials);
+  mesh.castShadow = true;
+  g.add(mesh);
   return g;
 }
 
-/** NFL - american football (side profile) */
-function buildFootball(materials) {
-  const g = new THREE.Group();
-  const s = 0.88;
-  addSilhouette(g, [
-    [-0.3 * s, 0],
-    [-0.1 * s, 0.17 * s],
-    [0.1 * s, 0.17 * s],
-    [0.3 * s, 0],
-    [0.1 * s, -0.17 * s],
-    [-0.1 * s, -0.17 * s],
-  ], materials);
-  return g;
-}
-
-/** PORTRAITS - vertical oval (portrait frame) */
-function buildPortraitOval(materials) {
-  const g = new THREE.Group();
-  const s = 0.88;
-  addSilhouette(g, ellipsePoints(0.2 * s, 0.3 * s), materials);
-  return g;
-}
-
-/** ABOUT - round face (single silhouette - no detached mouth/eye plates) */
-function buildGrin(materials) {
-  const g = new THREE.Group();
-  const s = 0.88;
-  addSilhouette(g, circlePoints(0.3 * s, 24), materials);
-  return g;
-}
-
-const GLYPH_BUILDERS = {
-  work: buildDiamond,
-  lab: buildFootball,
-  about: buildGrin,
-  contact: buildPortraitOval,
-  nfl: buildFootball,
-  portraits: buildPortraitOval,
-};
-
-export function createIconMaterials(pearlAssets) {
-  const { envMap, textures } = pearlAssets;
-  const { sparkleTexture, emissiveSparkleTexture } = textures;
-
-  function makeMat(isChrome) {
-    return new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color(isChrome ? 0x6ec8be : 0x07111b),
-      metalness: 1,
-      roughness: isChrome ? 0.2 : 0.28,
-      roughnessMap: sparkleTexture,
-      clearcoat: 1,
-      clearcoatRoughness: isChrome ? 0.08 : 0.1,
-      envMap,
-      envMapIntensity: isChrome ? 1.45 * TEAL_BOOST : 1.1 * TEAL_BOOST,
-      iridescence: isChrome ? 0.72 : 0.5,
-      iridescenceIOR: isChrome ? 1.85 : 1.55,
-      iridescenceThicknessRange: isChrome ? [100, 520] : [60, 280],
-      emissive: new THREE.Color(isChrome ? 0xb8a0ff : 0x6fd4c8),
-      emissiveMap: emissiveSparkleTexture,
-      emissiveIntensity: isChrome ? 0.18 : 0.26,
-      transparent: true,
-      opacity: 0.28,
-    });
-  }
-
-  return [makeMat(true), makeMat(false)];
-}
-
-/** Build a section glyph - pearl silhouette + hit volume + selection halo */
+/** All sections use diamond while testing materiality */
 export function buildSectionSaveIcon(sectionKey, pearlAssets) {
-  const materials = createIconMaterials(pearlAssets);
-  const build = GLYPH_BUILDERS[sectionKey] || buildDiamond;
-
+  const materials = clonePearlMaterialsForIcon(pearlAssets);
   const root = new THREE.Group();
-  const glyph = build(materials);
-  root.add(glyph);
+  root.add(buildDiamond(materials));
   root.scale.setScalar(ICON_SCALE);
 
+  /** Generous invisible target — diamonds are small on screen */
   const hit = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.46, 0.1),
+    new THREE.BoxGeometry(0.58, 0.62, 0.14),
     new THREE.MeshBasicMaterial({ visible: false })
   );
   hit.userData.isSave = true;

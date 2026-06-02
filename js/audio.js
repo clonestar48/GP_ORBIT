@@ -5,6 +5,17 @@
 
 let ctx = null;
 let enabled = true;
+/** UI tones only after a real gesture (avoids load / autoplay blips) */
+let userUnlocked = false;
+const lastPlayed = { hover: 0, navigate: 0, confirm: 0, cancel: 0, boot: 0, spin: 0 };
+const COOLDOWN_MS = {
+  hover: 150,
+  navigate: 220,
+  confirm: 320,
+  cancel: 280,
+  boot: 500,
+  spin: 400,
+};
 
 /** Lazily create AudioContext on first user gesture */
 function getContext() {
@@ -19,6 +30,18 @@ function canPlay() {
   if (!enabled) return false;
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
   return true;
+}
+
+function canPlayUI() {
+  return canPlay() && userUnlocked;
+}
+
+function tryTone(kind, playFn) {
+  if (!canPlayUI()) return;
+  const now = performance.now();
+  if (now - lastPlayed[kind] < COOLDOWN_MS[kind]) return;
+  lastPlayed[kind] = now;
+  playFn();
 }
 
 /** Play a short synthesized tone */
@@ -179,34 +202,42 @@ function beginStaticCrackle({ burst = false, targetVol = 0.013 } = {}) {
 export const audio = {
   /** Soft tick on menu navigation */
   navigate() {
-    tone(880, 0.04, 0.025, 'square');
+    tryTone('navigate', () => tone(880, 0.04, 0.022, 'square'));
   },
 
   /** Lighter tick on hover preview */
   hover() {
-    tone(740, 0.025, 0.012, 'sine');
+    tryTone('hover', () => tone(740, 0.022, 0.01, 'sine'));
   },
 
   /** Confirm tone on selection */
   confirm() {
-    tone(1320, 0.07, 0.035, 'square');
-    setTimeout(() => tone(1760, 0.05, 0.02, 'square'), 50);
+    tryTone('confirm', () => {
+      tone(1320, 0.065, 0.03, 'square');
+      setTimeout(() => {
+        if (canPlayUI()) tone(1760, 0.045, 0.018, 'square');
+      }, 50);
+    });
   },
 
   /** Lower tone on back/cancel */
   cancel() {
-    tone(440, 0.06, 0.03, 'square');
+    tryTone('cancel', () => tone(440, 0.055, 0.026, 'square'));
   },
 
-  /** Boot sequence blip */
+  /** Boot sequence blip (unused on auto-load; available if needed later) */
   boot() {
-    tone(660, 0.03, 0.02, 'sine');
+    tryTone('boot', () => tone(660, 0.028, 0.016, 'sine'));
   },
 
   /** Quick whir on GP emblem spin */
   spin() {
-    tone(520, 0.07, 0.022, 'sine');
-    setTimeout(() => tone(920, 0.05, 0.016, 'square'), 70);
+    tryTone('spin', () => {
+      tone(520, 0.065, 0.02, 'sine');
+      setTimeout(() => {
+        if (canPlayUI()) tone(920, 0.045, 0.014, 'square');
+      }, 70);
+    });
   },
 
   /** Toggle audio on/off - returns new state */
@@ -223,6 +254,7 @@ export const audio = {
 
   /** Resume context after first interaction */
   unlock() {
+    userUnlocked = true;
     if (canPlay()) getContext();
   },
 

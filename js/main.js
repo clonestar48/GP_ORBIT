@@ -8,7 +8,7 @@
 import * as THREE from '../assets/vendor/three.module.js';
 import { CONTENT, initContactPanel } from './content.js';
 import { audio } from './audio.js';
-import { buildGPEmblem, createPearlMaterialSet } from './emblem.js';
+import { buildGPEmblem, createPearlMaterialSet, tickPearlMaterialShader } from './emblem.js';
 import { initIntercom, startIntercomNoise, stopIntercomNoise } from './intercom.js';
 import { buildSectionSaveIcon, ICON_SCALE } from './save-icons.js';
 
@@ -84,22 +84,138 @@ function getCameraEndZ() {
   return 4.2;
 }
 
-function createBIOSSpiral(segments = 240) {
-  const points = [];
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    const angle = t * Math.PI * 5.5;
-    const radius = 0.05 + t * 1.8;
-    points.push(new THREE.Vector3(
-      Math.cos(angle) * radius,
-      Math.sin(angle) * radius,
-      -0.4 - t * 0.2
-    ));
-  }
-  return new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(points),
-    new THREE.LineBasicMaterial({ color: CONFIG.colors.teal, transparent: true, opacity: 0.22 })
+const INNER_OVAL_OPACITY = 0.131;
+
+function addDashboardSegment(group, mat, a, b) {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([a, b]),
+    mat
   );
+  line.renderOrder = -2;
+  group.add(line);
+}
+
+/** Sparse reticle ticks, center pip, and sub-scales inside the master oval */
+function addOvalDashboardMarks(group, mat, masterR, flat, z) {
+  const majorLen = masterR * 0.052;
+  const minorLen = masterR * 0.03;
+  const majorT = [0.5, 1];
+  const minorT = [0.25, 0.75];
+
+  const hTick = (x, len) => {
+    addDashboardSegment(group, mat,
+      new THREE.Vector3(x, -len, z),
+      new THREE.Vector3(x, len, z));
+  };
+  const vTick = (y, len) => {
+    addDashboardSegment(group, mat,
+      new THREE.Vector3(-len, y, z),
+      new THREE.Vector3(len, y, z));
+  };
+
+  for (const t of minorT) {
+    hTick(t * masterR, minorLen);
+    hTick(-t * masterR, minorLen);
+    vTick(t * masterR * flat, minorLen);
+    vTick(-t * masterR * flat, minorLen);
+  }
+  for (const t of majorT) {
+    hTick(t * masterR, majorLen);
+    hTick(-t * masterR, majorLen);
+    vTick(t * masterR * flat, majorLen);
+    vTick(-t * masterR * flat, majorLen);
+  }
+
+  const subTick = minorLen * 0.45;
+  const subLines = [
+    { y: -0.4, half: 0.24 },
+    { y: -0.56, half: 0.15 },
+  ];
+  for (const { y, half } of subLines) {
+    const yw = y * masterR * flat;
+    const xw = half * masterR;
+    addDashboardSegment(group, mat,
+      new THREE.Vector3(-xw, yw, z),
+      new THREE.Vector3(xw, yw, z));
+    for (let i = -2; i <= 2; i++) {
+      if (i === 0) continue;
+      const x = (i / 2) * xw;
+      addDashboardSegment(group, mat,
+        new THREE.Vector3(x, yw - subTick, z),
+        new THREE.Vector3(x, yw + subTick, z));
+    }
+  }
+
+  const pipGeo = new THREE.BufferGeometry();
+  pipGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, z], 3));
+  const pip = new THREE.Points(pipGeo, new THREE.PointsMaterial({
+    color: CONFIG.colors.teal,
+    size: 0.012,
+    transparent: true,
+    opacity: INNER_OVAL_OPACITY,
+    sizeAttenuation: true,
+    depthWrite: false,
+  }));
+  pip.renderOrder = -2;
+  group.add(pip);
+  group.userData.dotMaterial = pip.material;
+}
+
+/** Seven inner ovals + master torus — even steps from hub to master */
+function createBIOSSpiral(ringCount = 7, segmentsPerRing = 96) {
+  const flat = CONFIG.orbitFlatten;
+  const masterR = CONFIG.orbitRadius;
+  const step = masterR / (ringCount + 1);
+  const r1 = step * 1.15;
+  const ringGap = (masterR - r1) / ringCount;
+  const mat = new THREE.LineBasicMaterial({
+    color: CONFIG.colors.teal,
+    transparent: true,
+    opacity: INNER_OVAL_OPACITY,
+    depthWrite: false,
+  });
+  const group = new THREE.Group();
+  const ringZ = -0.14;
+
+  for (let ring = 0; ring < ringCount; ring++) {
+    const r = r1 + ringGap * ring;
+    const points = [];
+    for (let i = 0; i <= segmentsPerRing; i++) {
+      const angle = (i / segmentsPerRing) * Math.PI * 2;
+      points.push(new THREE.Vector3(
+        Math.cos(angle) * r,
+        Math.sin(angle) * r * flat,
+        ringZ
+      ));
+    }
+    const ovalLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(points),
+      mat
+    );
+    ovalLine.renderOrder = -2;
+    group.add(ovalLine);
+  }
+
+  const xAxisGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-masterR, 0, ringZ),
+    new THREE.Vector3(masterR, 0, ringZ),
+  ]);
+  const yAxisGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, -masterR * flat, ringZ),
+    new THREE.Vector3(0, masterR * flat, ringZ),
+  ]);
+  const xAxis = new THREE.Line(xAxisGeo, mat);
+  const yAxis = new THREE.Line(yAxisGeo, mat);
+  xAxis.renderOrder = -2;
+  yAxis.renderOrder = -2;
+  group.add(xAxis);
+  group.add(yAxis);
+  addOvalDashboardMarks(group, mat, masterR, flat, ringZ);
+
+  group.renderOrder = -2;
+  group.userData.ringMaterial = mat;
+  group.userData.baseOpacity = INNER_OVAL_OPACITY;
+  return group;
 }
 
 function animateContentLines(container) {
@@ -201,9 +317,11 @@ const emblemPivot = new THREE.Group();
 emblemPivot.add(emblem);
 const EMBLEM_HOME_Y = -0.22;
 const emblemMeshes = [];
+const EMBLEM_RENDER_ORDER = 12;
 emblem.traverse((obj) => {
   if (obj.isMesh) {
     obj.layers.set(EMBLEM_LAYER);
+    obj.renderOrder = EMBLEM_RENDER_ORDER;
     emblemMeshes.push(obj);
   }
 });
@@ -390,7 +508,10 @@ function buildSaveIcon(section, index) {
 
   group.userData.visual = { scale: 0.8, opacity: 0, zLift: 0 };
   group.userData.target = { scale: 0.8, opacity: 0.22, zLift: 0 };
-  group.renderOrder = 2;
+  group.renderOrder = 6;
+  root.traverse((obj) => {
+    if (obj.isMesh) obj.renderOrder = 6;
+  });
 
   savesGroup.add(group);
   saveIcons.push({ group, section, root, frame, materials });
@@ -410,6 +531,7 @@ const orbitRing = new THREE.Mesh(
   })
 );
 orbitRing.scale.y = CONFIG.orbitFlatten;
+orbitRing.renderOrder = 1;
 worldGroup.add(orbitRing);
 
 const clockTicks = new THREE.Group();
@@ -421,41 +543,187 @@ for (let i = 0; i < SECTIONS.length; i++) {
     new THREE.Vector3(Math.cos(angle) * r0, Math.sin(angle) * r0 * CONFIG.orbitFlatten, 0.012),
     new THREE.Vector3(Math.cos(angle) * r1, Math.sin(angle) * r1 * CONFIG.orbitFlatten, 0.012),
   ]);
-  clockTicks.add(new THREE.Line(
+  const tick = new THREE.Line(
     tickGeo,
-    new THREE.LineBasicMaterial({ color: CONFIG.colors.teal, transparent: true, opacity: 0.38 })
-  ));
+    new THREE.LineBasicMaterial({
+      color: CONFIG.colors.teal,
+      transparent: true,
+      opacity: 0.38,
+      depthWrite: false,
+    })
+  );
+  tick.renderOrder = 1;
+  clockTicks.add(tick);
 }
+clockTicks.renderOrder = 1;
 worldGroup.add(clockTicks);
+
+const biosSpiral = createBIOSSpiral();
+worldGroup.add(biosSpiral);
 
 // ---------------------------------------------------------------------------
 // Atmosphere
 // ---------------------------------------------------------------------------
 
-function createParticles(count = 120) {
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 10;
-    positions[i * 3 + 1] = (Math.random() - 0.5) * 10;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 10 - 2;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  return new THREE.Points(geo, new THREE.PointsMaterial({
-    color: CONFIG.colors.teal,
-    size: 0.012,
-    transparent: true,
-    opacity: 0.3,
-    sizeAttenuation: true,
-  }));
+/** Random point inside the orbit ellipse (fills the center oval, not a horizontal strip) */
+function sampleOrbitEllipsePosition(orbitR, shellMin = 0.38, shellMax = 1.22) {
+  const flat = CONFIG.orbitFlatten;
+  const theta = Math.random() * Math.PI * 2;
+  const shell = shellMin + Math.random() * (shellMax - shellMin);
+  const r = orbitR * shell * Math.sqrt(Math.random());
+  return [
+    Math.cos(theta) * r,
+    Math.sin(theta) * r * flat,
+    Math.sin(theta) * r * 0.22 - 0.55 - Math.random() * 1.5,
+  ];
 }
 
-scene.add(createParticles());
+/** Ring just outside the orbit oval */
+function sampleOutsideOrbitPosition(orbitR) {
+  const flat = CONFIG.orbitFlatten;
+  const theta = Math.random() * Math.PI * 2;
+  const inner = orbitR * 1.2;
+  const outer = orbitR * (2.05 + Math.random() * 0.95);
+  const r = inner + Math.random() * (outer - inner);
+  return [
+    Math.cos(theta) * r,
+    Math.sin(theta) * r * flat,
+    -0.35 - Math.random() * 2.4,
+  ];
+}
 
-const biosSpiral = createBIOSSpiral();
-biosSpiral.position.set(0, 0.1, -2.2);
-biosSpiral.scale.setScalar(1.1);
-scene.add(biosSpiral);
+/** Scatter above/below and beside the oval (viewport periphery) */
+function samplePeripheralStarPosition(orbitR) {
+  const flat = CONFIG.orbitFlatten;
+  const axis = Math.random();
+  if (axis < 0.42) {
+    const x = (Math.random() - 0.5) * orbitR * 2.6;
+    const sign = Math.random() < 0.5 ? 1 : -1;
+    const y = sign * orbitR * flat * (1.05 + Math.random() * 1.35);
+    return [x, y, -0.6 - Math.random() * 2.2];
+  }
+  const y = (Math.random() - 0.5) * orbitR * flat * 1.8;
+  const sign = Math.random() < 0.5 ? 1 : -1;
+  const x = sign * orbitR * (1.15 + Math.random() * 1.5);
+  return [x, y, -0.6 - Math.random() * 2.2];
+}
+
+/** Pin-point star field — distant shell + orbital disk + rare twinkles */
+function createStarField(count = 280) {
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const brightness = new Float32Array(count);
+  const phases = new Float32Array(count);
+  const twinkle = new Float32Array(count);
+  const orbitR = CONFIG.orbitRadius;
+
+  for (let i = 0; i < count; i++) {
+    let x;
+    let y;
+    let z;
+    const band = Math.random();
+    if (band < 0.2) {
+      const theta = Math.random() * Math.PI * 2;
+      const r = 3 + Math.random() * 4.8;
+      x = Math.cos(theta) * r;
+      y = Math.sin(theta) * r * CONFIG.orbitFlatten;
+      z = -2.4 - Math.random() * 3.8;
+    } else if (band < 0.44) {
+      [x, y, z] = sampleOrbitEllipsePosition(orbitR, 0.35, 1.15);
+    } else if (band < 0.96) {
+      [x, y, z] = Math.random() < 0.62
+        ? sampleOutsideOrbitPosition(orbitR)
+        : samplePeripheralStarPosition(orbitR);
+    } else {
+      [x, y, z] = sampleOrbitEllipsePosition(orbitR, 0.2, 0.95);
+      z = 0.12 + Math.random() * 0.85;
+    }
+
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+
+    const isTwinkle = Math.random() < 0.0225;
+    twinkle[i] = isTwinkle ? 1 : 0;
+    phases[i] = Math.random() * Math.PI * 2;
+    if (isTwinkle) {
+      sizes[i] = 1.05 + Math.random() * 0.45;
+      brightness[i] = 0.72 + Math.random() * 0.28;
+    } else if (band < 0.2) {
+      sizes[i] = 0.6 + Math.random() * 0.5;
+      brightness[i] = 0.32 + Math.random() * 0.36;
+    } else if (band < 0.96) {
+      sizes[i] = 0.65 + Math.random() * 0.48;
+      brightness[i] = band < 0.44
+        ? 0.42 + Math.random() * 0.42
+        : 0.28 + Math.random() * 0.32;
+    } else {
+      sizes[i] = 0.7 + Math.random() * 0.55;
+      brightness[i] = 0.42 + Math.random() * 0.42;
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('aBrightness', new THREE.BufferAttribute(brightness, 1));
+  geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+  geo.setAttribute('aTwinkle', new THREE.BufferAttribute(twinkle, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      uOpacity: { value: 0.72 },
+    },
+    vertexShader: `
+      attribute float aSize;
+      attribute float aBrightness;
+      attribute float phase;
+      attribute float aTwinkle;
+      uniform float uTime;
+      uniform float uPixelRatio;
+      varying float vBrightness;
+      void main() {
+        float wave = 0.5 + 0.5 * sin(uTime * (0.5 + aTwinkle * 0.85) + phase);
+        float pulse = mix(1.0, 0.38 + 0.62 * pow(wave, 2.4), aTwinkle);
+        vBrightness = aBrightness * pulse;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        float px = (1.05 + aSize * 1.75) * uPixelRatio;
+        float atten = 7.0 / max(-mvPosition.z, 2.0);
+        gl_PointSize = min(px * atten, 15.0 * uPixelRatio);
+      }
+    `,
+    fragmentShader: `
+      uniform float uOpacity;
+      varying float vBrightness;
+      void main() {
+        vec2 uv = gl_PointCoord - vec2(0.5);
+        float d = length(uv);
+        if (d > 0.5) discard;
+        float core = 1.0 - smoothstep(0.0, 0.16, d);
+        float halo = 1.0 - smoothstep(0.16, 0.5, d);
+        float alpha = (core * 0.95 + halo * 0.18) * vBrightness * uOpacity;
+        if (alpha < 0.025) discard;
+        vec3 col = mix(vec3(0.34, 0.58, 0.55), vec3(0.82, 0.96, 0.93), core);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.renderOrder = -2;
+  return points;
+}
+
+const starField = createStarField();
+worldGroup.add(starField);
 
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(14, 14),
@@ -495,9 +763,7 @@ function buildNavItem(section, index) {
   el.className = 'nav-strip__item';
   el.dataset.section = section.key;
   el.dataset.index = String(index);
-  el.innerHTML =
-    '<span class="nav-strip__cursor">▶</span>' +
-    `<span class="nav-strip__label">${section.label}</span>`;
+  el.innerHTML = `<span class="nav-strip__label">${section.label}</span>`;
   return el;
 }
 
@@ -512,6 +778,50 @@ buildNavStrips();
 
 const topItems = [...osHud.querySelectorAll('.nav-strip__item')];
 
+const orbitNavBox = new THREE.Box3();
+const orbitNavCenter = new THREE.Vector3();
+
+function applyNavStripTransform() {
+  if (!osHud.classList.contains('nav-strip--orbit-aligned')) return;
+  osHud.style.transform = navRetracted
+    ? 'translateY(calc(-100% - 40px))'
+    : 'none';
+}
+
+function projectIconScreenCenter(root) {
+  orbitNavBox.setFromObject(root);
+  orbitNavBox.getCenter(orbitNavCenter);
+  orbitNavCenter.applyMatrix4(root.matrixWorld);
+  orbitNavCenter.project(camera);
+  return {
+    x: (orbitNavCenter.x * 0.5 + 0.5) * window.innerWidth,
+    y: (-orbitNavCenter.y * 0.5 + 0.5) * window.innerHeight,
+  };
+}
+
+/**
+ * Nav width = distance between top orbit diamond centers (WORK / CONTACT anchors).
+ * Strip is centered on the viewport; labels are evenly spaced inside.
+ */
+function syncNavStripToOrbit() {
+  if (!isIntroComplete || currentView !== 'browser' || !saveIcons.length) return;
+
+  const metrics = saveIcons.map(({ root }) => projectIconScreenCenter(root));
+  const topPair = [...metrics].sort((a, b) => a.y - b.y).slice(0, 2);
+  if (topPair.length < 2) return;
+
+  const leftCenterX = Math.min(topPair[0].x, topPair[1].x);
+  const rightCenterX = Math.max(topPair[0].x, topPair[1].x);
+  const diamondSpan = rightCenterX - leftCenterX;
+  const spanWidth = Math.max(120, diamondSpan * 0.5);
+  const stripLeft = (window.innerWidth - spanWidth) * 0.5;
+
+  osHud.style.left = `${Math.round(stripLeft)}px`;
+  osHud.style.width = `${Math.round(spanWidth)}px`;
+  osHud.classList.add('nav-strip--orbit-aligned');
+  applyNavStripTransform();
+}
+
 function isOverNavStrip(clientX, clientY) {
   const el = document.elementFromPoint(clientX, clientY);
   return el != null && osHud.contains(el);
@@ -524,7 +834,7 @@ function bindNavStripItem(btn) {
   btn.addEventListener('mouseenter', () => {
     if (currentView !== 'browser') return;
     audio.unlock();
-    setNavHover(idx, true);
+    setNavHover(idx, false);
   });
   btn.addEventListener('mouseleave', () => {
     if (currentView !== 'browser') return;
@@ -559,15 +869,35 @@ function navBarIsPinned() {
   return osHud.matches(':hover');
 }
 
+function navIsPointerEngaged() {
+  return navHoverIndex >= 0 || orbitHoverIndex >= 0 || navBarIsPinned();
+}
+
+function navStripShouldShow() {
+  if (currentView === 'content') return selectedIndex >= 0;
+  if (currentView !== 'browser') return false;
+  return selectedIndex >= 0 || navIsPointerEngaged();
+}
+
+function updateNavStripVisibility() {
+  const show = navStripShouldShow();
+  osHud.classList.toggle('nav-strip--visible', show);
+  if (!show) {
+    navRetracted = false;
+    osHud.classList.remove('nav-strip--retracted');
+  }
+}
+
 function setNavRetracted(retracted) {
   if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) {
     navRetracted = false;
     osHud.classList.remove('nav-strip--retracted');
     return;
   }
-  if (retracted && navBarIsPinned()) return;
+  if (retracted && (navBarIsPinned() || selectedIndex >= 0)) return;
   navRetracted = retracted;
   osHud.classList.toggle('nav-strip--retracted', retracted);
+  applyNavStripTransform();
 }
 
 function revealNav() {
@@ -613,7 +943,7 @@ window.addEventListener('touchmove', (e) => {
   touchScrollY = y;
 }, { passive: true });
 
-let selectedIndex = 0;
+let selectedIndex = -1;
 /** Teal gem frame - only after user selects an icon (not on initial load) */
 let frameRevealedIndex = -1;
 /** Top nav hover only - not driven by 3D orbit icons */
@@ -926,7 +1256,38 @@ function wrapIndex(index) {
 
 /** Step selection clockwise (+1) or counter-clockwise (−1) */
 function stepClockwise(delta) {
+  if (selectedIndex < 0) {
+    selectSection(delta > 0 ? 0 : SECTIONS.length - 1);
+    return;
+  }
   selectSection(selectedIndex + delta);
+}
+
+function setBrowserIdleLabels() {
+  if (currentView !== 'browser') return;
+  lcdStatus.textContent = 'VMU';
+  currentFileEl.textContent = '—';
+  fileMetaEl.textContent = `—/${SECTIONS.length}`;
+}
+
+function refreshBrowserReadout() {
+  if (currentView !== 'browser') return;
+  const previewIdx = orbitHoverIndex >= 0
+    ? orbitHoverIndex
+    : (navHoverIndex >= 0 ? navHoverIndex : -1);
+  if (previewIdx >= 0) {
+    const preview = SECTIONS[previewIdx];
+    currentFileEl.textContent = preview.label;
+    fileMetaEl.textContent = `${previewIdx + 1}/${SECTIONS.length}`;
+    lcdStatus.textContent = preview.label;
+  } else if (selectedIndex >= 0) {
+    const section = SECTIONS[selectedIndex];
+    currentFileEl.textContent = section.label;
+    fileMetaEl.textContent = `${selectedIndex + 1}/${SECTIONS.length}`;
+    lcdStatus.textContent = section.label;
+  } else {
+    setBrowserIdleLabels();
+  }
 }
 
 /** Index from section key */
@@ -936,19 +1297,21 @@ function indexFromKey(key) {
 
 /** Top nav - selection (▶) + preview from nav bar or orbit dial */
 function applyStripUI() {
+  const pointerEngaged = navIsPointerEngaged();
   const selIdx = selectedIndex;
   const previewIdx = navHoverIndex >= 0 ? navHoverIndex : orbitHoverIndex;
 
   topItems.forEach((el) => {
     const i = Number(el.dataset.index);
     if (Number.isNaN(i)) return;
-    const isSelected = i === selIdx;
-    const isPreview = previewIdx >= 0 && i === previewIdx && !isSelected;
+    const isSelected = selIdx >= 0 && i === selIdx;
+    const isPreview = pointerEngaged && previewIdx >= 0 && i === previewIdx && !isSelected;
     el.classList.toggle('nav-strip__item--selected', isSelected);
     el.classList.toggle('nav-strip__item--hover', isPreview);
   });
-  osHud.classList.toggle('nav-strip--lit', previewIdx >= 0);
-  if (previewIdx >= 0) revealNav();
+  updateNavStripVisibility();
+  if (pointerEngaged || selIdx >= 0) revealNav();
+  if (currentView === 'browser') refreshBrowserReadout();
 }
 
 /** 3D orbit icons - selection and nav/orbit preview (stable through panel open/close) */
@@ -957,31 +1320,33 @@ function applyIconTargets() {
   const orbitPreview = currentView === 'browser' && orbitHoverIndex >= 0 ? orbitHoverIndex : -1;
 
   saveIcons.forEach(({ frame, group }, i) => {
-    const selected = i === selectedIndex;
     const navHovered = i === navPreview;
     const orbitHovered = i === orbitPreview;
     const previewed = navHovered || orbitHovered;
+    const selected = selectedIndex >= 0 && i === selectedIndex;
 
     frame.visible = i === frameRevealedIndex;
 
+    if (selected && previewed) {
+      group.userData.target = { scale: 1.0, opacity: 0.82, zLift: 0.18 };
+      return;
+    }
     if (selected) {
-      group.userData.target = previewed
-        ? { scale: 1.0, opacity: 0.82, zLift: 0.18 }
-        : { scale: 0.96, opacity: 0.76, zLift: 0.14 };
+      group.userData.target = { scale: 0.94, opacity: 0.52, zLift: 0.1 };
+      return;
+    }
+    if (previewed) {
+      group.userData.target = { scale: 0.94, opacity: 0.52, zLift: 0.1 };
       return;
     }
 
-    group.userData.target = {
-      scale: previewed ? 0.94 : 0.8,
-      opacity: previewed ? 0.52 : 0.22,
-      zLift: previewed ? 0.1 : 0,
-    };
+    group.userData.target = { scale: 0.8, opacity: 0.22, zLift: 0 };
   });
 }
 
 function resolveBeamTargetAngle() {
   if (isTransitioning || currentView !== 'browser') {
-    return orbitAngle(selectedIndex);
+    return selectedIndex >= 0 ? orbitAngle(selectedIndex) : beamAngle;
   }
   if (orbitHoverIndex >= 0) {
     return orbitAngle(orbitHoverIndex);
@@ -992,7 +1357,10 @@ function resolveBeamTargetAngle() {
   if (pointerInOrbit) {
     return beamAngleTarget;
   }
-  return orbitAngle(selectedIndex);
+  if (selectedIndex >= 0) {
+    return orbitAngle(selectedIndex);
+  }
+  return beamAngle;
 }
 
 function syncBeamTarget() {
@@ -1000,10 +1368,14 @@ function syncBeamTarget() {
 }
 
 function flashNav() {
-  osHud.classList.remove('nav-strip--flash');
-  void osHud.offsetWidth;
-  osHud.classList.add('nav-strip--flash');
-  setTimeout(() => osHud.classList.remove('nav-strip--flash'), 180);
+  topItems.forEach((el) => {
+    el.classList.remove('nav-strip__item--flash');
+    void el.offsetWidth;
+    el.classList.add('nav-strip__item--flash');
+  });
+  setTimeout(() => {
+    topItems.forEach((el) => el.classList.remove('nav-strip__item--flash'));
+  }, 180);
 }
 
 /** Single source of truth - index drives orbit, top nav, LCD, 3D */
@@ -1017,18 +1389,12 @@ function syncNavigation(index, playSound = false, revealFrame = false) {
     frameRevealedIndex = selectedIndex;
   }
 
-  const section = SECTIONS[selectedIndex];
-
   applyStripUI();
 
   pointerInOrbit = false;
   syncBeamTarget();
-
-  currentFileEl.textContent = section.label;
-  fileMetaEl.textContent = `${selectedIndex + 1}/${SECTIONS.length}`;
-  lcdStatus.textContent = section.label;
-
   applyIconTargets();
+  refreshBrowserReadout();
 
   if (playSound && prev !== selectedIndex && currentView === 'browser') {
     audio.navigate();
@@ -1047,6 +1413,7 @@ function setNavHover(index, playSound = false) {
   const next = index >= 0 ? wrapIndex(index) : -1;
   const changed = next !== navHoverIndex;
   navHoverIndex = next;
+  refreshBrowserReadout();
   applyStripUI();
   syncBeamTarget();
   applyIconTargets();
@@ -1069,12 +1436,7 @@ function setOrbitHover(index, playSound = false) {
   const changed = next !== orbitHoverIndex;
   orbitHoverIndex = next;
 
-  const previewIdx = orbitHoverIndex >= 0 ? orbitHoverIndex : selectedIndex;
-  const preview = SECTIONS[previewIdx];
-  currentFileEl.textContent = preview.label;
-  fileMetaEl.textContent = `${previewIdx + 1}/${SECTIONS.length}`;
-  lcdStatus.textContent = preview.label;
-
+  refreshBrowserReadout();
   syncBeamTarget();
   applyIconTargets();
   applyStripUI();
@@ -1086,6 +1448,20 @@ function setOrbitHover(index, playSound = false) {
 
 function selectSection(index, playSound = true) {
   syncNavigation(index, playSound, true);
+}
+
+function deselectSection() {
+  if (selectedIndex < 0) return;
+  selectedIndex = -1;
+  frameRevealedIndex = -1;
+  navHoverIndex = -1;
+  orbitHoverIndex = -1;
+  pointerInOrbit = false;
+  applyStripUI();
+  syncBeamTarget();
+  applyIconTargets();
+  setBrowserIdleLabels();
+  refreshBrowserReadout();
 }
 
 function flashLCD() {
@@ -1122,13 +1498,14 @@ function openSection(sectionKey) {
   setTimeout(() => {
     panelTitle.textContent = SECTIONS[idx].file;
     panelBody.innerHTML = data.html;
+    filePanel.classList.toggle('file-panel--contact', sectionKey === 'contact');
     filePanelScrim.classList.add('file-panel-scrim--visible');
     filePanelScrim.setAttribute('aria-hidden', 'false');
     filePanel.classList.add('file-panel--visible');
-    osHud.classList.remove('nav-strip--visible');
+    updateNavStripVisibility();
     lcdStatus.textContent = data.title;
     currentView = 'content';
-    animateContentLines(panelBody);
+    if (sectionKey !== 'contact') animateContentLines(panelBody);
     if (sectionKey === 'contact') initContactPanel(panelBody);
   }, 180);
 
@@ -1231,7 +1608,12 @@ function finishAboutClose() {
   aboutState.hubRetreat = 0;
   aboutState.intercomShow = 0;
   setAboutPhase('closed');
-  lcdStatus.textContent = SECTIONS[selectedIndex].label;
+  if (selectedIndex >= 0) {
+    lcdStatus.textContent = SECTIONS[selectedIndex].label;
+  } else {
+    setBrowserIdleLabels();
+  }
+  applyStripUI();
   isTransitioning = false;
 }
 
@@ -1291,17 +1673,20 @@ function backToBrowser() {
   flashNav();
   filePanelScrim.classList.remove('file-panel-scrim--visible');
   filePanelScrim.setAttribute('aria-hidden', 'true');
-  filePanel.classList.remove('file-panel--visible');
-  osHud.classList.add('nav-strip--visible');
+  filePanel.classList.remove('file-panel--visible', 'file-panel--contact');
   setNavRetracted(false);
   currentView = 'browser';
   navHoverIndex = -1;
   orbitHoverIndex = -1;
   pointerInOrbit = false;
   applyStripUI();
-  lcdStatus.textContent = SECTIONS[selectedIndex].label;
-  currentFileEl.textContent = SECTIONS[selectedIndex].label;
-  fileMetaEl.textContent = `${selectedIndex + 1}/${SECTIONS.length}`;
+  if (selectedIndex >= 0) {
+    lcdStatus.textContent = SECTIONS[selectedIndex].label;
+    currentFileEl.textContent = SECTIONS[selectedIndex].label;
+    fileMetaEl.textContent = `${selectedIndex + 1}/${SECTIONS.length}`;
+  } else {
+    setBrowserIdleLabels();
+  }
   syncBeamTarget();
   applyIconTargets();
 
@@ -1320,11 +1705,16 @@ function finishBootSequence() {
     viewBrowser.classList.remove('lcd__view--hidden');
     viewBrowser.classList.add('lcd__view--entering');
     currentView = 'browser';
-    syncNavigation(0, false);
-
-    osHud.classList.add('nav-strip--visible');
+    selectedIndex = -1;
+    frameRevealedIndex = -1;
+    navHoverIndex = -1;
+    orbitHoverIndex = -1;
+    setBrowserIdleLabels();
+    applyStripUI();
+    applyIconTargets();
+    syncBeamTarget();
+    updateNavStripVisibility();
     setNavRetracted(false);
-    flashNav();
 
     setTimeout(() => viewBrowser.classList.remove('lcd__view--entering'), 300);
   }, 250);
@@ -1353,6 +1743,7 @@ document.addEventListener('keydown', (e) => {
       stepClockwise(-1);
     } else if (e.key === 'Enter' || e.key === 'a' || e.key === 'A') {
       e.preventDefault();
+      if (selectedIndex < 0) return;
       openSection(SECTIONS[selectedIndex].key);
     }
   } else if (currentView === 'content') {
@@ -1367,6 +1758,34 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+/** Screen-space grab radius when the ray misses the diamond mesh */
+const SAVE_ICON_HIT_SCREEN_PX = 52;
+const saveIconPickWorld = new THREE.Vector3();
+
+function pickSaveIconIndex(clientX, clientY) {
+  pointer.x = (clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  const hits = raycaster.intersectObjects(saveMeshes, false);
+  if (hits.length) return hits[0].object.userData.index;
+
+  let best = -1;
+  let bestDist = SAVE_ICON_HIT_SCREEN_PX;
+  saveIcons.forEach(({ group }, i) => {
+    group.getWorldPosition(saveIconPickWorld);
+    saveIconPickWorld.project(camera);
+    const sx = (saveIconPickWorld.x * 0.5 + 0.5) * window.innerWidth;
+    const sy = (-saveIconPickWorld.y * 0.5 + 0.5) * window.innerHeight;
+    const d = Math.hypot(clientX - sx, clientY - sy);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  });
+  return best;
+}
 
 function pickOrbitHoverFromPointer(clientX, clientY) {
   if (isTransitioning || currentView !== 'browser') {
@@ -1394,10 +1813,8 @@ function pickOrbitHoverFromPointer(clientX, clientY) {
     return -1;
   }
 
-  const hits = raycaster.intersectObjects(saveMeshes, false);
-  if (hits.length) {
-    return hits[0].object.userData.index;
-  }
+  const iconPick = pickSaveIconIndex(clientX, clientY);
+  if (iconPick >= 0) return iconPick;
 
   if (dist <= r * 1.18) {
     return nearestOrbitIndex(angle);
@@ -1434,6 +1851,9 @@ window.addEventListener('pointermove', (e) => {
 
 window.addEventListener('pointerleave', () => {
   pointerInOrbit = false;
+  if (currentView === 'browser' && orbitHoverIndex >= 0) {
+    setOrbitHover(-1);
+  }
 });
 
 window.addEventListener('pointerdown', (e) => {
@@ -1447,9 +1867,8 @@ window.addEventListener('pointerdown', (e) => {
   if (currentView === 'content') {
     if (isClickInsideFilePanel(e.target)) return;
 
-    const hits = raycaster.intersectObjects(saveMeshes, false);
-    if (hits.length) {
-      const idx = hits[0].object.userData.index;
+    const idx = pickSaveIconIndex(e.clientX, e.clientY);
+    if (idx >= 0) {
       if (idx === selectedIndex) {
         backToBrowser();
         return;
@@ -1476,10 +1895,12 @@ window.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  const hits = raycaster.intersectObjects(saveMeshes, false);
-  if (!hits.length) return;
+  const idx = pickSaveIconIndex(e.clientX, e.clientY);
+  if (idx < 0) {
+    if (selectedIndex >= 0) deselectSection();
+    return;
+  }
 
-  const idx = hits[0].object.userData.index;
   if (idx === selectedIndex) {
     openSection(SECTIONS[idx].key);
   } else {
@@ -1487,7 +1908,7 @@ window.addEventListener('pointerdown', (e) => {
   }
 });
 
-syncNavigation(0, false);
+updateNavStripVisibility();
 
 // ---------------------------------------------------------------------------
 // Animation Loop
@@ -1534,7 +1955,7 @@ function animate() {
   const orbitEngage = (1 - panelBlend * 0.92) * Math.max(0.04, intercomEngage);
   orbitRing.material.opacity = 0.28 * Math.max(0.04, intercomEngage);
 
-  const browserHubEnergy = orbitHoverIndex >= 0 ? 1 : 0.78;
+  const browserHubEnergy = orbitHoverIndex >= 0 || selectedIndex >= 0 ? 1 : 0.78;
   const targetHubEnergy = aboutPhaseActive()
     ? THREE.MathUtils.lerp(0.68, 0.38, easeInOutSine(aboutState.hubRetreat))
     : THREE.MathUtils.lerp(browserHubEnergy, 0.68, panelBlend);
@@ -1664,7 +2085,9 @@ function animate() {
     const v = group.userData.visual;
     const tgt = group.userData.target || { scale: 0.8, opacity: 0.22, zLift: 0 };
     const lerp = 1 - Math.exp(-5 * delta);
-    const dim = i === selectedIndex ? 1 - panelBlend * 0.08 : 1 - panelBlend * 0.28;
+    const dim = selectedIndex >= 0 && i === selectedIndex
+      ? 1 - panelBlend * 0.08
+      : 1 - panelBlend * 0.28;
     const retreat = orbitHubOcclusion();
     const codecFade = codecNumeralFade(retreat);
     const codecPush = 1 + retreat * 0.09;
@@ -1675,15 +2098,22 @@ function animate() {
     v.zLift += (tgt.zLift - v.zLift) * lerp;
 
     root.scale.setScalar(v.scale * ICON_SCALE * codecScale);
-    const emissiveBase = [0.16, 0.24];
+    const emissiveBase = [0.38, 0.52];
     const warmOpacity = v.opacity * pearlWarm;
     const warmEmissive = 0.48 + pearlWarm * 0.52;
     const iconOpacity = warmOpacity * dim * codecFade;
+    const iconMotion = Math.min(
+      1,
+      v.opacity * 0.72
+        + (selectedIndex >= 0 && i === selectedIndex ? 0.22 : 0)
+        + (orbitHoverIndex === i ? 0.18 : 0)
+    );
     materials.forEach((mat, mi) => {
       if (mat.userData.baseEnv === undefined) mat.userData.baseEnv = mat.envMapIntensity;
       mat.opacity = iconOpacity;
       mat.emissiveIntensity = emissiveBase[mi] * (0.35 + v.opacity * 0.55) * dim * warmEmissive * codecFade;
       mat.envMapIntensity = mat.userData.baseEnv * (0.72 + pearlWarm * 0.28) * (0.65 + codecFade * 0.35);
+      tickPearlMaterialShader(mat, t, iconMotion);
     });
 
     group.position.set(
@@ -1699,6 +2129,8 @@ function animate() {
     }
   });
 
+  if (currentView === 'browser') syncNavStripToOrbit();
+
   // Selection beam + hub lighting - eases with panel open/close
   const hubCenter = new THREE.Vector3(0, 0, 0.02);
   const hubGlowPos = new THREE.Vector3(0, 0.1, 0.55);
@@ -1708,7 +2140,10 @@ function animate() {
     const iconTip = saveIcons[orbitHoverIndex].group.position.clone().multiplyScalar(0.88);
     beamTip.lerp(iconTip, 0.42 * orbitEngage);
   } else {
-    beamTip.z = saveIcons[selectedIndex].group.position.z * 0.35;
+    const beamFocusIdx = selectedIndex >= 0
+      ? selectedIndex
+      : (orbitHoverIndex >= 0 ? orbitHoverIndex : 0);
+    beamTip.z = saveIcons[beamFocusIdx].group.position.z * 0.35;
   }
 
   selectionLine.geometry.setFromPoints([hubCenter, beamTip]);
@@ -1756,9 +2191,16 @@ function animate() {
   tealGlow.intensity = THREE.MathUtils.lerp(glowContent, glowBrowser, orbitEngage);
 
   const spiralFade = 1 - easeInOutSine(Math.min(1, aboutState.hubRetreat * 1.15));
-  biosSpiral.material.opacity = 0.22 * spiralFade;
-  biosSpiral.rotation.z = t * 0.1;
-  scene.children.filter(c => c.type === 'Points').forEach(p => { p.rotation.y = t * 0.012; });
+  if (biosSpiral.userData.ringMaterial) {
+    const base = biosSpiral.userData.baseOpacity ?? INNER_OVAL_OPACITY;
+    const faded = base * spiralFade;
+    biosSpiral.userData.ringMaterial.opacity = faded;
+    if (biosSpiral.userData.dotMaterial) {
+      biosSpiral.userData.dotMaterial.opacity = faded;
+    }
+  }
+  starField.rotation.y = t * 0.009;
+  starField.material.uniforms.uTime.value = t;
 
   renderer.render(scene, camera);
 }
@@ -1770,6 +2212,8 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   cameraEndZ = getCameraEndZ();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  starField.material.uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
+  syncNavStripToOrbit();
   if (aboutPhaseActive()) scheduleBioStreamMaxHeight();
 });
 
@@ -1789,7 +2233,6 @@ window.addEventListener('resize', () => {
     setTimeout(() => {
       lcdStatus.textContent = status;
       bootBar.style.width = `${progress}%`;
-      if (status !== 'READY') audio.boot();
       if (status === 'READY') finishBootSequence();
     }, delay);
   });

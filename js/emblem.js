@@ -268,6 +268,26 @@ function buildPearlChromeMaterials(envMap, sparkleTexture, emissiveSparkleTextur
   return { chrome, darkChrome, materials: [chrome, darkChrome] };
 }
 
+/** Independent pearl clones for orbit icons (same env + shader as GP numerals) */
+export function clonePearlMaterialsForIcon(pearlAssets) {
+  const { chrome, darkChrome } = pearlAssets;
+  const cloneMat = (src, storeKey) => {
+    const m = src.clone();
+    m.transparent = true;
+    m.opacity = 1;
+    attachPearlSparkle(m, storeKey);
+    return m;
+  };
+  return [cloneMat(chrome, 'shader'), cloneMat(darkChrome, 'shaderDark')];
+}
+
+export function tickPearlMaterialShader(material, t, motion = 0.5) {
+  const shader = material.userData.shader || material.userData.shaderDark;
+  if (!shader?.uniforms?.uTime) return;
+  shader.uniforms.uTime.value = t * 1.35;
+  shader.uniforms.uMotion.value = motion;
+}
+
 /** Shared pearl env + materials for emblem and orbit icons */
 export function createPearlMaterialSet() {
   const envMap = makeEnvironment();
