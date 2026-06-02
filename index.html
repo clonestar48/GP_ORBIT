@@ -95,7 +95,8 @@
 
   <div class="file-panel-scrim" id="file-panel-scrim" aria-hidden="true"></div>
 
-  <!-- ABOUT codec / intercom panel (replaces GP emblem when active) -->
+  <!-- ABOUT dock — single perspective camera for codec + bio planes -->
+  <div class="about-dock" id="about-dock" hidden aria-hidden="true">
   <div class="intercom" id="intercom" hidden aria-hidden="true">
     <div class="intercom__bezel">
       <div class="intercom__bezel-face" aria-hidden="true"></div>
@@ -120,6 +121,21 @@
       </div>
       <div class="intercom__footer">Freq 142.80 · Encrypted</div>
     </div>
+  </div>
+
+  <!-- ABOUT bio — free-floating transmission text (right), synced with codec -->
+  <aside class="about-bio" id="about-bio" hidden aria-hidden="true">
+    <div class="about-bio__noise" aria-hidden="true"></div>
+    <div class="about-bio__stream" id="about-bio-inner">
+      <p class="about-bio__meta">// ABOUT · UPLINK</p>
+      <p class="about-bio__line">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+      <p class="about-bio__line">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus.</p>
+      <p class="about-bio__line">Nulla facilisi. Aenean nec eros. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae. Nam quam nunc, blandit vel, luctus pulvinar, hendrerit id, lorem. Maecenas nec odio et ante tincidunt tempus.</p>
+      <p class="about-bio__line">Donec vitae sapien ut libero venenatis faucibus. Nullam quis ante. Etiam sit amet orci eget eros faucibus tincidunt. Duis leo. Sed fringilla mauris sit amet nibh. Donec sodales sagittis magna. Sed consequat, leo eget bibendum sodales, augue velit cursus nunc.</p>
+      <p class="about-bio__line">Quisque rutrum. Aenean imperdiet. Etiam ultricies nisi vel augue. Curabitur ullamcorper ultricies nisi. Nam eget dui. Etiam rhoncus. Maecenas tempus, tellus eget condimentum rhoncus, sem quam semper libero, sit amet adipiscing sem neque sed ipsum.</p>
+      <p class="about-bio__line">Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Proin gravida nibh vel velit auctor aliquet. Aenean sollicitudin, lorem quis bibendum auctor, nisi elit consequat ipsum, nec sagittis sem nibh id elit.</p>
+    </div>
+  </aside>
   </div>
 
   <div class="file-panel" id="file-panel">

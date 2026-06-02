@@ -457,14 +457,6 @@ biosSpiral.position.set(0, 0.1, -2.2);
 biosSpiral.scale.setScalar(1.1);
 scene.add(biosSpiral);
 
-const biosSpiral2 = createBIOSSpiral(180);
-biosSpiral2.material = biosSpiral2.material.clone();
-biosSpiral2.material.opacity = 0.07;
-biosSpiral2.position.set(0.3, -0.2, -2.8);
-biosSpiral2.rotation.z = Math.PI * 0.4;
-biosSpiral2.scale.setScalar(1.3);
-scene.add(biosSpiral2);
-
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(14, 14),
   new THREE.MeshStandardMaterial({ color: CONFIG.colors.bg, roughness: 1, transparent: true, opacity: 0.08 })
@@ -486,7 +478,12 @@ const lcdStatus = document.getElementById('lcd-status');
 const bootBar = document.getElementById('boot-bar');
 const filePanel = document.getElementById('file-panel');
 const filePanelScrim = document.getElementById('file-panel-scrim');
+const aboutDockEl = document.getElementById('about-dock');
 const intercomEl = document.getElementById('intercom');
+const aboutBioEl = document.getElementById('about-bio');
+const bioChunks = [];
+let bioChunkTimers = [];
+let bioTransmissionPrimed = false;
 const panelTitle = document.getElementById('panel-title');
 const panelBody = document.getElementById('panel-body');
 const osHud = document.getElementById('os-hud');
@@ -630,15 +627,46 @@ const hubMagnetic = { x: 0, y: 0, z: 0, roll: 0, pitch: 0, yaw: 0 };
 let currentView = 'boot';
 let isTransitioning = false;
 let panelBlend = 0;
-let intercomTarget = 0;
-let intercomShow = 0;
-let hubRetreat = 0;
+
+/** Single controller for ABOUT / intercom — phases drive motion + occlusion */
+const aboutState = {
+  phase: 'closed',
+  hubRetreat: 0,
+  intercomShow: 0,
+};
+
+let aboutBioStreamTemplate = null;
+const aboutCloseTimers = { transition: null, powerOff: null, finish: null };
+let aboutCloseBezelListener = null;
+let bioStreamMaxHeightScheduled = false;
+
+const reducedMotionMq = window.matchMedia('(prefers-reduced-motion: reduce)');
+let prefersReducedMotion = reducedMotionMq.matches;
+reducedMotionMq.addEventListener('change', (e) => {
+  prefersReducedMotion = e.matches;
+});
+
 const INTERCOM = {
   transitionMs: 1020,
   crtPowerOffMs: 780,
   retreatRate: 1.28,
-  showInRate: 1.7,
+  showInRate: 1.05,
   showOutRate: 2.15,
+  /** Final dock offset (vw left of center) and tilt — applied with fade-in */
+  dockLeftVw: 17,
+  /** Shared HUD camera (on #about-dock, not per-panel) */
+  dockPerspectivePx: 1600,
+  dockPerspectiveOriginY: 48,
+  /** Concave inward; same rotateX on both planes (parallel top/bottom slant) */
+  dockRotateY: 18,
+  dockRotateX: 4,
+  dockDepthZ: 10,
+  navClearanceTop: 118,
+  /** Bio stream may extend only slightly past intercom bottom glow */
+  bioGlowSlackPx: 28,
+  /** Staggered bio chunks — step between slots + jitter within each slot */
+  bioChunkStepMs: 92,
+  bioChunkJitterRatio: 0.48,
   /** Hub must clear this much before codec begins appearing */
   hubLeadOpen: 0.44,
   /** Codec must fade below this before hub returns */
@@ -649,12 +677,247 @@ function easeInOutSine(t) {
   return -(Math.cos(Math.PI * t) - 1) / 2;
 }
 
+function aboutPhaseActive() {
+  return aboutState.phase !== 'closed';
+}
+
+function aboutWantsOpenMotion() {
+  return aboutState.phase === 'opening' || aboutState.phase === 'open';
+}
+
+function setAboutPhase(phase) {
+  aboutState.phase = phase;
+  if (phase !== 'closed') {
+    currentView = 'intercom';
+  } else if (currentView === 'intercom') {
+    currentView = 'browser';
+  }
+}
+
+/** Keep orbit GP + emblem hidden for full ABOUT open/hold/close (no flash on exit) */
+function orbitHubOcclusion() {
+  const { phase, hubRetreat, intercomShow } = aboutState;
+  if (phase === 'opening' || phase === 'open') return 1;
+  if (phase === 'closing') {
+    if (intercomShow > INTERCOM.codecReturnGate) return 1;
+    return hubRetreat;
+  }
+  return hubRetreat;
+}
+
+function clearBioChunkTimers() {
+  bioChunkTimers.forEach((id) => clearTimeout(id));
+  bioChunkTimers = [];
+}
+
+function captureAboutBioStreamTemplate() {
+  if (aboutBioStreamTemplate || !aboutBioEl) return;
+  const stream = aboutBioEl.querySelector('.about-bio__stream');
+  if (stream) aboutBioStreamTemplate = stream.innerHTML;
+}
+
+function restoreAboutBioStream() {
+  if (!aboutBioEl || !aboutBioStreamTemplate) return;
+  const stream = aboutBioEl.querySelector('.about-bio__stream');
+  if (!stream) return;
+  stream.innerHTML = aboutBioStreamTemplate;
+  stream.style.removeProperty('max-height');
+}
+
+/** Cap scroll area so bio copy stays near intercom glow footprint (not per-frame) */
+function measureBioStreamMaxHeight() {
+  if (!aboutBioEl || !intercomEl || aboutState.phase === 'closed') return;
+
+  const stream = aboutBioEl.querySelector('.about-bio__stream');
+  if (!stream) return;
+
+  const ir = intercomEl.getBoundingClientRect();
+  if (ir.height < 8) return;
+
+  const br = aboutBioEl.getBoundingClientRect();
+  const slack = INTERCOM.bioGlowSlackPx;
+  const intercomFloor = ir.bottom + slack;
+  const maxFromTop = intercomFloor - br.top;
+  const centerY = ir.top + ir.height / 2;
+  const maxFromCenter = (intercomFloor - centerY) * 2;
+  const maxH = Math.min(maxFromTop, maxFromCenter, ir.height + slack - 36);
+
+  stream.style.maxHeight = `${Math.max(140, Math.floor(maxH))}px`;
+}
+
+function scheduleBioStreamMaxHeight() {
+  if (bioStreamMaxHeightScheduled || aboutState.phase === 'closed') return;
+  bioStreamMaxHeightScheduled = true;
+  requestAnimationFrame(() => {
+    bioStreamMaxHeightScheduled = false;
+    measureBioStreamMaxHeight();
+  });
+}
+
+function scheduleBioStreamMaxHeightAfterLayout() {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => scheduleBioStreamMaxHeight());
+  });
+}
+
+function clearAboutCloseTimers() {
+  if (aboutCloseTimers.transition != null) {
+    clearTimeout(aboutCloseTimers.transition);
+    aboutCloseTimers.transition = null;
+  }
+  if (aboutCloseTimers.powerOff != null) {
+    clearTimeout(aboutCloseTimers.powerOff);
+    aboutCloseTimers.powerOff = null;
+  }
+  if (aboutCloseTimers.finish != null) {
+    clearTimeout(aboutCloseTimers.finish);
+    aboutCloseTimers.finish = null;
+  }
+  if (aboutCloseBezelListener) {
+    const { bezel, handler } = aboutCloseBezelListener;
+    bezel?.removeEventListener('animationend', handler);
+    aboutCloseBezelListener = null;
+  }
+}
+
+/** Shared dock pose — planes in #about-dock camera (no per-element perspective) */
+function applyDockPanelMotion(el, motion, t, reducedMotion, side) {
+  if (!el) return;
+
+  const isBio = side === 'right';
+  const shiftMirror = isBio ? 1 : -1;
+  const shiftVw = shiftMirror * INTERCOM.dockLeftVw * motion;
+  const rotY = (side === 'left' ? 1 : -1) * INTERCOM.dockRotateY * motion;
+  const rotX = -INTERCOM.dockRotateX * motion;
+  const scale = 0.9 + motion * 0.1;
+  const depthZ = -INTERCOM.dockDepthZ * motion;
+
+  el.style.opacity = String(motion);
+  if (isBio) {
+    el.style.pointerEvents = motion > 0.02 ? 'auto' : 'none';
+  }
+
+  const rot =
+    `rotateY(${rotY}deg) rotateX(${rotX}deg) scale(${scale})`;
+
+  if (motion > 0.01 && !reducedMotion) {
+    const floatAmp = motion < 0.88 ? 1 : Math.max(0, 1 - (motion - 0.88) / 0.12);
+    const floatDamp = (1 - motion * 0.65) * floatAmp;
+    const floatX = Math.sin(t * 0.414) * 12.1 * motion * floatDamp;
+    const floatY = Math.sin(t * 0.522 + 0.6) * 7.7 * motion * floatDamp;
+    el.style.transform =
+      `translate3d(calc(-50% + ${shiftVw}vw + ${floatX}px), calc(-50% + ${floatY}px), ${depthZ}px) ` +
+      rot;
+  } else if (motion > 0.01) {
+    el.style.transform =
+      `translate3d(calc(-50% + ${shiftVw}vw), -50%, ${depthZ}px) ${rot}`;
+  } else {
+    el.style.transform =
+      `translate3d(-50%, -50%, 0) rotateY(0deg) rotateX(0deg) scale(0.9)`;
+  }
+}
+
+function syncAboutDockCamera() {
+  if (!aboutDockEl) return;
+  aboutDockEl.style.setProperty('--dock-persp', `${INTERCOM.dockPerspectivePx}px`);
+  aboutDockEl.style.setProperty('--dock-persp-y', `${INTERCOM.dockPerspectiveOriginY}%`);
+}
+
+/** Split bio copy into word chunks for staggered transmission reveal */
+function prepareAboutBioChunks() {
+  if (!aboutBioEl) return;
+  const stream = aboutBioEl.querySelector('.about-bio__stream');
+  if (!stream) return;
+
+  bioChunks.length = 0;
+  let order = 0;
+  const meta = stream.querySelector('.about-bio__meta');
+  if (meta) {
+    meta.style.opacity = '0';
+    meta.classList.add('about-bio__chunk');
+    bioChunks.push({ el: meta, order: order++ });
+  }
+
+  stream.querySelectorAll('.about-bio__line').forEach((para) => {
+    const words = para.textContent.trim().split(/\s+/).filter(Boolean);
+    para.textContent = '';
+    para.classList.add('about-bio__para');
+
+    let i = 0;
+    while (i < words.length) {
+      const size = 2 + Math.floor(Math.random() * 4);
+      const text = words.slice(i, i + size).join(' ');
+      i += size;
+
+      const span = document.createElement('span');
+      span.className = 'about-bio__chunk';
+      span.textContent = `${text} `;
+      span.style.opacity = '0';
+      para.appendChild(span);
+      bioChunks.push({ el: span, order: order++ });
+    }
+  });
+}
+
+function rebuildAboutBioForOpen() {
+  clearBioChunkTimers();
+  bioTransmissionPrimed = false;
+  restoreAboutBioStream();
+  prepareAboutBioChunks();
+}
+
+function revealBioChunk(el) {
+  if (!el || el.classList.contains('about-bio__chunk--live')) return;
+  el.classList.add('about-bio__chunk--live');
+  el.style.opacity = '1';
+}
+
+function resetBioTransmission() {
+  bioTransmissionPrimed = false;
+  clearBioChunkTimers();
+  bioChunks.forEach(({ el }) => {
+    el.style.opacity = '0';
+    el.classList.remove('about-bio__chunk--live');
+  });
+  aboutBioEl?.style.setProperty('--bio-reveal', '0');
+}
+
+function startBioTransmission() {
+  if (!bioChunks.length) return;
+
+  if (prefersReducedMotion) {
+    bioChunks.forEach(({ el }) => revealBioChunk(el));
+    aboutBioEl?.style.setProperty('--bio-reveal', '1');
+    return;
+  }
+
+  aboutBioEl?.style.setProperty('--bio-reveal', '1');
+
+  const step = INTERCOM.bioChunkStepMs;
+  const jitter = step * INTERCOM.bioChunkJitterRatio;
+
+  bioChunks.forEach(({ el, order }) => {
+    const slotStart = 50 + order * step;
+    const delay = slotStart + Math.random() * jitter;
+    const id = window.setTimeout(() => revealBioChunk(el), delay);
+    bioChunkTimers.push(id);
+  });
+}
+
+function tickBioTransmission(motion) {
+  if (!aboutWantsOpenMotion() || motion < 0.04 || bioTransmissionPrimed) return;
+  bioTransmissionPrimed = true;
+  startBioTransmission();
+}
+
 /** Opacity reaches ~0 by ~50% hub retreat — shrink continues invisibly behind */
 function codecNumeralFade(retreat) {
   return 1 - easeInOutSine(Math.min(1, retreat / 0.5));
 }
 
 initIntercom(intercomEl);
+captureAboutBioStreamTemplate();
+syncAboutDockCamera();
 
 /** Normalize index to valid range */
 function wrapIndex(index) {
@@ -874,13 +1137,56 @@ function openSection(sectionKey) {
   }, 420);
 }
 
+function showAboutDockDom() {
+  syncAboutDockCamera();
+  if (aboutDockEl) {
+    aboutDockEl.hidden = false;
+    aboutDockEl.setAttribute('aria-hidden', 'false');
+    aboutDockEl.classList.add('about-dock--active');
+  }
+  intercomEl.classList.remove('intercom--power-off');
+  intercomEl.hidden = false;
+  intercomEl.setAttribute('aria-hidden', 'false');
+  intercomEl.classList.add('intercom--active');
+  if (aboutBioEl) {
+    aboutBioEl.hidden = false;
+    aboutBioEl.setAttribute('aria-hidden', 'false');
+    aboutBioEl.classList.add('about-bio--active');
+  }
+}
+
+function beginAboutOpen() {
+  clearAboutCloseTimers();
+  setAboutPhase('opening');
+  aboutState.hubRetreat = 0;
+  aboutState.intercomShow = 0;
+  rebuildAboutBioForOpen();
+  showAboutDockDom();
+  startIntercomNoise();
+  scheduleBioStreamMaxHeightAfterLayout();
+}
+
+function cancelAboutCloseAndResume() {
+  clearAboutCloseTimers();
+  intercomEl.classList.remove('intercom--power-off');
+  isTransitioning = false;
+  setAboutPhase(aboutState.intercomShow > 0.95 ? 'open' : 'opening');
+  rebuildAboutBioForOpen();
+  showAboutDockDom();
+  startIntercomNoise();
+  scheduleBioStreamMaxHeightAfterLayout();
+}
+
 function openAboutIntercom() {
-  if (isTransitioning) return;
-  if (currentView === 'intercom') {
+  if (aboutState.phase === 'closing') {
+    cancelAboutCloseAndResume();
+    return;
+  }
+  if (aboutPhaseActive()) {
     closeAboutIntercom();
     return;
   }
-  if (currentView !== 'browser') return;
+  if (isTransitioning || currentView !== 'browser') return;
 
   syncNavigation(indexFromKey('about'), false, true);
 
@@ -889,47 +1195,68 @@ function openAboutIntercom() {
   flashNav();
   lcdStatus.textContent = 'ABOUT';
 
-  intercomTarget = 1;
-  intercomEl.classList.remove('intercom--power-off');
-  intercomEl.hidden = false;
-  intercomEl.setAttribute('aria-hidden', 'false');
-  intercomEl.classList.add('intercom--active');
-  startIntercomNoise();
+  beginAboutOpen();
 
-  setTimeout(() => {
-    currentView = 'intercom';
+  aboutCloseTimers.transition = window.setTimeout(() => {
+    aboutCloseTimers.transition = null;
     isTransitioning = false;
   }, INTERCOM.transitionMs);
 }
 
+function finishAboutClose() {
+  clearAboutCloseTimers();
+  intercomEl.classList.remove('intercom--power-off', 'intercom--active');
+  intercomEl.hidden = true;
+  intercomEl.setAttribute('aria-hidden', 'true');
+  intercomEl.style.opacity = '';
+  intercomEl.style.transform = '';
+  if (aboutBioEl) {
+    aboutBioEl.classList.remove('about-bio--active');
+    aboutBioEl.hidden = true;
+    aboutBioEl.setAttribute('aria-hidden', 'true');
+    aboutBioEl.style.opacity = '';
+    aboutBioEl.style.transform = '';
+    aboutBioEl.style.removeProperty('--bio-reveal');
+    aboutBioEl.querySelector('.about-bio__stream')?.style.removeProperty('max-height');
+  }
+  clearBioChunkTimers();
+  restoreAboutBioStream();
+  bioChunks.length = 0;
+  bioTransmissionPrimed = false;
+  if (aboutDockEl) {
+    aboutDockEl.classList.remove('about-dock--active');
+    aboutDockEl.hidden = true;
+    aboutDockEl.setAttribute('aria-hidden', 'true');
+  }
+  aboutState.hubRetreat = 0;
+  aboutState.intercomShow = 0;
+  setAboutPhase('closed');
+  lcdStatus.textContent = SECTIONS[selectedIndex].label;
+  isTransitioning = false;
+}
+
 function closeAboutIntercom() {
-  if (currentView !== 'intercom' || isTransitioning) return;
+  if (!aboutPhaseActive() || isTransitioning) return;
 
   isTransitioning = true;
+  setAboutPhase('closing');
   audio.cancel();
   flashNav();
-  intercomTarget = 0;
+  clearBioChunkTimers();
+  resetBioTransmission();
   stopIntercomNoise();
 
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const powerOffMs = reducedMotion ? 320 : INTERCOM.crtPowerOffMs;
+  const powerOffMs = prefersReducedMotion ? 320 : INTERCOM.crtPowerOffMs;
 
   intercomEl.classList.add('intercom--power-off');
 
-  const finishClose = () => {
-    intercomEl.classList.remove('intercom--power-off', 'intercom--active');
-    intercomEl.hidden = true;
-    intercomEl.setAttribute('aria-hidden', 'true');
-    intercomEl.style.opacity = '';
-    intercomEl.style.transform = '';
-    intercomShow = 0;
-    currentView = 'browser';
-    lcdStatus.textContent = SECTIONS[selectedIndex].label;
-    isTransitioning = false;
+  const runFinish = () => {
+    if (aboutState.phase !== 'closing') return;
+    finishAboutClose();
   };
 
-  if (reducedMotion) {
-    setTimeout(finishClose, powerOffMs);
+  if (prefersReducedMotion) {
+    aboutCloseTimers.powerOff = window.setTimeout(runFinish, powerOffMs);
     return;
   }
 
@@ -939,8 +1266,8 @@ function closeAboutIntercom() {
   const finishOnce = () => {
     if (closed) return;
     closed = true;
-    bezel?.removeEventListener('animationend', onPowerOffEnd);
-    finishClose();
+    clearAboutCloseTimers();
+    runFinish();
   };
 
   const onPowerOffEnd = (e) => {
@@ -948,8 +1275,11 @@ function closeAboutIntercom() {
     finishOnce();
   };
 
-  bezel?.addEventListener('animationend', onPowerOffEnd);
-  setTimeout(finishOnce, powerOffMs + 80);
+  if (bezel) {
+    aboutCloseBezelListener = { bezel, handler: onPowerOffEnd };
+    bezel.addEventListener('animationend', onPowerOffEnd);
+  }
+  aboutCloseTimers.finish = window.setTimeout(finishOnce, powerOffMs + 80);
 }
 
 function backToBrowser() {
@@ -1134,7 +1464,7 @@ window.addEventListener('pointerdown', (e) => {
   }
 
   if (currentView === 'intercom') {
-    if (intercomEl.contains(e.target)) return;
+    if (intercomEl.contains(e.target) || aboutBioEl?.contains(e.target)) return;
     closeAboutIntercom();
     return;
   }
@@ -1200,13 +1530,13 @@ function animate() {
 
   const targetPanelBlend = currentView === 'content' ? 1 : 0;
   panelBlend += (targetPanelBlend - panelBlend) * (1 - Math.exp(-3.2 * delta));
-  const intercomEngage = codecNumeralFade(hubRetreat);
+  const intercomEngage = codecNumeralFade(orbitHubOcclusion());
   const orbitEngage = (1 - panelBlend * 0.92) * Math.max(0.04, intercomEngage);
   orbitRing.material.opacity = 0.28 * Math.max(0.04, intercomEngage);
 
   const browserHubEnergy = orbitHoverIndex >= 0 ? 1 : 0.78;
-  const targetHubEnergy = currentView === 'intercom'
-    ? THREE.MathUtils.lerp(0.68, 0.38, easeInOutSine(hubRetreat))
+  const targetHubEnergy = aboutPhaseActive()
+    ? THREE.MathUtils.lerp(0.68, 0.38, easeInOutSine(aboutState.hubRetreat))
     : THREE.MathUtils.lerp(browserHubEnergy, 0.68, panelBlend);
   hubEnergy += (targetHubEnergy - hubEnergy) * (1 - Math.exp(-2.4 * delta));
 
@@ -1235,40 +1565,37 @@ function animate() {
   const intercomInLerp = 1 - Math.exp(-INTERCOM.showInRate * delta);
   const intercomOutLerp = 1 - Math.exp(-INTERCOM.showOutRate * delta);
 
-  if (intercomTarget === 1) {
-    hubRetreat += (1 - hubRetreat) * retreatLerp;
+  if (aboutWantsOpenMotion()) {
+    aboutState.hubRetreat += (1 - aboutState.hubRetreat) * retreatLerp;
     const showTarget = easeInOutSine(
-      Math.min(1, Math.max(0, (hubRetreat - INTERCOM.hubLeadOpen) / (1 - INTERCOM.hubLeadOpen)))
+      Math.min(1, Math.max(0, (aboutState.hubRetreat - INTERCOM.hubLeadOpen) / (1 - INTERCOM.hubLeadOpen)))
     );
-    intercomShow += (showTarget - intercomShow) * intercomInLerp;
+    aboutState.intercomShow += (showTarget - aboutState.intercomShow) * intercomInLerp;
+    if (aboutState.phase === 'opening' && aboutState.hubRetreat > 0.992 && aboutState.intercomShow > 0.992) {
+      setAboutPhase('open');
+      scheduleBioStreamMaxHeight();
+    }
   } else {
-    intercomShow += (0 - intercomShow) * intercomOutLerp;
-    if (intercomShow < INTERCOM.codecReturnGate) {
-      hubRetreat += (0 - hubRetreat) * retreatLerp;
+    aboutState.intercomShow += (0 - aboutState.intercomShow) * intercomOutLerp;
+    if (aboutState.intercomShow < INTERCOM.codecReturnGate) {
+      aboutState.hubRetreat += (0 - aboutState.hubRetreat) * retreatLerp;
     }
   }
 
-  const emblemShow = 1 - easeInOutSine(hubRetreat);
+  const hubOcclude = orbitHubOcclusion();
+  const emblemShow = 1 - easeInOutSine(hubOcclude);
 
-  if (intercomEl) {
+  if (intercomEl && aboutPhaseActive()) {
     const poweringOff = intercomEl.classList.contains('intercom--power-off');
 
     if (poweringOff) {
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      intercomEl.style.opacity = reducedMotion ? '' : '1';
+      intercomEl.style.opacity = prefersReducedMotion ? '' : '1';
+      if (aboutBioEl && !prefersReducedMotion) aboutBioEl.style.opacity = '1';
     } else {
-      const showEase = easeInOutSine(intercomShow);
-      intercomEl.style.opacity = String(showEase);
-      if (showEase > 0.01 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        const floatX = Math.sin(t * 0.414) * 12.1 * showEase;
-        const floatY = Math.sin(t * 0.522 + 0.6) * 7.7 * showEase;
-        const settleY = -50 + showEase * 4;
-        const scale = 0.9 + showEase * 0.1;
-        intercomEl.style.transform =
-          `translate(calc(-50% + ${floatX}px), calc(${settleY}% + ${floatY}px)) scale(${scale})`;
-      } else {
-        intercomEl.style.transform = 'translate(-50%, -50%) scale(0.9)';
-      }
+      const motion = easeInOutSine(aboutState.intercomShow);
+      applyDockPanelMotion(intercomEl, motion, t, prefersReducedMotion, 'left');
+      applyDockPanelMotion(aboutBioEl, motion, t, prefersReducedMotion, 'right');
+      tickBioTransmission(motion);
     }
   }
 
@@ -1296,7 +1623,7 @@ function animate() {
     hubMagnetic.z
   );
   emblemPivot.scale.setScalar(Math.max(0.0001, emblemShow));
-  hubGroup.visible = emblemShow > 0.015;
+  hubGroup.visible = emblemShow > 0.015 && !aboutPhaseActive();
   emblem.rotation.x = Math.sin(t * 0.38) * 0.035 - parallax.y * 0.04 + hubMagnetic.pitch;
   emblem.rotation.z = Math.sin(t * 0.27) * 0.018 + hubMagnetic.roll;
 
@@ -1331,16 +1658,17 @@ function animate() {
   }
 
   // Save icons - smooth lerp toward selection targets
-  saveIcons.forEach(({ group, root, materials, frame }, i) => {
+  saveIcons.forEach(({ group, root, materials, frame, section }, i) => {
     const p = group.userData.phase;
     const bp = group.userData.basePos;
     const v = group.userData.visual;
     const tgt = group.userData.target || { scale: 0.8, opacity: 0.22, zLift: 0 };
     const lerp = 1 - Math.exp(-5 * delta);
     const dim = i === selectedIndex ? 1 - panelBlend * 0.08 : 1 - panelBlend * 0.28;
-    const codecFade = codecNumeralFade(hubRetreat);
-    const codecPush = 1 + hubRetreat * 0.09;
-    const codecScale = 1 - hubRetreat * 0.05;
+    const retreat = orbitHubOcclusion();
+    const codecFade = codecNumeralFade(retreat);
+    const codecPush = 1 + retreat * 0.09;
+    const codecScale = 1 - retreat * 0.05;
 
     v.scale += (tgt.scale - v.scale) * lerp;
     v.opacity += (tgt.opacity - v.opacity) * lerp;
@@ -1350,9 +1678,10 @@ function animate() {
     const emissiveBase = [0.16, 0.24];
     const warmOpacity = v.opacity * pearlWarm;
     const warmEmissive = 0.48 + pearlWarm * 0.52;
+    const iconOpacity = warmOpacity * dim * codecFade;
     materials.forEach((mat, mi) => {
       if (mat.userData.baseEnv === undefined) mat.userData.baseEnv = mat.envMapIntensity;
-      mat.opacity = warmOpacity * dim * codecFade;
+      mat.opacity = iconOpacity;
       mat.emissiveIntensity = emissiveBase[mi] * (0.35 + v.opacity * 0.55) * dim * warmEmissive * codecFade;
       mat.envMapIntensity = mat.userData.baseEnv * (0.72 + pearlWarm * 0.28) * (0.65 + codecFade * 0.35);
     });
@@ -1360,7 +1689,7 @@ function animate() {
     group.position.set(
       bp.x * codecPush + Math.sin(t * 0.5 + p) * 0.02,
       bp.y * codecPush + Math.sin(t * 0.7 + p) * 0.03,
-      bp.z + v.zLift - hubRetreat * 0.14
+      bp.z + v.zLift - retreat * 0.14
     );
 
     if (frame.visible) {
@@ -1426,6 +1755,8 @@ function animate() {
   const glowContent = 0.4 + 0.14 * beamPulse + hubEnergy * 0.28;
   tealGlow.intensity = THREE.MathUtils.lerp(glowContent, glowBrowser, orbitEngage);
 
+  const spiralFade = 1 - easeInOutSine(Math.min(1, aboutState.hubRetreat * 1.15));
+  biosSpiral.material.opacity = 0.22 * spiralFade;
   biosSpiral.rotation.z = t * 0.1;
   scene.children.filter(c => c.type === 'Points').forEach(p => { p.rotation.y = t * 0.012; });
 
@@ -1439,6 +1770,7 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   cameraEndZ = getCameraEndZ();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (aboutPhaseActive()) scheduleBioStreamMaxHeight();
 });
 
 // ---------------------------------------------------------------------------

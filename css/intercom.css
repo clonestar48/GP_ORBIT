@@ -1,12 +1,38 @@
 /* PS1-era codec / intercom transmission panel — teal palette */
 
-.intercom {
+/* One cockpit camera — both dock panels are flat planes inside this space */
+.about-dock {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  visibility: hidden;
+  perspective: var(--dock-persp, 1600px);
+  perspective-origin: 50% var(--dock-persp-y, 48%);
+  transform-style: preserve-3d;
+}
+
+.about-dock--active {
+  visibility: visible;
+}
+
+.intercom,
+.about-bio {
   --intercom-screen: min(57vw, 322px);
+  --codec-panel-width: calc(var(--intercom-screen) + 32px);
+  /* screen + bezel padding + header + footer (matches natural intercom stack) */
+  --codec-bezel-height: calc(var(--intercom-screen) + 82px);
+}
+
+.intercom {
   position: fixed;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%) scale(0.9);
-  z-index: 4;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  z-index: 1;
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
@@ -41,6 +67,7 @@
 
 .intercom__bezel {
   position: relative;
+  box-sizing: border-box;
   background: linear-gradient(
     145deg,
     rgba(90, 190, 178, 0.16) 0%,
@@ -329,8 +356,9 @@
 
 .intercom__footer {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   margin-top: 10px;
+  padding-bottom: 2px;
   font-size: 8px;
   letter-spacing: 0.22em;
   color: rgba(74, 158, 148, 0.45);
@@ -510,10 +538,232 @@
   to { opacity: 0; }
 }
 
+/* ABOUT — floating transmission; vertical nudge in JS to codec screen */
+.about-bio {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: min(36vw, 340px);
+  box-sizing: border-box;
+  padding: 0;
+  overflow: visible;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  --bio-reveal: 0;
+  transform: translate3d(-50%, -50%, 0) scale(0.9);
+  transform-style: preserve-3d;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.about-bio__stream,
+.about-bio__noise {
+  transform: translateZ(1px);
+  backface-visibility: hidden;
+}
+
+.about-bio--active {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Diffuse optical glow — no backdrop rect, no linear “panel” silhouette */
+.about-bio::before {
+  content: '';
+  position: absolute;
+  inset: -72px -88px -80px -56px;
+  z-index: 0;
+  pointer-events: none;
+  transform: translateZ(0.5px);
+  opacity: calc(var(--bio-reveal) * 0.52);
+  background:
+    radial-gradient(
+      ellipse 155% 95% at 38% 28%,
+      rgba(210, 248, 255, 0.07) 0%,
+      rgba(140, 220, 210, 0.02) 28%,
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 120% 85% at 58% 62%,
+      rgba(255, 255, 255, 0.035) 0%,
+      transparent 52%
+    ),
+    radial-gradient(
+      ellipse 90% 65% at 22% 78%,
+      rgba(106, 188, 178, 0.025) 0%,
+      transparent 48%
+    );
+  filter: blur(10px);
+  mask-image:
+    radial-gradient(
+      ellipse 150% 125% at 46% 40%,
+      #000 0%,
+      rgba(0, 0, 0, 0.28) 28%,
+      transparent 56%
+    );
+  -webkit-mask-image:
+    radial-gradient(
+      ellipse 150% 125% at 46% 40%,
+      #000 0%,
+      rgba(0, 0, 0, 0.28) 28%,
+      transparent 56%
+    );
+}
+
+.about-bio__noise {
+  position: absolute;
+  inset: -56px -72px -64px -44px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: calc(var(--bio-reveal) * 0.12);
+  mask-image: radial-gradient(
+    ellipse 140% 115% at 44% 38%,
+    #000 0%,
+    transparent 54%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 140% 115% at 44% 38%,
+    #000 0%,
+    transparent 54%
+  );
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(61, 139, 130, 0.04) 2px,
+      rgba(61, 139, 130, 0.04) 3px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 48px,
+      rgba(106, 188, 178, 0.03) 48px,
+      rgba(106, 188, 178, 0.03) 49px
+    );
+  mix-blend-mode: screen;
+  animation: about-bio-scan 12s linear infinite;
+}
+
+.about-bio__stream {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: calc(var(--codec-bezel-height) + 20px);
+  padding: 0 4px 0 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.about-bio__stream::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.about-bio__meta {
+  display: block;
+  margin: 0 0 18px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(74, 158, 148, 0.55);
+  text-shadow: 0 0 12px rgba(61, 139, 130, 0.2);
+}
+
+.about-bio__meta.about-bio__chunk--live {
+  animation: about-bio-blink 1.6s step-end infinite;
+}
+
+.about-bio__para {
+  margin: 0 0 16px;
+  font-family: var(--font-mono);
+  font-size: clamp(11px, 1.05vw, 13px);
+  line-height: 1.62;
+  letter-spacing: 0.1em;
+  color: rgba(122, 210, 198, 0.88);
+  text-shadow:
+    0 0 10px rgba(61, 139, 130, 0.45),
+    0 0 22px rgba(61, 139, 130, 0.18),
+    1px 0 0 rgba(106, 188, 178, 0.12),
+    -1px 0 0 rgba(61, 139, 130, 0.08);
+}
+
+.about-bio__para:last-child {
+  margin-bottom: 0;
+}
+
+.about-bio__chunk {
+  opacity: 0;
+}
+
+.about-bio__chunk--live {
+  animation:
+    about-bio-chunk-in 0.22s steps(3) forwards,
+    about-bio-flicker 4.8s steps(1) infinite;
+}
+
+@keyframes about-bio-chunk-in {
+  0% {
+    opacity: 0;
+    filter: blur(3px);
+    text-shadow: 0 0 16px rgba(61, 139, 130, 0.55);
+  }
+  35% {
+    opacity: 0.85;
+    filter: blur(0);
+  }
+  55% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes about-bio-scan {
+  from { transform: translateY(0); }
+  to { transform: translateY(6px); }
+}
+
+@keyframes about-bio-flicker {
+  0%, 91%, 100% { opacity: 1; }
+  92% { opacity: 0.82; }
+  94% { opacity: 0.96; }
+}
+
+@keyframes about-bio-blink {
+  0%, 72% { opacity: 1; }
+  73%, 100% { opacity: 0.35; }
+}
+
 @media (max-width: 600px) {
-  .intercom {
+  .intercom,
+  .about-bio {
     --intercom-screen: min(75vw, 286px);
   }
+
+  .about-bio {
+    width: min(84vw, 320px);
+  }
+
+  .about-bio::before {
+    inset: -56px -64px -52px -40px;
+    filter: blur(8px);
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -530,7 +780,18 @@
   .intercom__interference,
   .intercom__signal,
   .intercom__prism,
-  .intercom__bezel-gem {
+  .intercom__bezel-gem,
+  .about-bio__noise,
+  .about-bio__chunk--live,
+  .about-bio__meta.about-bio__chunk--live {
     animation: none;
   }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .about-bio::before {
+    filter: none;
+    opacity: calc(var(--bio-reveal) * 0.32);
+  }
+
 }

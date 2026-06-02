@@ -14,6 +14,11 @@ let noiseRaf = null;
 let portraitController = null;
 let intercomScreen = null;
 let portraitEl = null;
+let intercomRoot = null;
+
+function dispatchIntercomLoaded() {
+  intercomRoot?.dispatchEvent(new CustomEvent('intercom-loaded'));
+}
 let acquireTimer = null;
 let staticStartTimer = null;
 let acquiringSignal = false;
@@ -99,6 +104,7 @@ function beginSignalAcquire() {
       }, 480);
     }
     portraitController?.start();
+    dispatchIntercomLoaded();
   }, SIGNAL_ACQUIRE_MS);
 }
 
@@ -189,6 +195,7 @@ function createPortraitController(portrait, screen) {
 export function initIntercom(rootEl) {
   if (!rootEl) return;
 
+  intercomRoot = rootEl;
   intercomScreen = rootEl.querySelector('.intercom__screen');
   portraitEl = rootEl.querySelector('.intercom__portrait');
   noiseCanvas = rootEl.querySelector('.intercom__noise');
@@ -221,6 +228,7 @@ export function startIntercomNoise() {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reducedMotion) {
     portraitController?.start();
+    dispatchIntercomLoaded();
   } else {
     beginSignalAcquire();
   }
