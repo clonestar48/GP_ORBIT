@@ -1189,6 +1189,143 @@ body.is-ready:not(.vmu-booted) .loader__link {
   }
 }
 
+/* --------------------------------------------------------------------------
+   Pointer reticle — coordinate crosshair behind system cursor
+   -------------------------------------------------------------------------- */
+
+.cursor-reticle {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 15;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+
+.cursor-reticle__frame {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+
+.cursor-reticle__cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+}
+
+.cursor-reticle__cross::before,
+.cursor-reticle__cross::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: var(--teal-ui-bright);
+  transform: translate(-50%, -50%);
+}
+
+.cursor-reticle__cross::before {
+  width: 9px;
+  height: 1px;
+}
+
+.cursor-reticle__cross::after {
+  width: 1px;
+  height: 9px;
+}
+
+.cursor-reticle__corner {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: var(--teal-ui-bright);
+  border-style: solid;
+}
+
+.cursor-reticle__corner--tl {
+  top: 0;
+  left: 0;
+  border-width: 1px 0 0 1px;
+}
+
+.cursor-reticle__corner--tr {
+  top: 0;
+  right: 0;
+  border-width: 1px 1px 0 0;
+}
+
+.cursor-reticle__corner--bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 1px 1px;
+}
+
+.cursor-reticle__corner--br {
+  bottom: 0;
+  right: 0;
+  border-width: 0 1px 1px 0;
+}
+
+.cursor-reticle__dash {
+  position: absolute;
+  background: var(--teal-ui-bright);
+  opacity: 0.85;
+}
+
+.cursor-reticle__dash--t,
+.cursor-reticle__dash--b {
+  left: 50%;
+  width: 7px;
+  height: 1px;
+  transform: translateX(-50%);
+}
+
+.cursor-reticle__dash--t { top: 0; }
+.cursor-reticle__dash--b { bottom: 0; }
+
+.cursor-reticle__dash--l,
+.cursor-reticle__dash--r {
+  top: 50%;
+  width: 1px;
+  height: 7px;
+  transform: translateY(-50%);
+}
+
+.cursor-reticle__dash--l { left: 0; }
+.cursor-reticle__dash--r { right: 0; }
+
+.cursor-reticle__coord {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--teal-ui-bright);
+  line-height: 1;
+  text-shadow: 0 0 6px rgba(var(--teal-rgb), 0.45);
+}
+
+.cursor-reticle__coord--x {
+  top: -13px;
+  right: -2px;
+}
+
+.cursor-reticle__coord--y {
+  bottom: -13px;
+  left: -2px;
+}
+
+@media (pointer: coarse) {
+  .cursor-reticle {
+    display: none !important;
+  }
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

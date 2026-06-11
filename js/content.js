@@ -3,8 +3,6 @@
  * Blocks marked CONTENT PENDING need owner-approved copy and links.
  */
 
-const SITE = 'https://gavinpetersen.co';
-
 export const CONTACT_EMAIL = 'gavin@gavinpetersen.co';
 
 const PENDING_DESC = 'Awaiting approved copy and links.';
@@ -23,16 +21,16 @@ export const CONTENT = {
     html: `
       <p class="lcd__line">Selected graphic design, branding, and illustration.</p>
       <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title"><a href="work/">WORK INDEX</a></div>
-        <div class="lcd__entry-desc">Portfolio view · same site</div>
+        <div class="lcd__entry-title"><a href="#">WORK INDEX</a></div>
+        <div class="lcd__entry-desc">Portfolio view · coming soon</div>
       </div>
       <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title"><a href="work/nfl/">NFL</a></div>
-        <div class="lcd__entry-desc">Client projects</div>
+        <div class="lcd__entry-title"><a href="#">NFL</a></div>
+        <div class="lcd__entry-desc">Client projects · coming soon</div>
       </div>
       <div class="lcd__entry lcd__line">
-        <div class="lcd__entry-title"><a href="${SITE}/" target="_blank" rel="noopener">GAVINPETERSEN.CO</a></div>
-        <div class="lcd__entry-desc">Full archive ↗</div>
+        <div class="lcd__entry-title"><a href="#">GAVINPETERSEN.CO</a></div>
+        <div class="lcd__entry-desc">Full archive · coming soon</div>
       </div>
     `,
   },

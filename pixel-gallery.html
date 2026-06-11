@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en" class="pg-page">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Scroll-revealed work gallery — Gavin Petersen">
+  <meta name="theme-color" content="#080a0e">
+  <title>Work Gallery — GAVIN PETERSEN</title>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/pixel-gallery.css">
+</head>
+<body class="pg-page pg-loading">
+  <canvas id="pg-webgl" aria-hidden="true"></canvas>
+
+  <div class="pg-atmosphere" aria-hidden="true">
+    <div class="pg-atmosphere__gradient"></div>
+  </div>
+
+  <div id="pg-app">
+    <header class="pg-header">
+      <a class="pg-header__brand" href="index.html">GAVIN PETERSEN</a>
+      <a href="sblix-gallery.html">Horizontal gallery</a>
+      <a href="index.html">← Orbit</a>
+    </header>
+
+    <div class="pg-grid-wrap">
+      <div class="pg-grid">
+        <h1
+          class="pg-grid__item pg-grid__title pg-grid__item--title"
+          style="--r: 1; --c: 5; --s: 5;"
+          data-text-animation-in-duration="0.5"
+          data-text-animation-out-duration="0.4"
+          data-text-animation-in-delay="0.4"
+          data-text-animation
+          data-text-animation-split
+        >Selected<br>Work<br>Gallery</h1>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 01" data-pixel-meta="Stock placeholder" style="--r: 1; --c: 1; --s: 4; --ar: 4/3;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-01.jpg" alt="Project 01" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 01</p>
+        </a>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 02" data-pixel-meta="Stock placeholder" style="--r: 2; --c: 4; --s: 3; --ar: 3/4;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-02.jpg" alt="Project 02" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 02</p>
+        </a>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 03" data-pixel-meta="Stock placeholder" style="--r: 2; --c: 7; --s: 2; --ar: 4/5;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-03.jpg" alt="Project 03" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 03</p>
+        </a>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 04" data-pixel-meta="Stock placeholder" style="--r: 3; --c: 3; --s: 4; --ar: 16/10;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-04.jpg" alt="Project 04" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 04</p>
+        </a>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 05" data-pixel-meta="Stock placeholder" style="--r: 4; --c: 1; --s: 4; --ar: 1/1;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-05.jpg" alt="Project 05" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 05</p>
+        </a>
+
+        <p
+          class="pg-grid__item pg-grid__item--copy"
+          style="--r: 5; --c: 4; --s: 4;"
+          data-text-animation-out-stagger="-0.03"
+          data-text-animation
+          data-text-animation-split
+        >
+          Stock placeholders for layout testing. Scroll to pixel-reveal each tile; click for detail.
+          Swap in final art under assets/work/pixel-gallery/ when ready.
+        </p>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 06" data-pixel-meta="Stock placeholder" style="--r: 6; --c: 3; --s: 5; --ar: 4/3;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-06.jpg" alt="Project 06" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 06</p>
+        </a>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 07" data-pixel-meta="Stock placeholder" style="--r: 7; --c: 4; --s: 4; --ar: 3/4;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-07.jpg" alt="Project 07" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 07</p>
+        </a>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 08" data-pixel-meta="Stock placeholder" style="--r: 8; --c: 1; --s: 3; --ar: 4/3;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-08.jpg" alt="Project 08" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 08</p>
+        </a>
+
+        <a class="pg-grid__item" href="#" data-pixel-link data-pixel-title="Project 09" data-pixel-meta="Stock placeholder" style="--r: 10; --c: 4; --s: 5; --ar: 16/9;">
+          <img data-pixel-image src="assets/work/pixel-gallery/placeholder-09.jpg" alt="Project 09" loading="eager" draggable="false" width="1400" height="1050" />
+          <p class="pg-grid__caption" data-text-animation>Project 09</p>
+        </a>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span style="font-family:system-ui">©</span> <span id="footer-year"></span> Gavin Petersen
+    </footer>
+  </div>
+
+  <aside class="pg-detail" id="pg-detail" aria-hidden="true">
+    <div class="pg-detail__bar">
+      <span class="pg-detail__title" id="pg-detail-title">Project</span>
+      <button type="button" class="pg-detail__close" id="pg-detail-close">Close</button>
+    </div>
+    <div class="pg-detail__stage">
+      <img id="pg-detail-img" alt="">
+    </div>
+    <div class="pg-detail__meta">
+      <span id="pg-detail-meta"></span>
+    </div>
+  </aside>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
+  <script>
+    document.getElementById('footer-year').textContent = new Date().getFullYear();
+    window.setTimeout(function () {
+      document.body.classList.remove('pg-loading');
+    }, 14000);
+    window.addEventListener('error', function (e) {
+      if (e.target && e.target.tagName === 'SCRIPT') {
+        document.body.classList.remove('pg-loading');
+      }
+    }, true);
+  </script>
+  <script type="module" src="js/pixel-gallery.js?v=2"></script>
+</body>
+</html>

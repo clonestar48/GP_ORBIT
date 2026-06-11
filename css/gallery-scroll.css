@@ -1,0 +1,249 @@
+/* Horizontal parallax gallery — GP orbit palette */
+
+html.gallery-page {
+  height: 100%;
+  overflow: hidden;
+}
+
+body.gallery-page {
+  margin: 0;
+  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-feature-settings: var(--font-features);
+  color: var(--lcd-green);
+  background: var(--bg-deep);
+  -webkit-font-smoothing: antialiased;
+}
+
+body.gallery-loading::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--bg-deep);
+}
+
+body.gallery-loading::after {
+  content: 'LOADING';
+  position: fixed;
+  z-index: 101;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  color: rgba(var(--teal-rgb), 0.5);
+}
+
+.gs-atmosphere {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.gs-atmosphere__gradient {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 90% 70% at 50% 40%, #141820 0%, var(--bg-deep) 72%);
+}
+
+.gs-atmosphere__grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  background-image:
+    linear-gradient(var(--teal-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--teal-soft) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.gs-shell {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.gs-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px clamp(18px, 4vw, 36px);
+  border-bottom: 1px solid rgba(var(--teal-rgb), 0.16);
+}
+
+.gs-header__brand {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--teal-ui-bright);
+  font-feature-settings: var(--font-features-display);
+  text-decoration: none;
+  border: none;
+}
+
+.gs-header__meta {
+  text-align: right;
+}
+
+.gs-header__title {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--teal-ui-bright);
+  font-feature-settings: var(--font-features-display);
+}
+
+.gs-header__hint {
+  margin-top: 4px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--lcd-green-dim);
+}
+
+.gs-header__exit {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lcd-green-dim);
+  text-decoration: none;
+  border: none;
+  white-space: nowrap;
+}
+
+.gs-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+}
+
+[data-gallery-wrapper] {
+  width: 100%;
+  overflow: hidden;
+  user-select: none;
+}
+
+[data-gallery-track] {
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 3vw, 32px);
+  padding: 0 clamp(18px, 4vw, 36px);
+  will-change: transform;
+}
+
+.gs-slide {
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(var(--teal-rgb), 0.22);
+  border-radius: 2px;
+  background: rgba(8, 12, 14, 0.85);
+  box-shadow: 0 0 28px rgba(var(--teal-rgb), 0.06);
+}
+
+.gs-slide--intro {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: min(320px, 78vw);
+  height: min(52vh, 420px);
+  padding: 24px;
+  aspect-ratio: auto;
+}
+
+.gs-slide__eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--lcd-green-dim);
+  margin-bottom: 8px;
+}
+
+.gs-slide__heading {
+  font-size: clamp(18px, 3vw, 26px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--teal-ui-bright);
+  font-feature-settings: var(--font-features-display);
+  line-height: 1.15;
+  margin-bottom: 10px;
+}
+
+.gs-slide__role {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lcd-green);
+}
+
+.gs-slide--photo {
+  height: min(62vh, 520px);
+  aspect-ratio: 4 / 3;
+}
+
+.gs-slide--wide {
+  aspect-ratio: 16 / 10;
+  width: min(72vw, 880px);
+  height: auto;
+  max-height: min(62vh, 520px);
+}
+
+[data-gallery-image] {
+  position: absolute;
+  top: 0;
+  left: -12.5%;
+  width: 125%;
+  height: 100%;
+  object-fit: cover;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.gs-slide__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 12px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(14, 24, 26, 0.9);
+  background: linear-gradient(transparent, rgba(236, 234, 228, 0.92));
+  pointer-events: none;
+}
+
+.gs-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px clamp(18px, 4vw, 36px);
+  border-top: 1px solid rgba(var(--teal-rgb), 0.12);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(var(--teal-rgb), 0.45);
+}
+
+.gs-footer a {
+  color: rgba(var(--teal-rgb), 0.55);
+  border: none;
+}
+
+@media (max-width: 600px) {
+  .gs-slide--photo {
+    height: min(48vh, 360px);
+    aspect-ratio: 3 / 4;
+  }
+}
