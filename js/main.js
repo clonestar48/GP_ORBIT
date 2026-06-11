@@ -29,8 +29,8 @@ const SECTIONS = [
 const CONFIG = {
   emblemScale: 0.38,
   orbitRadius: 2.0,
-  /** Vertical inset - elliptical orbit clears top/bottom nav strips */
-  orbitFlatten: 0.65,
+  /** Vertical inset - elliptical orbit clears top/bottom nav strips (lower = flatter/wider) */
+  orbitFlatten: 0.58,
   /** Rotate slots 45° off 12/3/6/9 - icons sit in quadrants, not on nav bars */
   orbitSlotOffset: Math.PI / 4,
   /** Index 0 leads clockwise from the first staggered slot */
@@ -66,6 +66,11 @@ const CONFIG = {
     saveScreen: 0x0e181a,
   },
 };
+
+/** Shared nav/orbit visual easing (~0.5s settle) */
+const NAV_SYNC_LERP = 6;
+const NAV_BEAM_LERP = 5;
+const GEM_FRAME_OPACITY = 1;
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -485,6 +490,16 @@ function nearestOrbitIndex(angle) {
   return best;
 }
 
+function orbitIndexWithHysteresis(angle, currentIndex) {
+  const candidate = nearestOrbitIndex(angle);
+  if (currentIndex < 0 || candidate === currentIndex) return candidate;
+
+  const toCurrent = Math.abs(normalizeAngle(angle - orbitAngle(currentIndex)));
+  const toCandidate = Math.abs(normalizeAngle(angle - orbitAngle(candidate)));
+  if (toCandidate >= toCurrent * 0.92) return currentIndex;
+  return candidate;
+}
+
 function orbitPlaneDistance(x, y) {
   const flat = CONFIG.orbitFlatten;
   return Math.hypot(x, y / flat);
@@ -508,6 +523,8 @@ function buildSaveIcon(section, index) {
 
   group.userData.visual = { scale: 0.8, opacity: 0, zLift: 0 };
   group.userData.target = { scale: 0.8, opacity: 0.22, zLift: 0 };
+  group.userData.frameOpacity = 0;
+  group.userData.frameTarget = 0;
   group.renderOrder = 6;
   root.traverse((obj) => {
     if (obj.isMesh) obj.renderOrder = 6;
@@ -755,6 +772,29 @@ let bioTransmissionPrimed = false;
 const panelTitle = document.getElementById('panel-title');
 const panelBody = document.getElementById('panel-body');
 const osHud = document.getElementById('os-hud');
+const orbitLabelsEl = document.getElementById('orbit-labels');
+const navFlyawayZone = document.getElementById('nav-flyaway-zone');
+const navFlyawayTrigger = document.getElementById('nav-flyaway-trigger');
+
+/** Match .nav-flyaway-trigger::before hit pad in css/styles.css */
+const FLYAWAY_HIT_PAD = { top: 8, right: 8, bottom: 24, left: 32 };
+const ORBIT_LABEL_OFFSET_Y = 28;
+/** Bottom quadrant slots (ABOUT, CONTACT) — keep labels above footer chrome */
+const ORBIT_LABEL_OFFSET_Y_BOTTOM = 12;
+const ORBIT_LABEL_BOTTOM_CLEAR = 56;
+/** Hover scale — phase 2 only, after reticle pairs with label */
+const ORBIT_HOVER_SCALE_MAX = 0.3;
+/** Phase 1 — beam/reticle catch-up to the word */
+const ORBIT_LOCK_TRACK_RATE = 7.5;
+/** Phase 2 — ~1.86s to ~95% once paired */
+const ORBIT_EXPAND_IN_S = 1.86;
+const ORBIT_EXPAND_IN_RATE = 3 / ORBIT_EXPAND_IN_S;
+const ORBIT_EXPAND_OUT_RATE = 10;
+const ORBIT_LOCK_PAIRED = 0.97;
+/** Flyaway nav — inset from oval top + compressed span (CONTACT stays at midline) */
+const FLYAWAY_TOP_INSET = 0.35;
+const FLYAWAY_SPAN_SCALE = 0.65;
+const FLYAWAY_IDLE_MS = 5000;
 
 /** Build nav item button for the top strip */
 function buildNavItem(section, index) {
@@ -774,18 +814,90 @@ function buildNavStrips() {
   });
 }
 
+function buildOrbitLabels() {
+  if (!orbitLabelsEl) return;
+  orbitLabelsEl.replaceChildren();
+  SECTIONS.forEach((section, index) => {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'orbit-label';
+    el.dataset.section = section.key;
+    el.dataset.index = String(index);
+    el.innerHTML = `<span class="orbit-label__text">${section.label}</span>`;
+    el.addEventListener('mouseenter', () => audio.unlock());
+    el.addEventListener('click', () => {
+      audio.unlock();
+      if (currentView !== 'browser') return;
+      openSection(section.key);
+    });
+    orbitLabelsEl.appendChild(el);
+  });
+}
+
 buildNavStrips();
+buildOrbitLabels();
 
 const topItems = [...osHud.querySelectorAll('.nav-strip__item')];
+const orbitLabelItems = orbitLabelsEl
+  ? [...orbitLabelsEl.querySelectorAll('.orbit-label')]
+  : [];
 
 const orbitNavBox = new THREE.Box3();
 const orbitNavCenter = new THREE.Vector3();
+const flyawayLayoutProj = new THREE.Vector3();
+const orbitLockBeamTip = new THREE.Vector3();
+const orbitLabelWorld = new THREE.Vector3();
+let orbitLockBeamActive = false;
 
-function applyNavStripTransform() {
-  if (!osHud.classList.contains('nav-strip--orbit-aligned')) return;
-  osHud.style.transform = navRetracted
-    ? 'translateY(calc(-100% - 40px))'
-    : 'none';
+function screenPointOnOrbitPlane(screenX, screenY, out = new THREE.Vector3()) {
+  pointer.x = (screenX / window.innerWidth) * 2 - 1;
+  pointer.y = -(screenY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  if (raycaster.ray.intersectPlane(orbitPlane, orbitHit)) {
+    return out.copy(orbitHit);
+  }
+  return null;
+}
+
+function getOrbitLabelWorldPoint(index, out = orbitLabelWorld) {
+  const iconTip = saveIcons[index].group.position.clone().multiplyScalar(0.88);
+  const labelEl = orbitLabelItems[index];
+  if (!labelEl) return out.copy(iconTip);
+  const rect = labelEl.getBoundingClientRect();
+  const hit = screenPointOnOrbitPlane(
+    rect.left + rect.width * 0.5,
+    rect.top + rect.height * 0.5,
+    out,
+  );
+  return hit ? out : out.copy(iconTip);
+}
+
+function projectWorldPointToScreen(x, y, z = 0) {
+  flyawayLayoutProj.set(x, y, z).project(camera);
+  return {
+    x: (flyawayLayoutProj.x * 0.5 + 0.5) * window.innerWidth,
+    y: (-flyawayLayoutProj.y * 0.5 + 0.5) * window.innerHeight,
+  };
+}
+
+/** Flyaway links — WORK lower in oval, CONTACT at midline, 35% tighter span */
+function syncFlyawayNavLayout() {
+  if (!isIntroComplete || (currentView !== 'browser' && currentView !== 'content')) return;
+
+  const r = CONFIG.orbitRadius;
+  const flat = CONFIG.orbitFlatten;
+  const halfSpan = r * flat;
+  const topWorldY = halfSpan * (1 - FLYAWAY_TOP_INSET);
+  const bottomWorldY = topWorldY - halfSpan * FLYAWAY_SPAN_SCALE;
+
+  const top = projectWorldPointToScreen(0, topWorldY, 0);
+  const bottom = projectWorldPointToScreen(0, bottomWorldY, 0);
+  const topY = Math.min(top.y, bottom.y);
+  const bottomY = Math.max(top.y, bottom.y);
+  const height = Math.max(56, bottomY - topY);
+
+  osHud.style.top = `${Math.round(topY)}px`;
+  osHud.style.height = `${Math.round(height)}px`;
 }
 
 function projectIconScreenCenter(root) {
@@ -799,27 +911,54 @@ function projectIconScreenCenter(root) {
   };
 }
 
-/**
- * Nav width = distance between top orbit diamond centers (WORK / CONTACT anchors).
- * Strip is centered on the viewport; labels are evenly spaced inside.
- */
-function syncNavStripToOrbit() {
-  if (!isIntroComplete || currentView !== 'browser' || !saveIcons.length) return;
+function orbitLabelScreenTop(iconScreenY, slotIndex) {
+  const angle = orbitAngle(slotIndex);
+  const isBottomHalf = Math.sin(angle) < -0.2;
+  const offsetY = isBottomHalf ? ORBIT_LABEL_OFFSET_Y_BOTTOM : ORBIT_LABEL_OFFSET_Y;
+  return Math.min(iconScreenY + offsetY, window.innerHeight - ORBIT_LABEL_BOTTOM_CLEAR);
+}
 
-  const metrics = saveIcons.map(({ root }) => projectIconScreenCenter(root));
-  const topPair = [...metrics].sort((a, b) => a.y - b.y).slice(0, 2);
-  if (topPair.length < 2) return;
+/** Pin labels under each orbit icon — follows 3D projection each frame */
+function syncOrbitLabelPositions() {
+  if (!orbitLabelsEl || !orbitLabelItems.length) return;
 
-  const leftCenterX = Math.min(topPair[0].x, topPair[1].x);
-  const rightCenterX = Math.max(topPair[0].x, topPair[1].x);
-  const diamondSpan = rightCenterX - leftCenterX;
-  const spanWidth = Math.max(120, diamondSpan * 0.5);
-  const stripLeft = (window.innerWidth - spanWidth) * 0.5;
+  if (!isIntroComplete || currentView !== 'browser' || !saveIcons.length) {
+    orbitLabelsEl.classList.remove('orbit-labels--visible');
+    return;
+  }
 
-  osHud.style.left = `${Math.round(stripLeft)}px`;
-  osHud.style.width = `${Math.round(spanWidth)}px`;
-  osHud.classList.add('nav-strip--orbit-aligned');
-  applyNavStripTransform();
+  const codecFade = codecNumeralFade(orbitHubOcclusion());
+  orbitLabelsEl.classList.toggle('orbit-labels--visible', codecFade > 0.02);
+  orbitLabelsEl.style.opacity = String(codecFade);
+
+  saveIcons.forEach(({ root }, i) => {
+    const el = orbitLabelItems[i];
+    if (!el) return;
+    const { x, y } = projectIconScreenCenter(root);
+    el.style.left = `${Math.round(x)}px`;
+    el.style.top = `${Math.round(orbitLabelScreenTop(y, i))}px`;
+  });
+}
+
+function applyOrbitLabelUI() {
+  const previewIdx = getPreviewIndex();
+  orbitLabelItems.forEach((el, i) => {
+    const isSelected = selectedIndex >= 0 && i === selectedIndex;
+    const isPreview = previewIdx === i;
+    el.classList.toggle('orbit-label--selected', isSelected);
+    el.classList.toggle('orbit-label--hover', isPreview);
+    el.classList.toggle('orbit-label--engaged', isSelected || isPreview);
+  });
+}
+
+function isInFlyawayActivateZone(clientX, clientY) {
+  if (!navFlyawayTrigger || navFlyawayTrigger.hidden) return false;
+  const rect = navFlyawayTrigger.getBoundingClientRect();
+  const { top, right, bottom, left } = FLYAWAY_HIT_PAD;
+  return clientX >= rect.left - left
+    && clientX <= rect.right + right
+    && clientY >= rect.top - top
+    && clientY <= rect.bottom + bottom;
 }
 
 function isOverNavStrip(clientX, clientY) {
@@ -827,56 +966,238 @@ function isOverNavStrip(clientX, clientY) {
   return el != null && osHud.contains(el);
 }
 
+function pickOrbitLabelIndex(clientX, clientY) {
+  const el = document.elementFromPoint(clientX, clientY);
+  if (!(el instanceof Element) || !orbitLabelsEl?.contains(el)) return -1;
+  const btn = el.closest('.orbit-label');
+  if (!btn) return -1;
+  const i = Number(btn.dataset.index);
+  return Number.isNaN(i) ? -1 : i;
+}
+
+let reticleActiveIndex = -1;
+let reticleLockProgress = 0;
+let orbitHoverScale = 0;
+
+/** Orbit-only label lock — drives reticle + shared 3D beam tip (not flyaway) */
+function updateReticleState(delta) {
+  const hoverIdx = (currentView === 'browser' && isIntroComplete && !isTransitioning)
+    ? orbitHoverIndex
+    : -1;
+
+  if (hoverIdx >= 0 && hoverIdx !== reticleActiveIndex) {
+    reticleActiveIndex = hoverIdx;
+    reticleLockProgress = 0;
+    orbitHoverScale = 0;
+  }
+
+  const targetProgress = hoverIdx >= 0 ? 1 : 0;
+  const lockRate = targetProgress > reticleLockProgress
+    ? ORBIT_LOCK_TRACK_RATE
+    : ORBIT_EXPAND_OUT_RATE;
+  const lockLerp = prefersReducedMotion ? 1 : (1 - Math.exp(-lockRate * delta));
+  reticleLockProgress += (targetProgress - reticleLockProgress) * lockLerp;
+
+  const isPaired = hoverIdx >= 0 && reticleLockProgress >= ORBIT_LOCK_PAIRED;
+  const scaleTarget = isPaired ? 1 : 0;
+  const scaleRate = scaleTarget > orbitHoverScale
+    ? ORBIT_EXPAND_IN_RATE
+    : ORBIT_EXPAND_OUT_RATE;
+  const scaleLerp = prefersReducedMotion ? 1 : (1 - Math.exp(-scaleRate * delta));
+  orbitHoverScale += (scaleTarget - orbitHoverScale) * scaleLerp;
+
+  orbitLockBeamActive = false;
+
+  if (reticleLockProgress < 0.012 && hoverIdx < 0) {
+    reticleActiveIndex = -1;
+    applyOrbitLabelScale(-1);
+    window.__vmuReticleState = { active: false, progress: 0 };
+    return;
+  }
+
+  const idx = reticleActiveIndex;
+  if (idx < 0 || !saveIcons[idx]) {
+    applyOrbitLabelScale(-1);
+    window.__vmuReticleState = { active: false, progress: reticleLockProgress };
+    return;
+  }
+
+  const iconTip = saveIcons[idx].group.position.clone().multiplyScalar(0.88);
+  getOrbitLabelWorldPoint(idx, orbitLabelWorld);
+  const lockBlend = easeOutCubic(reticleLockProgress);
+  orbitLockBeamTip.copy(iconTip).lerp(orbitLabelWorld, lockBlend);
+  orbitLockBeamActive = true;
+
+  const tipScreen = projectWorldPointToScreen(
+    orbitLockBeamTip.x,
+    orbitLockBeamTip.y,
+    orbitLockBeamTip.z,
+  );
+
+  let x = tipScreen.x;
+  let y = tipScreen.y;
+  let frameW = 72;
+  let frameH = 22;
+
+  const labelEl = orbitLabelItems[idx];
+  if (labelEl) {
+    const rect = labelEl.getBoundingClientRect();
+    if (rect.width > 0) {
+      const labelCx = rect.left + rect.width * 0.5;
+      const labelCy = rect.top + rect.height * 0.5;
+      frameW = Math.max(56, Math.round(rect.width + 24));
+      frameH = Math.max(20, Math.round(rect.height + 14));
+      const settle = Math.min(1, Math.max(0, (lockBlend - 0.55) / 0.45));
+      x = tipScreen.x + (labelCx - tipScreen.x) * settle;
+      y = tipScreen.y + (labelCy - tipScreen.y) * settle;
+    }
+  }
+
+  const pairedScale = 1 + ORBIT_HOVER_SCALE_MAX * orbitHoverScale;
+  applyOrbitLabelScale(idx, pairedScale);
+
+  window.__vmuReticleState = {
+    active: true,
+    progress: reticleLockProgress,
+    hoverScale: pairedScale,
+    x,
+    y,
+    frameW,
+    frameH,
+  };
+}
+
+/** JS-driven scale keeps label + reticle in lockstep (phase 2 only) */
+function applyOrbitLabelScale(activeIdx, scale = 1) {
+  orbitLabelItems.forEach((el, i) => {
+    el.style.setProperty('--label-scale', i === activeIdx ? scale : 1);
+  });
+}
+
+/** Closest flyaway slot while pointer is over the corner strip */
+function pickNavIndexFromPointer(clientX, clientY) {
+  if (!isOverNavStrip(clientX, clientY)) return -1;
+
+  let best = -1;
+  let bestDist = Infinity;
+  topItems.forEach((el) => {
+    const i = Number(el.dataset.index);
+    if (Number.isNaN(i)) return;
+    const rect = el.getBoundingClientRect();
+    const cy = rect.top + rect.height * 0.5;
+    const dist = Math.abs(clientY - cy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  });
+  return best;
+}
+
+/** Active preview — orbit / icon labels primary; corner nav when visible */
+function getPreviewIndex() {
+  if (currentView !== 'browser') return -1;
+  if (orbitHoverIndex >= 0) return orbitHoverIndex;
+  if (navHoverIndex >= 0 && osHud.classList.contains('nav-strip--visible')) return navHoverIndex;
+  return -1;
+}
+
+function syncPreviewState() {
+  syncBeamTarget();
+  applyIconTargets();
+  applyStripUI();
+  applyOrbitLabelUI();
+}
+
 /** Click / hover handlers for top nav */
 function bindNavStripItem(btn) {
   const idx = Number(btn.dataset.index);
 
-  btn.addEventListener('mouseenter', () => {
-    if (currentView !== 'browser') return;
-    audio.unlock();
-    setNavHover(idx, false);
-  });
-  btn.addEventListener('mouseleave', () => {
-    if (currentView !== 'browser') return;
-    setNavHover(-1);
-  });
+  btn.addEventListener('mouseenter', () => audio.unlock());
   btn.addEventListener('click', () => {
     audio.unlock();
     if (currentView !== 'browser') return;
-    if (idx === selectedIndex) {
-      openSection(SECTIONS[idx].key);
-    } else {
-      selectSection(idx);
-    }
+    openSection(SECTIONS[idx].key);
   });
 }
 
 topItems.forEach(bindNavStripItem);
 
-osHud.addEventListener('mouseleave', () => {
-  if (currentView === 'browser' && navHoverIndex >= 0) {
-    setNavHover(-1);
-  }
-});
-
 // ---------------------------------------------------------------------------
-// Top nav - reveal on scroll up / top edge; hide on scroll down
+// Corner flyaway nav — explicit trigger only; yields to orbit lock-on
 // ---------------------------------------------------------------------------
 
 let navRetracted = false;
+let navCornerEngaged = false;
+let navFlyawayPinned = false;
+let flyawayIdleTimer = null;
+
+function isFlyawayEngaged(clientX, clientY) {
+  return isOverFlyawayUI(clientX, clientY);
+}
+
+function orbitNavHasFocus() {
+  return orbitHoverIndex >= 0 || reticleLockProgress > 0.08;
+}
+
+function clearFlyawayIdleTimer() {
+  if (flyawayIdleTimer != null) {
+    clearTimeout(flyawayIdleTimer);
+    flyawayIdleTimer = null;
+  }
+}
+
+function scheduleFlyawayIdle() {
+  clearFlyawayIdleTimer();
+  if (navFlyawayPinned || currentView !== 'browser') return;
+  if (!osHud.classList.contains('nav-strip--visible')) return;
+
+  flyawayIdleTimer = window.setTimeout(() => {
+    flyawayIdleTimer = null;
+    if (navFlyawayPinned || currentView !== 'browser') return;
+    if (isFlyawayEngaged(lastPointer.x, lastPointer.y)) {
+      scheduleFlyawayIdle();
+      return;
+    }
+    navCornerEngaged = false;
+    hideFlyawayNav(true);
+  }, FLYAWAY_IDLE_MS);
+}
+
+function isOverFlyawayUI(clientX, clientY) {
+  if (isInFlyawayActivateZone(clientX, clientY)) return true;
+  if (isOverNavStrip(clientX, clientY)) return true;
+  const el = document.elementFromPoint(clientX, clientY);
+  return el instanceof Node && navFlyawayTrigger?.contains(el);
+}
 
 function navBarIsPinned() {
-  return osHud.matches(':hover');
+  if (navFlyawayPinned) return true;
+  return isOverFlyawayUI(lastPointer.x, lastPointer.y)
+    || (osHud.matches(':hover') ?? false)
+    || (navFlyawayTrigger?.matches(':hover') ?? false);
 }
 
 function navIsPointerEngaged() {
-  return navHoverIndex >= 0 || orbitHoverIndex >= 0 || navBarIsPinned();
+  return orbitHoverIndex >= 0 || navHoverIndex >= 0 || navBarIsPinned();
+}
+
+function updateFlyawayTriggerVisibility() {
+  if (!navFlyawayTrigger) return;
+  const show = isIntroComplete && (currentView === 'browser' || currentView === 'content');
+  navFlyawayTrigger.hidden = !show;
+  navFlyawayTrigger.setAttribute(
+    'aria-expanded',
+    (navFlyawayPinned || osHud.classList.contains('nav-strip--visible')) ? 'true' : 'false',
+  );
+  navFlyawayTrigger.classList.toggle('nav-flyaway-trigger--pinned', navFlyawayPinned);
 }
 
 function navStripShouldShow() {
-  if (currentView === 'content') return selectedIndex >= 0;
+  if (currentView === 'content' && selectedIndex >= 0) return true;
   if (currentView !== 'browser') return false;
-  return selectedIndex >= 0 || navIsPointerEngaged();
+  if (orbitNavHasFocus() && !navFlyawayPinned) return false;
+  return navFlyawayPinned || navCornerEngaged || navBarIsPinned();
 }
 
 function updateNavStripVisibility() {
@@ -886,73 +1207,108 @@ function updateNavStripVisibility() {
     navRetracted = false;
     osHud.classList.remove('nav-strip--retracted');
   }
+  updateFlyawayTriggerVisibility();
 }
 
 function setNavRetracted(retracted) {
-  if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) {
+  if (!osHud.classList.contains('nav-strip--visible')) {
     navRetracted = false;
     osHud.classList.remove('nav-strip--retracted');
     return;
   }
-  if (retracted && (navBarIsPinned() || selectedIndex >= 0)) return;
+  if (retracted && navBarIsPinned()) return;
   navRetracted = retracted;
   osHud.classList.toggle('nav-strip--retracted', retracted);
-  applyNavStripTransform();
 }
 
 function revealNav() {
+  if (orbitNavHasFocus() && !navFlyawayPinned) return;
+  navCornerEngaged = true;
   setNavRetracted(false);
+  updateNavStripVisibility();
+  if (!navFlyawayPinned) scheduleFlyawayIdle();
+}
+
+function hideFlyawayNav(force = false) {
+  clearFlyawayIdleTimer();
+  if (currentView === 'content') return;
+  if (!force && navFlyawayPinned) return;
+  if (!force && isOverFlyawayUI(lastPointer.x, lastPointer.y)) return;
+  navCornerEngaged = false;
+  navRetracted = false;
+  osHud.classList.remove('nav-strip--retracted');
+  if (navHoverIndex >= 0) setNavHover(-1);
+  updateNavStripVisibility();
+}
+
+function toggleFlyawayPinned() {
+  if (navFlyawayPinned) {
+    unpinFlyaway();
+    return;
+  }
+  navFlyawayPinned = true;
+  clearFlyawayIdleTimer();
+  revealNav();
+  updateFlyawayTriggerVisibility();
+}
+
+function isActivelyHoveredOrbitTarget(clientX, clientY) {
+  if (orbitHoverIndex < 0) return false;
+  const iconPick = pickSaveIconIndex(clientX, clientY);
+  if (iconPick === orbitHoverIndex) return true;
+  return pickOrbitLabelIndex(clientX, clientY) === orbitHoverIndex;
+}
+
+/** Clicks here keep flyaway pinned — nav links, trigger, active orbit icon/label */
+function isFlyawayPinSafeTarget(clientX, clientY, target) {
+  if (!(target instanceof Node)) return false;
+  if (osHud.contains(target)) return true;
+  if (navFlyawayTrigger?.contains(target)) return true;
+  return isActivelyHoveredOrbitTarget(clientX, clientY);
+}
+
+function unpinFlyaway() {
+  if (!navFlyawayPinned) return;
+  navFlyawayPinned = false;
+  navCornerEngaged = false;
+  updateFlyawayTriggerVisibility();
+  hideFlyawayNav(true);
+}
+
+function tryUnpinFlyawayFromClick(clientX, clientY, target) {
+  if (!navFlyawayPinned || currentView !== 'browser' || isTransitioning) return;
+  if (isFlyawayPinSafeTarget(clientX, clientY, target)) return;
+  unpinFlyaway();
+}
+
+if (navFlyawayTrigger) {
+  navFlyawayTrigger.addEventListener('mouseenter', () => {
+    if (orbitNavHasFocus()) return;
+    audio.unlock();
+    revealNav();
+  });
+  navFlyawayTrigger.addEventListener('focus', revealNav);
+  navFlyawayTrigger.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    audio.unlock();
+    toggleFlyawayPinned();
+  });
+  navFlyawayTrigger.addEventListener('pointerdown', (e) => e.stopPropagation());
 }
 
 osHud.addEventListener('mouseenter', revealNav);
 
-window.addEventListener(
-  'wheel',
-  (e) => {
-    if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) return;
-    if (navBarIsPinned()) {
-      revealNav();
-      return;
-    }
-    if (e.deltaY > 6) setNavRetracted(true);
-    else if (e.deltaY < -6) revealNav();
-  },
-  { passive: true }
-);
-
-window.addEventListener('pointermove', (e) => {
-  if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) return;
-  if (e.clientY < 110 || navBarIsPinned()) revealNav();
-});
-
-let touchScrollY = 0;
-window.addEventListener('touchstart', (e) => {
-  touchScrollY = e.touches[0].clientY;
-}, { passive: true });
-window.addEventListener('touchmove', (e) => {
-  if (currentView !== 'browser' || !osHud.classList.contains('nav-strip--visible')) return;
-  const y = e.touches[0].clientY;
-  const dy = touchScrollY - y;
-  if (navBarIsPinned()) {
-    revealNav();
-  } else if (dy > 10) {
-    setNavRetracted(true);
-  } else if (dy < -10) {
-    revealNav();
-  }
-  touchScrollY = y;
-}, { passive: true });
-
 let selectedIndex = -1;
-/** Teal gem frame - only after user selects an icon (not on initial load) */
-let frameRevealedIndex = -1;
-/** Top nav hover only - not driven by 3D orbit icons */
+/** Top nav hover — driven from pointer position over strip */
 let navHoverIndex = -1;
-/** 3D save-icon hover - independent from nav ▶ / selection */
+/** Orbit dial hover — driven from 3D pick */
 let orbitHoverIndex = -1;
 let beamAngle = orbitAngle(0);
 let beamAngleTarget = beamAngle;
 let pointerInOrbit = false;
+const lastPointer = { x: 0, y: 0 };
+
 const hubMagnetic = { x: 0, y: 0, z: 0, roll: 0, pitch: 0, yaw: 0 };
 let currentView = 'boot';
 let isTransitioning = false;
@@ -1272,9 +1628,7 @@ function setBrowserIdleLabels() {
 
 function refreshBrowserReadout() {
   if (currentView !== 'browser') return;
-  const previewIdx = orbitHoverIndex >= 0
-    ? orbitHoverIndex
-    : (navHoverIndex >= 0 ? navHoverIndex : -1);
+  const previewIdx = getPreviewIndex();
   if (previewIdx >= 0) {
     const preview = SECTIONS[previewIdx];
     currentFileEl.textContent = preview.label;
@@ -1299,7 +1653,7 @@ function indexFromKey(key) {
 function applyStripUI() {
   const pointerEngaged = navIsPointerEngaged();
   const selIdx = selectedIndex;
-  const previewIdx = navHoverIndex >= 0 ? navHoverIndex : orbitHoverIndex;
+  const previewIdx = getPreviewIndex();
 
   topItems.forEach((el) => {
     const i = Number(el.dataset.index);
@@ -1310,33 +1664,25 @@ function applyStripUI() {
     el.classList.toggle('nav-strip__item--hover', isPreview);
   });
   updateNavStripVisibility();
-  if (pointerEngaged || selIdx >= 0) revealNav();
   if (currentView === 'browser') refreshBrowserReadout();
 }
 
 /** 3D orbit icons - selection and nav/orbit preview (stable through panel open/close) */
 function applyIconTargets() {
-  const navPreview = currentView === 'browser' && navHoverIndex >= 0 ? navHoverIndex : -1;
-  const orbitPreview = currentView === 'browser' && orbitHoverIndex >= 0 ? orbitHoverIndex : -1;
+  const previewIdx = getPreviewIndex();
 
-  saveIcons.forEach(({ frame, group }, i) => {
-    const navHovered = i === navPreview;
-    const orbitHovered = i === orbitPreview;
-    const previewed = navHovered || orbitHovered;
+  saveIcons.forEach(({ group }, i) => {
+    const previewed = previewIdx === i;
     const selected = selectedIndex >= 0 && i === selectedIndex;
 
-    frame.visible = i === frameRevealedIndex;
+    group.userData.frameTarget = previewed || selected ? 1 : 0;
 
     if (selected && previewed) {
-      group.userData.target = { scale: 1.0, opacity: 0.82, zLift: 0.18 };
+      group.userData.target = { scale: 1.0, opacity: 1, zLift: 0.18 };
       return;
     }
-    if (selected) {
-      group.userData.target = { scale: 0.94, opacity: 0.52, zLift: 0.1 };
-      return;
-    }
-    if (previewed) {
-      group.userData.target = { scale: 0.94, opacity: 0.52, zLift: 0.1 };
+    if (selected || previewed) {
+      group.userData.target = { scale: 0.94, opacity: 1, zLift: 0.1 };
       return;
     }
 
@@ -1348,11 +1694,15 @@ function resolveBeamTargetAngle() {
   if (isTransitioning || currentView !== 'browser') {
     return selectedIndex >= 0 ? orbitAngle(selectedIndex) : beamAngle;
   }
+  if (orbitLockBeamActive && orbitHoverIndex >= 0) {
+    return angleOnOrbit(orbitLockBeamTip.x, orbitLockBeamTip.y);
+  }
   if (orbitHoverIndex >= 0) {
     return orbitAngle(orbitHoverIndex);
   }
-  if (navHoverIndex >= 0) {
-    return orbitAngle(navHoverIndex);
+  const preview = getPreviewIndex();
+  if (preview >= 0) {
+    return orbitAngle(preview);
   }
   if (pointerInOrbit) {
     return beamAngleTarget;
@@ -1379,22 +1729,14 @@ function flashNav() {
 }
 
 /** Single source of truth - index drives orbit, top nav, LCD, 3D */
-function syncNavigation(index, playSound = false, revealFrame = false) {
+function syncNavigation(index, playSound = false) {
   const prev = selectedIndex;
   selectedIndex = wrapIndex(index);
   navHoverIndex = -1;
   orbitHoverIndex = -1;
 
-  if (revealFrame) {
-    frameRevealedIndex = selectedIndex;
-  }
-
-  applyStripUI();
-
   pointerInOrbit = false;
-  syncBeamTarget();
-  applyIconTargets();
-  refreshBrowserReadout();
+  syncPreviewState();
 
   if (playSound && prev !== selectedIndex && currentView === 'browser') {
     audio.navigate();
@@ -1402,44 +1744,40 @@ function syncNavigation(index, playSound = false, revealFrame = false) {
   }
 }
 
-/** Top nav hover - strips only */
+/** Top nav hover — pointer-driven via pickNavIndexFromPointer */
 function setNavHover(index, playSound = false) {
   if (currentView !== 'browser') {
     navHoverIndex = -1;
-    applyStripUI();
+    syncPreviewState();
     return;
   }
 
   const next = index >= 0 ? wrapIndex(index) : -1;
   const changed = next !== navHoverIndex;
   navHoverIndex = next;
-  refreshBrowserReadout();
-  applyStripUI();
-  syncBeamTarget();
-  applyIconTargets();
+  syncPreviewState();
 
   if (playSound && changed && navHoverIndex >= 0) {
     audio.hover();
   }
 }
 
-/** Orbit dial hover - 3D pop, beam snap, nav preview; ▶ stays on selection */
 function setOrbitHover(index, playSound = false) {
   if (currentView !== 'browser') {
     orbitHoverIndex = -1;
-    applyIconTargets();
-    applyStripUI();
+    syncPreviewState();
     return;
   }
 
   const next = index >= 0 ? wrapIndex(index) : -1;
   const changed = next !== orbitHoverIndex;
   orbitHoverIndex = next;
-
-  refreshBrowserReadout();
-  syncBeamTarget();
-  applyIconTargets();
-  applyStripUI();
+  syncPreviewState();
+  if (next >= 0 && !navFlyawayPinned) {
+    navCornerEngaged = false;
+    clearFlyawayIdleTimer();
+    updateNavStripVisibility();
+  }
 
   if (playSound && changed && orbitHoverIndex >= 0) {
     audio.hover();
@@ -1447,21 +1785,17 @@ function setOrbitHover(index, playSound = false) {
 }
 
 function selectSection(index, playSound = true) {
-  syncNavigation(index, playSound, true);
+  syncNavigation(index, playSound);
 }
 
 function deselectSection() {
   if (selectedIndex < 0) return;
   selectedIndex = -1;
-  frameRevealedIndex = -1;
   navHoverIndex = -1;
   orbitHoverIndex = -1;
   pointerInOrbit = false;
-  applyStripUI();
-  syncBeamTarget();
-  applyIconTargets();
+  syncPreviewState();
   setBrowserIdleLabels();
-  refreshBrowserReadout();
 }
 
 function flashLCD() {
@@ -1480,13 +1814,12 @@ function openSection(sectionKey) {
 
   const idx = indexFromKey(sectionKey);
   if (idx !== selectedIndex) {
-    syncNavigation(idx, false, true);
+    syncNavigation(idx, false);
   } else {
     navHoverIndex = -1;
     orbitHoverIndex = -1;
     pointerInOrbit = false;
-    syncBeamTarget();
-    applyIconTargets();
+    syncPreviewState();
   }
 
   isTransitioning = true;
@@ -1565,7 +1898,7 @@ function openAboutIntercom() {
   }
   if (isTransitioning || currentView !== 'browser') return;
 
-  syncNavigation(indexFromKey('about'), false, true);
+  syncNavigation(indexFromKey('about'), false);
 
   isTransitioning = true;
   audio.confirm();
@@ -1679,16 +2012,8 @@ function backToBrowser() {
   navHoverIndex = -1;
   orbitHoverIndex = -1;
   pointerInOrbit = false;
-  applyStripUI();
-  if (selectedIndex >= 0) {
-    lcdStatus.textContent = SECTIONS[selectedIndex].label;
-    currentFileEl.textContent = SECTIONS[selectedIndex].label;
-    fileMetaEl.textContent = `${selectedIndex + 1}/${SECTIONS.length}`;
-  } else {
-    setBrowserIdleLabels();
-  }
-  syncBeamTarget();
-  applyIconTargets();
+  syncPreviewState();
+  if (selectedIndex < 0) setBrowserIdleLabels();
 
   setTimeout(() => {
     isTransitioning = false;
@@ -1706,13 +2031,13 @@ function finishBootSequence() {
     viewBrowser.classList.add('lcd__view--entering');
     currentView = 'browser';
     selectedIndex = -1;
-    frameRevealedIndex = -1;
     navHoverIndex = -1;
     orbitHoverIndex = -1;
     setBrowserIdleLabels();
-    applyStripUI();
-    applyIconTargets();
-    syncBeamTarget();
+    saveIcons.forEach(({ group }) => {
+      group.userData.visual.opacity = 0.22;
+    });
+    syncPreviewState();
     updateNavStripVisibility();
     setNavRetracted(false);
 
@@ -1817,28 +2142,55 @@ function pickOrbitHoverFromPointer(clientX, clientY) {
   if (iconPick >= 0) return iconPick;
 
   if (dist <= r * 1.18) {
-    return nearestOrbitIndex(angle);
+    return orbitIndexWithHysteresis(angle, orbitHoverIndex);
   }
 
   return -1;
 }
 
 window.addEventListener('pointermove', (e) => {
+  lastPointer.x = e.clientX;
+  lastPointer.y = e.clientY;
   mouse.x = (e.clientX / window.innerWidth - 0.5) * 2;
   mouse.y = (e.clientY / window.innerHeight - 0.5) * 2;
 
   if (currentView !== 'browser' || isTransitioning) {
     pointerInOrbit = false;
     if (orbitHoverIndex >= 0) setOrbitHover(-1);
+    if (navHoverIndex >= 0) setNavHover(-1);
     container.classList.remove('is-hovering');
     return;
   }
 
+  if (orbitNavHasFocus() && !navFlyawayPinned) {
+    if (osHud.classList.contains('nav-strip--visible')) {
+      navCornerEngaged = false;
+      scheduleFlyawayIdle();
+    }
+  } else if (isFlyawayEngaged(e.clientX, e.clientY)) {
+    revealNav();
+  } else if (!navFlyawayPinned && osHud.classList.contains('nav-strip--visible')) {
+    scheduleFlyawayIdle();
+  }
+
   if (isOverNavStrip(e.clientX, e.clientY)) {
     pointerInOrbit = false;
-    if (orbitHoverIndex >= 0) {
-      setOrbitHover(-1);
+    if (orbitHoverIndex >= 0) setOrbitHover(-1);
+    const navIdx = pickNavIndexFromPointer(e.clientX, e.clientY);
+    if (navIdx !== navHoverIndex) {
+      setNavHover(navIdx, navIdx >= 0);
     }
+    container.classList.toggle('is-hovering', navIdx >= 0);
+    return;
+  }
+
+  if (navHoverIndex >= 0) setNavHover(-1);
+
+  const labelIdx = pickOrbitLabelIndex(e.clientX, e.clientY);
+  if (labelIdx >= 0) {
+    pointerInOrbit = false;
+    container.classList.toggle('is-hovering', true);
+    if (labelIdx !== orbitHoverIndex) setOrbitHover(labelIdx, true);
     return;
   }
 
@@ -1851,14 +2203,18 @@ window.addEventListener('pointermove', (e) => {
 
 window.addEventListener('pointerleave', () => {
   pointerInOrbit = false;
-  if (currentView === 'browser' && orbitHoverIndex >= 0) {
-    setOrbitHover(-1);
-  }
+  if (currentView !== 'browser') return;
+  if (orbitHoverIndex >= 0) setOrbitHover(-1);
+  if (navHoverIndex >= 0) setNavHover(-1);
 });
 
 window.addEventListener('pointerdown', (e) => {
   if (currentView === 'boot') return;
   audio.unlock();
+
+  if (currentView === 'browser') {
+    tryUnpinFlyawayFromClick(e.clientX, e.clientY, e.target);
+  }
 
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -1901,11 +2257,7 @@ window.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  if (idx === selectedIndex) {
-    openSection(SECTIONS[idx].key);
-  } else {
-    selectSection(idx);
-  }
+  openSection(SECTIONS[idx].key);
 });
 
 updateNavStripVisibility();
@@ -1930,7 +2282,10 @@ function animate() {
     camera.position.z = THREE.MathUtils.lerp(cam.startZ, cameraEndZ, eased);
     camera.position.y = THREE.MathUtils.lerp(0.2, cam.endY, eased);
     camera.lookAt(0, 0, 0);
-    if (introProgress >= 1) isIntroComplete = true;
+    if (introProgress >= 1) {
+      isIntroComplete = true;
+      updateFlyawayTriggerVisibility();
+    }
   } else {
     parallax.x += (mouse.x - parallax.x) * px.smoothing;
     parallax.y += (mouse.y - parallax.y) * px.smoothing;
@@ -1955,14 +2310,19 @@ function animate() {
   const orbitEngage = (1 - panelBlend * 0.92) * Math.max(0.04, intercomEngage);
   orbitRing.material.opacity = 0.28 * Math.max(0.04, intercomEngage);
 
-  const browserHubEnergy = orbitHoverIndex >= 0 || selectedIndex >= 0 ? 1 : 0.78;
+  const browserHubEnergy = getPreviewIndex() >= 0 || selectedIndex >= 0 ? 1 : 0.78;
   const targetHubEnergy = aboutPhaseActive()
     ? THREE.MathUtils.lerp(0.68, 0.38, easeInOutSine(aboutState.hubRetreat))
     : THREE.MathUtils.lerp(browserHubEnergy, 0.68, panelBlend);
   hubEnergy += (targetHubEnergy - hubEnergy) * (1 - Math.exp(-2.4 * delta));
 
+  if (currentView === 'browser') {
+    syncOrbitLabelPositions();
+    updateReticleState(delta);
+  }
+
   const targetAngle = resolveBeamTargetAngle();
-  const angleLerp = 1 - Math.exp(-4 * delta);
+  const angleLerp = 1 - Math.exp(-NAV_BEAM_LERP * delta);
   beamAngle = lerpAngle(beamAngle, targetAngle, angleLerp);
 
   const magLerp = 1 - Math.exp(-4.5 * delta);
@@ -2051,7 +2411,7 @@ function animate() {
   if (chrome && darkChrome) {
     const motionEnergy = Math.min(
       1,
-      hubEnergy * 0.72 + Math.abs(parallax.x) * 0.28 + (orbitHoverIndex >= 0 ? 0.22 : 0) + spinProgress * 0.85
+      hubEnergy * 0.72 + Math.abs(parallax.x) * 0.28 + (getPreviewIndex() >= 0 ? 0.22 : 0) + spinProgress * 0.85
     );
 
     if (chrome.userData.shader) {
@@ -2084,7 +2444,7 @@ function animate() {
     const bp = group.userData.basePos;
     const v = group.userData.visual;
     const tgt = group.userData.target || { scale: 0.8, opacity: 0.22, zLift: 0 };
-    const lerp = 1 - Math.exp(-5 * delta);
+    const lerp = 1 - Math.exp(-NAV_SYNC_LERP * delta);
     const dim = selectedIndex >= 0 && i === selectedIndex
       ? 1 - panelBlend * 0.08
       : 1 - panelBlend * 0.28;
@@ -2093,26 +2453,33 @@ function animate() {
     const codecPush = 1 + retreat * 0.09;
     const codecScale = 1 - retreat * 0.05;
 
+    const isSelected = selectedIndex >= 0 && i === selectedIndex;
+    const previewIdx = getPreviewIndex();
+    const isHovered = previewIdx === i;
+    const engaged = isSelected || isHovered;
+
     v.scale += (tgt.scale - v.scale) * lerp;
-    v.opacity += (tgt.opacity - v.opacity) * lerp;
+    const opacityLerp = engaged
+      ? (1 - Math.exp(-NAV_SYNC_LERP * 2.4 * delta))
+      : lerp;
+    v.opacity += (tgt.opacity - v.opacity) * opacityLerp;
     v.zLift += (tgt.zLift - v.zLift) * lerp;
 
     root.scale.setScalar(v.scale * ICON_SCALE * codecScale);
     const emissiveBase = [0.38, 0.52];
-    const warmOpacity = v.opacity * pearlWarm;
-    const warmEmissive = 0.48 + pearlWarm * 0.52;
-    const iconOpacity = warmOpacity * dim * codecFade;
-    const iconMotion = Math.min(
-      1,
-      v.opacity * 0.72
-        + (selectedIndex >= 0 && i === selectedIndex ? 0.22 : 0)
-        + (orbitHoverIndex === i ? 0.18 : 0)
-    );
+    const warmEmissive = engaged ? 1 : (0.48 + pearlWarm * 0.52);
+    const iconOpacity = engaged
+      ? dim * codecFade
+      : v.opacity * pearlWarm * dim * codecFade;
+    const iconMotion = engaged
+      ? 1
+      : Math.min(1, v.opacity * 0.72);
     materials.forEach((mat, mi) => {
       if (mat.userData.baseEnv === undefined) mat.userData.baseEnv = mat.envMapIntensity;
       mat.opacity = iconOpacity;
-      mat.emissiveIntensity = emissiveBase[mi] * (0.35 + v.opacity * 0.55) * dim * warmEmissive * codecFade;
-      mat.envMapIntensity = mat.userData.baseEnv * (0.72 + pearlWarm * 0.28) * (0.65 + codecFade * 0.35);
+      const emissiveFactor = engaged ? 1 : v.opacity;
+      mat.emissiveIntensity = emissiveBase[mi] * (0.35 + emissiveFactor * 0.55) * dim * warmEmissive * codecFade;
+      mat.envMapIntensity = mat.userData.baseEnv * (engaged ? 1 : 0.72 + pearlWarm * 0.28) * (0.65 + codecFade * 0.35);
       tickPearlMaterialShader(mat, t, iconMotion);
     });
 
@@ -2122,33 +2489,43 @@ function animate() {
       bp.z + v.zLift - retreat * 0.14
     );
 
+    const frameTarget = group.userData.frameTarget ?? 0;
+    const frameLerp = 1 - Math.exp(-NAV_SYNC_LERP * delta);
+    group.userData.frameOpacity += (frameTarget - group.userData.frameOpacity) * frameLerp;
+    const gemFade = group.userData.frameOpacity * codecFade;
+    frame.visible = gemFade > 0.01 || frameTarget > 0;
     if (frame.visible) {
-      frame.material.opacity = codecFade;
+      frame.material.opacity = gemFade * GEM_FRAME_OPACITY;
       frame.material.transparent = true;
-      frame.material.emissiveIntensity = (0.32 + Math.sin(t * 4) * 0.12) * codecFade;
+      frame.material.emissiveIntensity = (0.32 + Math.sin(t * 4) * 0.12) * gemFade;
     }
   });
 
-  if (currentView === 'browser') syncNavStripToOrbit();
+  if (currentView === 'browser' || currentView === 'content') {
+    syncFlyawayNavLayout();
+  }
 
   // Selection beam + hub lighting - eases with panel open/close
   const hubCenter = new THREE.Vector3(0, 0, 0.02);
   const hubGlowPos = new THREE.Vector3(0, 0.1, 0.55);
 
   const beamTip = orbitPointAtAngle(beamAngle, 0.92);
-  if (orbitHoverIndex >= 0 && orbitEngage > 0.05) {
-    const iconTip = saveIcons[orbitHoverIndex].group.position.clone().multiplyScalar(0.88);
+  const previewIdx = getPreviewIndex();
+  if (orbitLockBeamActive && orbitHoverIndex >= 0 && orbitEngage > 0.05) {
+    beamTip.copy(orbitLockBeamTip);
+  } else if (previewIdx >= 0 && orbitEngage > 0.05) {
+    const iconTip = saveIcons[previewIdx].group.position.clone().multiplyScalar(0.88);
     beamTip.lerp(iconTip, 0.42 * orbitEngage);
   } else {
     const beamFocusIdx = selectedIndex >= 0
       ? selectedIndex
-      : (orbitHoverIndex >= 0 ? orbitHoverIndex : 0);
+      : (previewIdx >= 0 ? previewIdx : 0);
     beamTip.z = saveIcons[beamFocusIdx].group.position.z * 0.35;
   }
 
   selectionLine.geometry.setFromPoints([hubCenter, beamTip]);
 
-  const onTarget = orbitHoverIndex >= 0 || !pointerInOrbit;
+  const onTarget = previewIdx >= 0 || !pointerInOrbit;
   const beamOpacity = (onTarget
     ? 0.28 + 0.34 * beamPulse * hubEnergy
     : 0.18 + 0.22 * beamPulse) * orbitEngage;
@@ -2182,10 +2559,10 @@ function animate() {
   hubPurpleFill.intensity = THREE.MathUtils.lerp(0.4 + hubEnergy * 0.12, 0.48 + hubEnergy * 0.22, orbitEngage);
 
   const glowOrbit = orbitPointAtAngle(beamAngle, 0.14);
-  const glowTarget = orbitHoverIndex >= 0
+  const glowTarget = previewIdx >= 0
     ? hubGlowPos
     : new THREE.Vector3(glowOrbit.x, glowOrbit.y + 0.1, 0.58);
-  tealGlow.position.lerp(glowTarget, orbitHoverIndex >= 0 ? 0.12 : 0.08);
+  tealGlow.position.lerp(glowTarget, previewIdx >= 0 ? 0.12 : 0.08);
   const glowBrowser = 0.48 + 0.24 * beamPulse + hubEnergy * 0.5;
   const glowContent = 0.4 + 0.14 * beamPulse + hubEnergy * 0.28;
   tealGlow.intensity = THREE.MathUtils.lerp(glowContent, glowBrowser, orbitEngage);
@@ -2213,7 +2590,8 @@ window.addEventListener('resize', () => {
   cameraEndZ = getCameraEndZ();
   renderer.setSize(window.innerWidth, window.innerHeight);
   starField.material.uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
-  syncNavStripToOrbit();
+  syncOrbitLabelPositions();
+  syncFlyawayNavLayout();
   if (aboutPhaseActive()) scheduleBioStreamMaxHeight();
 });
 
