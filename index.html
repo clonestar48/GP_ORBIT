@@ -21,20 +21,13 @@
     <div class="atmosphere__glow atmosphere__glow--right"></div>
   </div>
 
-  <!-- Pointer reticle (behind system cursor) -->
-  <div id="cursor-reticle" class="cursor-reticle" hidden aria-hidden="true">
+  <!-- Label lock reticle — frames orbit name, synced to 3D selection beam -->
+  <div id="cursor-reticle" class="cursor-reticle cursor-reticle--lock" hidden aria-hidden="true">
     <div class="cursor-reticle__frame">
-      <span class="cursor-reticle__corner cursor-reticle__corner--tl" aria-hidden="true"></span>
-      <span class="cursor-reticle__corner cursor-reticle__corner--tr" aria-hidden="true"></span>
-      <span class="cursor-reticle__corner cursor-reticle__corner--bl" aria-hidden="true"></span>
-      <span class="cursor-reticle__corner cursor-reticle__corner--br" aria-hidden="true"></span>
-      <span class="cursor-reticle__dash cursor-reticle__dash--t" aria-hidden="true"></span>
-      <span class="cursor-reticle__dash cursor-reticle__dash--r" aria-hidden="true"></span>
-      <span class="cursor-reticle__dash cursor-reticle__dash--b" aria-hidden="true"></span>
-      <span class="cursor-reticle__dash cursor-reticle__dash--l" aria-hidden="true"></span>
-      <span class="cursor-reticle__cross" aria-hidden="true"></span>
-      <span class="cursor-reticle__coord cursor-reticle__coord--x" data-coord="x">0</span>
-      <span class="cursor-reticle__coord cursor-reticle__coord--y" data-coord="y">0</span>
+      <span class="cursor-reticle__bracket cursor-reticle__bracket--l" aria-hidden="true"></span>
+      <span class="cursor-reticle__bracket cursor-reticle__bracket--r" aria-hidden="true"></span>
+      <span class="cursor-reticle__tick cursor-reticle__tick--t" aria-hidden="true"></span>
+      <span class="cursor-reticle__tick cursor-reticle__tick--b" aria-hidden="true"></span>
     </div>
   </div>
 
@@ -48,8 +41,28 @@
     <a class="loader__link" id="loader-link" href="#" hidden></a>
   </div>
 
-  <!-- Primary navigation - top strip -->
-  <nav class="nav-strip nav-strip--top" id="os-hud" aria-label="Portfolio navigation"></nav>
+  <!-- Orbit icon labels — primary spatial nav -->
+  <div id="orbit-labels" class="orbit-labels" aria-label="Section labels"></div>
+
+  <!-- Corner flyaway — secondary nav (edge reveal) -->
+  <div id="nav-flyaway-zone" class="nav-flyaway-zone">
+    <nav class="nav-strip nav-strip--flyaway" id="os-hud" aria-label="Portfolio navigation"></nav>
+    <button
+      type="button"
+      id="nav-flyaway-trigger"
+      class="nav-flyaway-trigger"
+      aria-label="Open navigation menu"
+      aria-expanded="false"
+      aria-controls="os-hud"
+      hidden
+    >
+      <span class="nav-flyaway-trigger__icon" aria-hidden="true">
+        <span class="nav-flyaway-trigger__lines">
+          <span></span><span></span><span></span>
+        </span>
+      </span>
+    </button>
+  </div>
 
   <!-- LCD status (hidden - boot logic only) -->
   <div id="lcd-screen" class="lcd" hidden aria-hidden="true">
