@@ -5,7 +5,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from api_bootstrap import make_get_handler
+from api_bootstrap import BaseJsonHandler, load_env
 from odds.sports_data import get_history_payload
 
-handler = make_get_handler(get_history_payload)
+load_env()
+
+
+class handler(BaseJsonHandler):
+    get_payload = staticmethod(get_history_payload)
