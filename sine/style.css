@@ -28,13 +28,73 @@ body {
   padding: 2rem 1.25rem 2.5rem;
 }
 
+.toy-shell {
+  width: min(100%, 124rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.artifact-card {
+  padding: 1.1rem 1.35rem 1.15rem;
+  background: linear-gradient(180deg, rgba(var(--teal-rgb), 0.08) 0%, var(--lcd-bg) 100%);
+  border: 1px solid rgba(232, 168, 124, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 0 40px var(--orange-glow-soft);
+}
+
+.artifact-card__label {
+  margin: 0 0 0.35rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--teal-ui-dim);
+}
+
+.artifact-card__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--orange-soft);
+}
+
+.artifact-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
+  margin: 0;
+}
+
+.artifact-card__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.artifact-card__row dt {
+  margin: 0;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--teal-ui-dim);
+}
+
+.artifact-card__row dd {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  color: var(--teal-ui);
+}
+
 .workspace {
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
   justify-content: center;
   gap: 1.25rem;
-  width: min(100%, 124rem);
+  width: 100%;
 }
 
 .back-link {
@@ -65,29 +125,43 @@ body {
 }
 
 .panel--synth {
-  width: min(100%, 26rem);
-  flex: 0 0 min(100%, 26rem);
-  padding: 1.75rem 1.5rem 1.5rem;
+  width: min(100%, 24rem);
+  flex: 0 0 min(100%, 24rem);
+  padding: 1.5rem 1.25rem 1.35rem;
+  border-color: rgba(var(--teal-rgb), 0.18);
+  box-shadow:
+    0 0 30px rgba(var(--teal-rgb), 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  opacity: 0.94;
+}
+
+.workspace--solo {
+  width: 100%;
+}
+
+.workspace--solo .panel--melody {
+  width: 100%;
+  max-width: 100%;
 }
 
 .panel--melody {
-  width: min(100%, 85rem);
-  flex: 1 1 85rem;
+  width: min(100%, 88rem);
+  flex: 1 1 88rem;
   min-width: 0;
-  padding: 1.75rem 1.75rem 1.5rem;
-}
-
-.panel--tunes {
-  width: min(100%, 11.5rem);
-  flex: 0 0 min(100%, 11.5rem);
-  padding: 1.75rem 0.85rem 1.5rem;
+  padding: 1.85rem 2rem 1.5rem;
+  border-color: rgba(232, 168, 124, 0.28);
+  box-shadow:
+    0 0 80px var(--orange-glow-soft),
+    0 0 24px rgba(var(--teal-rgb), 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .panel--melody.is-playing {
-  border-color: rgba(232, 168, 124, 0.35);
+  border-color: rgba(232, 168, 124, 0.5);
   box-shadow:
-    0 0 60px var(--orange-glow-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    0 0 90px var(--orange-glow-soft),
+    0 0 30px rgba(232, 168, 124, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .panel__tag {
@@ -96,6 +170,12 @@ body {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--teal-ui-dim);
+}
+
+.readout--compact {
+  margin-bottom: 1.1rem;
+  font-size: 0.82rem;
+  min-height: 2.25rem;
 }
 
 .readout {
@@ -504,6 +584,28 @@ body {
   width: 100%;
 }
 
+.save-preset--inline .btn {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.82rem;
+}
+
+.melody-keep {
+  margin-top: 1.25rem;
+}
+
+.melody-keep-actions {
+  gap: 0.6rem;
+}
+
+.melody-keep-actions .btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.88rem;
+}
+
 .user-presets--stack {
   flex-direction: column;
   align-items: stretch;
@@ -740,39 +842,144 @@ body {
   justify-content: center;
 }
 
-.panel--tunes .panel__tag {
-  margin-bottom: 1.25rem;
+.worlds-band {
+  padding: 1.15rem 1.35rem 1.35rem;
+  background: linear-gradient(180deg, rgba(232, 168, 124, 0.06) 0%, var(--panel-bg) 100%);
+  border: 1px solid rgba(232, 168, 124, 0.32);
+  border-radius: 6px;
+  box-shadow:
+    0 0 50px var(--orange-glow-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.tunes-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--teal-rgb), 0.35) transparent;
+.worlds-band__title {
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--orange-soft);
 }
 
-.panel--tunes .presets--tunes-col {
-  flex-direction: column;
-  gap: 0.4rem;
+.presets--worlds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.25rem, 1fr));
+  gap: 0.55rem;
 }
 
-.panel--tunes .presets--tunes-col .preset-btn {
+.presets--worlds .world-btn {
   width: 100%;
-  padding: 0.5rem 0.35rem;
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
-  line-height: 1.2;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.4rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
   text-align: center;
   white-space: normal;
 }
 
-.panel--tunes .preset-section__label {
-  margin-top: 0.75rem;
+.optional-tweak {
+  margin-top: 1.25rem;
+  border-top: 1px solid rgba(var(--teal-rgb), 0.12);
+  padding-top: 0.75rem;
 }
 
-.panel--tunes .preset-section__label:first-child {
-  margin-top: 0;
+.optional-tweak__summary {
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--teal-ui-dim);
+  cursor: pointer;
+  list-style: none;
+}
+
+.optional-tweak__summary::-webkit-details-marker {
+  display: none;
+}
+
+.optional-tweak__summary::before {
+  content: '+ ';
+  color: var(--orange-soft);
+}
+
+.optional-tweak[open] .optional-tweak__summary::before {
+  content: '− ';
+}
+
+.optional-tweak__body {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.optional-tweak .melody-controls {
+  margin-bottom: 0;
+}
+
+.optional-tweak .synth-block__title {
+  font-size: 0.72rem;
+}
+
+.toy-hint {
+  margin: 1rem 0 0;
+  text-align: center;
+}
+
+.melody-actions {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.melody-actions .btn {
+  min-width: 5.5rem;
+  flex: 0 1 auto;
+}
+
+.melody-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.melody-head .panel__tag {
+  margin-bottom: 0;
+}
+
+.creator-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.creator-bar .btn {
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.68rem;
+}
+
+.mutate-intensity {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.mutate-intensity-btn {
+  padding: 0.38rem 0.45rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+}
+
+.melody-stage {
+  padding: 0.85rem 0.75rem;
+  margin-bottom: 1.25rem;
+  background: rgba(var(--teal-rgb), 0.06);
+  border: 1px solid rgba(var(--teal-rgb), 0.2);
+  border-radius: 4px;
+  box-shadow: inset 0 0 40px rgba(var(--teal-rgb), 0.04);
 }
 
 .melody-controls {
@@ -844,7 +1051,7 @@ body {
   --melody-steps: 16;
   --melody-gap: 0.28rem;
   --melody-note-col: 2.35rem;
-  --melody-row-h: 1.5rem;
+  --melody-row-h: 1.72rem;
   --melody-grid-w: 100%;
   --melody-cell: calc(
     (var(--melody-grid-w) - var(--melody-note-col) - var(--melody-steps) * var(--melody-gap))
@@ -908,7 +1115,7 @@ body {
   border: 1px solid rgba(var(--teal-rgb), 0.15);
   border-radius: 2px;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease, transform 0.12s ease;
 }
 
 .melody-grid__cell:not(.is-on)::after {
@@ -928,8 +1135,9 @@ body {
 .melody-grid__cell.is-on {
   color: var(--bg-deep);
   background: linear-gradient(180deg, var(--orange-soft) 0%, var(--orange-deep) 100%);
-  border-color: rgba(232, 168, 124, 0.65);
-  box-shadow: 0 0 10px var(--orange-glow-soft);
+  border-color: rgba(232, 168, 124, 0.75);
+  box-shadow: 0 0 14px var(--orange-glow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: scale(1.04);
 }
 
 .melody-grid__cell.is-on::after {
@@ -947,33 +1155,22 @@ body {
   margin-bottom: 0;
 }
 
-.melody-hint {
-  margin-top: 1rem;
-}
 
 @media (max-width: 1100px) {
   .workspace {
     flex-wrap: wrap;
     align-items: stretch;
-    width: min(100%, 85rem);
   }
 
   .panel--synth,
-  .panel--melody,
-  .panel--tunes {
+  .panel--melody {
     flex: 1 1 100%;
     width: 100%;
     max-width: 100%;
   }
 
-  .panel--tunes .presets--tunes-col {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .panel--tunes .presets--tunes-col .preset-btn {
-    flex: 1 1 calc(33.333% - 0.3rem);
-    font-size: 0.72rem;
+  .presets--worlds {
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
   }
 }
 

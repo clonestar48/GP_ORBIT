@@ -10,108 +10,91 @@
 <body>
   <a class="back-link" href="../index.html">← GP Orbit</a>
 
-  <div class="workspace">
-    <main class="panel panel--synth" aria-label="Sound effect synth">
-      <p class="panel__tag">Sine Lab</p>
-
-      <p class="readout" id="readout" aria-live="polite">—</p>
-
-      <div class="synth-stack">
-        <section class="synth-block">
-          <h2 class="synth-block__title">Tone</h2>
-          <div class="rotary-grid" id="knobs-core"></div>
-        </section>
-
-        <section class="synth-block">
-          <h2 class="synth-block__title">Shape</h2>
-          <div class="knobs" id="knobs-shape"></div>
-        </section>
-
-        <label class="repeat-lever">
-          <span class="repeat-lever__label">Repeat</span>
-          <input type="checkbox" id="repeat-lever" aria-label="Repeat sound">
-          <span class="repeat-lever__switch" aria-hidden="true">
-            <span class="repeat-lever__thumb"></span>
-          </span>
-          <span class="repeat-lever__state" aria-hidden="true"></span>
-        </label>
-      </div>
-
-      <div class="synth-footer">
-        <div class="actions actions--stack">
-          <button type="button" class="btn" id="play-btn">Play</button>
-          <button type="button" class="btn btn--ghost" id="random-btn">Random</button>
-          <button type="button" class="btn btn--ghost" id="copy-btn">Copy JSON</button>
-          <button type="button" class="btn btn--ghost" id="share-btn">Copy link</button>
+  <div class="toy-shell">
+    <article class="artifact-card" id="artifact-card" hidden aria-live="polite">
+      <p class="artifact-card__label">Now playing</p>
+      <h1 class="artifact-card__title" id="artifact-title">—</h1>
+      <dl class="artifact-card__meta">
+        <div class="artifact-card__row">
+          <dt>World</dt>
+          <dd id="artifact-world">—</dd>
         </div>
+        <div class="artifact-card__row">
+          <dt>Seed</dt>
+          <dd id="artifact-seed">—</dd>
+        </div>
+        <div class="artifact-card__row">
+          <dt>Steps</dt>
+          <dd id="artifact-steps">—</dd>
+        </div>
+      </dl>
+    </article>
 
-        <div class="preset-section">
-          <p class="preset-section__label">Stock</p>
-          <div class="presets presets--stock-grid" aria-label="Stock presets">
-            <button type="button" class="preset-btn" data-preset="laser">Laser</button>
-            <button type="button" class="preset-btn" data-preset="sub-kick">Sub kick</button>
-            <button type="button" class="preset-btn" data-preset="coin">Coin</button>
-            <button type="button" class="preset-btn" data-preset="alarm">Alarm</button>
-            <button type="button" class="preset-btn" data-preset="walkie">Walkie</button>
-            <button type="button" class="preset-btn" data-preset="bubble">Bubble</button>
-            <button type="button" class="preset-btn" data-preset="data-blip">Data blip</button>
-            <button type="button" class="preset-btn" data-preset="ghost">Ghost</button>
+    <section class="worlds-band" aria-label="Worlds">
+      <h2 class="worlds-band__title">Worlds</h2>
+      <div class="presets presets--worlds" id="world-presets" aria-label="Worlds"></div>
+    </section>
+
+    <div class="workspace workspace--solo">
+      <aside class="panel panel--melody" id="melody-panel" aria-label="Melody toy">
+        <div class="melody-head">
+          <p class="panel__tag">Melody</p>
+          <div class="creator-bar">
+            <button type="button" class="btn btn--small" id="mutate-btn">Mutate</button>
+            <button type="button" class="btn btn--ghost btn--small" id="generate-btn">New</button>
           </div>
         </div>
 
-        <div class="preset-section">
-          <p class="preset-section__label">Saved</p>
-          <div class="save-preset save-preset--stack">
-            <input type="text" class="save-preset__input" id="preset-name" placeholder="Name this sound" maxlength="24" aria-label="Preset name">
-            <button type="button" class="btn btn--ghost btn--small" id="save-preset-btn">Save</button>
-          </div>
-          <div class="user-presets user-presets--stack" id="user-presets"></div>
-        </div>
-      </div>
-
-      <p class="hint">Space to play · flip repeat to loop · link auto-updates in URL</p>
-    </main>
-
-    <aside class="panel panel--melody" id="melody-panel" aria-label="Melody sequencer">
-      <p class="panel__tag">Melody</p>
-
-      <div class="melody-controls">
-        <div class="melody-steps" aria-label="Step count">
-          <span class="melody-controls__label">Steps</span>
-          <div class="melody-steps__btns">
-            <button type="button" class="preset-btn melody-steps-btn" data-steps="8">8</button>
-            <button type="button" class="preset-btn melody-steps-btn" data-steps="12">12</button>
-            <button type="button" class="preset-btn melody-steps-btn is-selected" data-steps="16">16</button>
-            <button type="button" class="preset-btn melody-steps-btn" data-steps="24">24</button>
-            <button type="button" class="preset-btn melody-steps-btn" data-steps="32">32</button>
+        <div class="melody-stage">
+          <div class="melody-grid-wrap">
+            <div class="melody-grid__head" id="melody-step-head" aria-hidden="true"></div>
+            <div class="melody-grid" id="melody-grid"></div>
           </div>
         </div>
 
-        <label class="melody-tempo">
-          <span class="melody-controls__label">Step</span>
-          <span class="melody-tempo__val" id="melody-tempo-val">160 ms</span>
-          <input type="range" id="melody-tempo" min="80" max="400" step="10" value="160" aria-label="Milliseconds per step">
-        </label>
-      </div>
+        <div class="actions melody-actions">
+          <button type="button" class="btn" id="melody-play-btn">Play</button>
+          <button type="button" class="btn btn--ghost" id="melody-loop-btn" aria-pressed="false">Loop</button>
+          <button type="button" class="btn btn--ghost" id="melody-clear-btn">Clear</button>
+          <button type="button" class="btn btn--ghost" id="melody-share-btn">Copy link</button>
+          <button type="button" class="btn btn--ghost" id="melody-copy-seed-btn">Copy seed</button>
+        </div>
 
-      <div class="melody-grid-wrap">
-        <div class="melody-grid__head" id="melody-step-head" aria-hidden="true"></div>
-        <div class="melody-grid" id="melody-grid"></div>
-      </div>
+        <p class="hint toy-hint">Pick a world · tap the grid · space to play · copy a seed to share</p>
 
-      <div class="actions melody-actions">
-        <button type="button" class="btn" id="melody-play-btn">Play</button>
-        <button type="button" class="btn btn--ghost" id="melody-loop-btn" aria-pressed="false">Loop</button>
-        <button type="button" class="btn btn--ghost" id="melody-clear-btn">Clear</button>
-      </div>
-
-      <p class="hint melody-hint">Click cells to place notes · one note per step · uses current synth sound</p>
-    </aside>
-
-    <aside class="panel panel--tunes" aria-label="Example tunes">
-      <p class="panel__tag">Tunes</p>
-      <div class="tunes-list" id="melody-songs-list"></div>
-    </aside>
+        <details class="optional-tweak">
+          <summary class="optional-tweak__summary">Tweak</summary>
+          <div class="optional-tweak__body">
+            <div class="melody-controls">
+              <div class="melody-steps" aria-label="Step count">
+                <span class="melody-controls__label">Steps</span>
+                <div class="melody-steps__btns">
+                  <button type="button" class="preset-btn melody-steps-btn" data-steps="8">8</button>
+                  <button type="button" class="preset-btn melody-steps-btn" data-steps="12">12</button>
+                  <button type="button" class="preset-btn melody-steps-btn is-selected" data-steps="16">16</button>
+                  <button type="button" class="preset-btn melody-steps-btn" data-steps="24">24</button>
+                  <button type="button" class="preset-btn melody-steps-btn" data-steps="32">32</button>
+                </div>
+              </div>
+              <label class="melody-tempo">
+                <span class="melody-controls__label">Speed</span>
+                <span class="melody-tempo__val" id="melody-tempo-val">160 ms</span>
+                <input type="range" id="melody-tempo" min="80" max="400" step="10" value="160" aria-label="Milliseconds per step">
+              </label>
+            </div>
+            <p class="readout readout--compact" id="readout" aria-live="polite">—</p>
+            <section class="synth-block">
+              <h3 class="synth-block__title">Tone</h3>
+              <div class="rotary-grid" id="knobs-core"></div>
+            </section>
+            <section class="synth-block">
+              <h3 class="synth-block__title">Shape</h3>
+              <div class="knobs" id="knobs-shape"></div>
+            </section>
+          </div>
+        </details>
+      </aside>
+    </div>
   </div>
 
   <script type="module" src="ui.js"></script>

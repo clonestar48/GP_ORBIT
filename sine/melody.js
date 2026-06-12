@@ -1,5 +1,4 @@
 import { play, unlock } from './synth.js';
-import { SONG_TEMPLATES, TUNE_CATEGORIES } from './tunes.js';
 
 const NOTE_ROWS = [
   { label: 'C5', midi: 72 },
@@ -15,27 +14,6 @@ const NOTE_ROWS = [
 const STEP_OPTIONS = [8, 12, 16, 24, 32];
 const DEFAULT_STEPS = 16;
 const DEFAULT_TEMPO = 160;
-
-/** One full phrase — notes then rests to fill phraseSteps. */
-function buildPhrase(notes, phraseSteps) {
-  const phrase = emptyPattern(phraseSteps);
-  for (let i = 0; i < phraseSteps; i++) {
-    phrase[i] = i < notes.length ? notes[i] : -1;
-  }
-  return phrase;
-}
-
-/** Shorter grid truncates; longer grid loops the full phrase. */
-function fitSongToSteps(notes, count, phraseSteps) {
-  const phrase = buildPhrase(notes, phraseSteps);
-  const out = emptyPattern(count);
-  if (count > phrase.length) {
-    for (let i = 0; i < count; i++) out[i] = phrase[i % phrase.length];
-    return out;
-  }
-  for (let i = 0; i < count; i++) out[i] = phrase[i];
-  return out;
-}
 
 function midiToHz(midi) {
   return 440 * 2 ** ((midi - 69) / 12);
@@ -53,21 +31,6 @@ let loopMelody = false;
 let playTimer = null;
 let playStep = 0;
 let getSynthParams = () => ({});
-let activeSong = null;
-
-function updateSongSelection(key) {
-  activeSong = key;
-  document.querySelectorAll('.melody-song-btn').forEach((btn) => {
-    btn.classList.toggle('is-selected', btn.dataset.song === key);
-  });
-}
-
-function clearSongSelection() {
-  activeSong = null;
-  document.querySelectorAll('.melody-song-btn').forEach((btn) => {
-    btn.classList.remove('is-selected');
-  });
-}
 
 function syncStepUi() {
   document.querySelectorAll('.melody-steps-btn').forEach((btn) => {
@@ -101,7 +64,6 @@ function decodeMelody(raw) {
 
 function setNote(step, row) {
   pattern[step] = pattern[step] === row ? -1 : row;
-  clearSongSelection();
 }
 
 function renderGrid() {
@@ -219,70 +181,52 @@ function togglePlayback() {
 
 function clearPattern() {
   pattern = emptyPattern(steps);
-  clearSongSelection();
   renderGrid();
   onMelodyChange();
 }
 
 function setSteps(next) {
   steps = next;
-  if (activeSong && SONG_TEMPLATES[activeSong]) {
-    const song = SONG_TEMPLATES[activeSong];
-    pattern = fitSongToSteps(song.notes, steps, song.phraseSteps);
-  } else {
-    const trimmed = pattern.slice(0, next);
-    while (trimmed.length < next) trimmed.push(-1);
-    pattern = trimmed;
-  }
+  const trimmed = pattern.slice(0, next);
+  while (trimmed.length < next) trimmed.push(-1);
+  pattern = trimmed;
   syncStepUi();
   renderGrid();
   onMelodyChange();
-}
-
-function loadSong(key) {
-  const song = SONG_TEMPLATES[key];
-  if (!song) return;
-
-  steps = song.phraseSteps;
-  tempo = song.tempo;
-  pattern = fitSongToSteps(song.notes, steps, song.phraseSteps);
-  syncStepUi();
-  syncTempoUi();
-  updateSongSelection(key);
-  renderGrid();
-  onMelodyChange();
-}
-
-function renderSongButtons() {
-  const root = document.getElementById('melody-songs-list');
-  if (!root) return;
-  root.replaceChildren();
-
-  for (const cat of TUNE_CATEGORIES) {
-    const label = document.createElement('p');
-    label.className = 'preset-section__label';
-    label.textContent = cat.label;
-    root.appendChild(label);
-
-    const row = document.createElement('div');
-    row.className = 'presets presets--stack presets--tunes-col';
-    row.setAttribute('aria-label', `${cat.label} tunes`);
-
-    for (const [key, song] of Object.entries(cat.songs)) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'preset-btn melody-song-btn';
-      btn.dataset.song = key;
-      btn.textContent = song.label;
-      btn.addEventListener('click', () => loadSong(key));
-      row.appendChild(btn);
-    }
-
-    root.appendChild(row);
-  }
 }
 
 let onMelodyChange = () => {};
+
+export function getMelodyState() {
+  return { steps, tempo, pattern: [...pattern] };
+}
+
+export function isMelodyEmpty() {
+  return pattern.every((n) => n < 0);
+}
+
+export function getLoopMelody() {
+  return loopMelody;
+}
+
+export function setLoopMelody(on) {
+  loopMelody = !!on;
+  const btn = document.getElementById('melody-loop-btn');
+  if (btn) {
+    btn.classList.toggle('is-selected', loopMelody);
+    btn.setAttribute('aria-pressed', loopMelody ? 'true' : 'false');
+  }
+}
+
+export function applyMelody({ steps: nextSteps, tempo: nextTempo, pattern: nextPattern }) {
+  steps = nextSteps;
+  tempo = nextTempo;
+  pattern = [...nextPattern];
+  syncStepUi();
+  syncTempoUi();
+  renderGrid();
+  onMelodyChange();
+}
 
 export function getMelodyUrlParam() {
   const isDefault = steps === DEFAULT_STEPS
@@ -295,7 +239,6 @@ export function getMelodyUrlParam() {
 export function loadMelodyFromUrl(value) {
   if (!value || !decodeMelody(value)) return;
 
-  clearSongSelection();
   syncTempoUi();
   syncStepUi();
   renderGrid();
@@ -328,8 +271,6 @@ export function initMelody({ getParams, onChange, onPlayStart }) {
 
   document.getElementById('melody-clear-btn').addEventListener('click', clearPattern);
 
-  renderSongButtons();
-
   syncStepUi();
   renderGrid();
 }
@@ -340,4 +281,8 @@ export function stopMelody() {
 
 export function isMelodyPlaying() {
   return playing;
+}
+
+export function toggleMelodyPlayback() {
+  togglePlayback();
 }
