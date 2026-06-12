@@ -1,0 +1,79 @@
+"""Performance dashboard data layer — local demo provider only for now."""
+
+from __future__ import annotations
+
+import os
+import threading
+import time
+from pathlib import Path
+
+from lib.providers import get_provider
+
+ROOT = Path(__file__).resolve().parent.parent
+_lock = threading.Lock()
+_meta_cache: dict = {'at': 0.0, 'payload': None}
+
+
+def load_dotenv(root: Path) -> None:
+    env_path = root / '.env'
+    if not env_path.is_file():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def _provider():
+    return get_provider('local')
+
+
+def _meta() -> dict:
+    now = time.time()
+    with _lock:
+        if _meta_cache['payload'] and now - _meta_cache['at'] < 3600:
+            return _meta_cache['payload']
+        provider = _provider()
+        payload = {
+            'mode': 'demo',
+            'source': provider.meta().get('source', 'demo'),
+            'label': provider.meta().get('label', 'Historical performance demo data'),
+            'cachedAt': provider.meta().get('cachedAt', int(now)),
+            'provider': 'local',
+        }
+        _meta_cache['payload'] = payload
+        _meta_cache['at'] = now
+        return payload
+
+
+def get_teams_payload(league: str = 'NBA') -> dict:
+    provider = _provider()
+    return {**_meta(), 'teams': provider.get_teams(league)}
+
+
+def get_performance_payload(
+    team_id: str,
+    time_range: str = 'week',
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    provider = _provider()
+    series = provider.get_performance_series(team_id, time_range, start_date, end_date)
+    games = provider.get_games_for_team(team_id, time_range, start_date, end_date)
+    return {**_meta(), 'series': series, 'games': games}
+
+
+def get_matchup_payload(
+    team_a: str,
+    team_b: str,
+    time_range: str = 'week',
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    provider = _provider()
+    matchup = provider.get_matchup_performance_series(
+        team_a, team_b, time_range, start_date, end_date,
+    )
+    return {**_meta(), **matchup}

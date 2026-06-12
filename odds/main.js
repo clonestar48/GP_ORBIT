@@ -1,54 +1,34 @@
 /**
- * NBA stats dashboard — data integrity first.
- *
- * Every event arrives from the server with a provenance envelope:
- *   source, sourceProvider, sourceTimestamp, dataConfidence, missingFields.
- * Nothing is invented client-side: missing fields render as "Unavailable",
- * charts only draw from real source data, movement only shows when the
- * server derived it from two real observations.
+ * Performance Market — sports performance dashboard.
+ * Charts reflect real historical game results only.
  */
 
-import { buildComparisonModel } from '/lib/normalizers/competitorHistory.js';
 import {
-  drawComparisonChart,
+  drawMatchupChart,
+  drawPerformanceChart,
   findHit,
-  formatTooltipPoint,
-  setupComparisonCanvas,
-} from './comparisonChart.js';
+  formatTooltipHtml,
+  setupCanvas,
+} from './performanceChart.js';
+import { createRange, rangeLabel, rangeToQuery } from './range.js';
 
 const $ = (sel) => document.querySelector(sel);
 
-const UNAVAILABLE = 'Unavailable';
-
-const BADGES = {
-  live: { label: 'LIVE DATA', cls: 'sd-flag--live' },
-  partial: { label: 'PARTIAL DATA', cls: 'sd-flag--partial' },
-  demo: { label: 'DEMO DATA', cls: 'sd-flag--demo' },
-  unavailable: { label: 'DATA UNAVAILABLE', cls: 'sd-flag--unavailable' },
-};
-
 const state = {
-  games: [],
-  history: [],
-  odds: null,
+  teams: [],
   meta: null,
-  selectedId: null,
+  heroMode: 'solo',
+  selectedTeamId: 'SAS',
+  teamA: 'SAS',
+  teamB: 'NYK',
+  range: createRange({ preset: 'week', mode: 'franchise', metric: 'winPct' }),
+  teamSeries: null,
+  teamGames: [],
+  matchup: null,
+  heroHitAreas: [],
+  hoverHit: null,
+  loading: false,
   errors: [],
-  graphMode: 'success',
-  graphRange: '5',
-  compareHitAreas: [],
-};
-
-const GRAPH_MODE_LABELS = {
-  success: 'General success',
-  upcoming: 'Upcoming event',
-  history: 'Past history',
-};
-
-const GRAPH_RANGE_LABELS = {
-  5: 'Last 5',
-  10: 'Last 10',
-  season: 'Season',
 };
 
 async function fetchJson(url) {
@@ -57,767 +37,693 @@ async function fetchJson(url) {
   return res.json();
 }
 
-function parseTs(value) {
-  if (!value) return null;
-  const ts = Date.parse(value);
-  return Number.isFinite(ts) ? ts : null;
-}
-
-function formatTime(iso) {
-  const ts = parseTs(iso);
-  if (!ts) return UNAVAILABLE;
-  return new Date(ts).toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function fmt(value) {
-  return value == null ? UNAVAILABLE : String(value);
-}
-
-function fmtSpread(value, homeTeam) {
-  if (value == null) return UNAVAILABLE;
-  const n = Number(value);
-  return `${homeTeam ?? ''} ${n > 0 ? '+' : ''}${n}`.trim();
-}
-
-function fmtAmerican(value) {
-  if (value == null) return UNAVAILABLE;
-  const n = Number(value);
-  return n > 0 ? `+${n}` : String(n);
-}
-
 function movementClass(delta) {
   if (delta > 0) return 'is-up';
   if (delta < 0) return 'is-down';
   return '';
 }
 
-function isToday(iso) {
-  const ts = parseTs(iso);
-  if (!ts) return false;
-  const d = new Date(ts);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear()
-    && d.getMonth() === now.getMonth()
-    && d.getDate() === now.getDate();
+function findTeam(id) {
+  return state.teams.find((t) => t.id === id);
 }
 
-function isPast(iso) {
-  const ts = parseTs(iso);
-  return ts != null && ts < Date.now();
+function opponentLabel(abbr) {
+  const t = findTeam(abbr);
+  return t ? `${t.city} ${t.name}` : abbr;
 }
 
-function matchupLabel(g) {
-  return `${g.awayTeam ?? UNAVAILABLE} @ ${g.homeTeam ?? UNAVAILABLE}`;
-}
-
-function badgeHtml(event) {
-  const badge = BADGES[event.dataConfidence] || BADGES.unavailable;
-  return `<span class="sd-flag ${badge.cls}">${badge.label}</span>`;
-}
-
-/* ------------------------------------------------------------- top chrome */
-
-function renderModeBadge() {
-  const badge = $('#mode-badge');
-  if (!badge || !state.meta) return;
-  badge.hidden = false;
-  if (state.meta.mode === 'live') {
-    badge.textContent = 'LIVE DATA';
-    badge.className = 'sd-flag sd-flag--live';
-  } else {
-    badge.textContent = 'DEMO DATA';
-    badge.className = 'sd-flag sd-flag--demo';
-  }
-}
-
-function renderLastUpdated() {
-  const el = $('#last-updated');
-  if (!el) return;
-  const ts = state.meta?.cachedAt;
-  el.textContent = ts
-    ? `Last updated ${new Date(ts * 1000).toLocaleTimeString()}`
-    : `Last updated ${UNAVAILABLE}`;
-}
-
-function renderStatus() {
-  const banner = $('#status-banner');
-  if (!banner) return;
-  const notices = [...state.errors];
-  (state.meta?.errors || []).forEach((e) => notices.push(`Provider error: ${e}`));
-  if (state.meta?.mode === 'demo') {
-    notices.unshift('Demo data — fabricated values for layout testing only. Add ODDS_API_KEY for live data.');
-  }
-  if (!notices.length) {
-    banner.hidden = true;
-    return;
-  }
-  banner.hidden = false;
-  banner.classList.toggle('is-notice', state.errors.length === 0);
-  banner.textContent = notices.join(' ');
-}
-
-/* ----------------------------------------------------------------- cards */
-
-function renderEmpty(container, message) {
-  container.innerHTML = `<p class="sd-empty">${message}</p>`;
-}
-
-function cardHtml(game, { showMovement = false, showScore = false } = {}) {
-  const movement = game.spreadMovement;
-  const moveHtml = showMovement && movement != null
-    ? `<span class="sd-card__move ${movementClass(movement)}">${movement > 0 ? '+' : ''}${movement}</span>`
-    : '';
-  const status = game.status || 'upcoming';
-  const hasScores = game.homeScore != null && game.awayScore != null;
-  const scoreHtml = showScore && hasScores
-    ? `<span class="sd-card__score">${game.awayScore} – ${game.homeScore}</span>`
-    : '';
-  const lineHtml = game.spread != null || game.currentSpread != null
-    ? `<span class="sd-card__line">${fmtSpread(game.currentSpread ?? game.spread, game.homeTeam)}</span>`
-    : '<span class="sd-card__line sd-card__line--na">Line unavailable</span>';
-  const totalVal = game.currentTotal ?? game.total;
-  const totalHtml = totalVal != null ? `<span>O/U ${totalVal}</span>` : '';
+function emptyStateHtml({ title, detail = '' }) {
   return `
-    <button type="button" class="sd-card${state.selectedId === game.gameId ? ' is-selected' : ''}"
-      data-game-id="${game.gameId}">
-      <div class="sd-card__top">
-        <span class="sd-card__matchup">${matchupLabel(game)}</span>
-        <span class="sd-card__time">${formatTime(game.startTime)}</span>
-      </div>
-      <div class="sd-card__row">
-        ${badgeHtml(game)}
-        <span class="sd-card__status${status === 'final' ? ' is-final' : ''}">${status}</span>
-        ${lineHtml}
-        ${totalHtml}
-        ${moveHtml}
-        ${scoreHtml}
-      </div>
-    </button>`;
+    <div class="sd-empty-state">
+      <p class="sd-empty-state__title">${title}</p>
+      ${detail ? `<p class="sd-empty-state__detail">${detail}</p>` : ''}
+    </div>`;
 }
 
-function bindCards(container) {
-  container.querySelectorAll('.sd-card').forEach((btn) => {
-    btn.addEventListener('click', () => selectGame(btn.dataset.gameId));
+function setLoading(loading) {
+  state.loading = loading;
+  const chartSkeleton = $('#hero-chart-skeleton');
+  const summarySkeleton = $('#market-summary-skeleton');
+  const wrap = $('#hero-chart-wrap');
+  const summaryBody = $('#market-summary-body');
+
+  if (loading) {
+    chartSkeleton.hidden = false;
+    summarySkeleton.hidden = false;
+    wrap?.classList.add('is-loading');
+    summaryBody?.classList.remove('is-loaded');
+    summaryBody.innerHTML = '';
+  } else {
+    chartSkeleton.hidden = true;
+    summarySkeleton.hidden = true;
+    wrap?.classList.remove('is-loading');
+  }
+}
+
+function soloRange() {
+  return createRange({
+    preset: state.range.preset,
+    teams: [state.selectedTeamId],
+    mode: 'franchise',
+    metric: 'winPct',
   });
 }
 
-function renderToday() {
-  const el = $('#today-games');
-  // A stale 'upcoming' status on a game that already started must not
-  // resurface it as a today/tonight event — only live or genuinely future.
-  const today = state.games.filter((g) => isToday(g.startTime)
-    && g.status !== 'final'
-    && !(g.status === 'upcoming' && isPast(g.startTime)));
-  if (!today.length) {
-    renderEmpty(el, 'No NBA events for today in the current data source.');
-    return;
-  }
-  el.innerHTML = today.map((g) => cardHtml(g, { showMovement: true })).join('');
-  bindCards(el);
+function matchupRange() {
+  return createRange({
+    preset: state.range.preset,
+    teams: [state.teamA, state.teamB],
+    mode: 'matchup',
+    metric: 'index',
+  });
 }
 
-function renderUpcoming() {
-  const el = $('#upcoming-games');
-  // Upcoming = startTime >= now only. Status alone is not trusted because
-  // providers (and demo fixtures) can carry stale 'upcoming' on past games.
-  const upcoming = state.games.filter((g) => g.status === 'upcoming'
-    && !isPast(g.startTime)
-    && !isToday(g.startTime));
-  if (!upcoming.length) {
-    renderEmpty(el, 'No upcoming events in the current data source.');
-    return;
-  }
-  el.innerHTML = upcoming.map((g) => cardHtml(g, { showMovement: true })).join('');
-  bindCards(el);
+function performanceUrl(teamId, range) {
+  const q = rangeToQuery({ ...range, teams: [teamId] });
+  return `/api/performance?teamId=${encodeURIComponent(teamId)}&${q}`;
 }
 
-function renderMovement() {
-  const el = $('#line-movement');
-  const rows = state.odds?.biggestMovement || [];
-  if (!rows.length) {
-    renderEmpty(el, state.meta?.mode === 'live'
-      ? 'No movement yet — needs two observed line snapshots per event.'
-      : 'No movement data in the current data source.');
+function matchupUrl(range) {
+  const q = rangeToQuery(range);
+  return `/api/matchup?teamA=${encodeURIComponent(state.teamA)}&teamB=${encodeURIComponent(state.teamB)}&${q}`;
+}
+
+/* ------------------------------------------------------------- chrome */
+
+function renderHeader() {
+  const updated = $('#last-updated');
+  if (state.meta?.cachedAt) {
+    updated.textContent = `Updated ${new Date(state.meta.cachedAt * 1000).toLocaleTimeString()}`;
+  }
+  const banner = $('#status-banner');
+  if (state.errors.length) {
+    banner.hidden = false;
+    banner.textContent = state.errors.join(' ');
+  } else if (state.meta?.label) {
+    banner.hidden = false;
+    banner.classList.add('is-notice');
+    banner.textContent = state.meta.label;
+  } else {
+    banner.hidden = true;
+  }
+}
+
+/* ------------------------------------------------------------- teams */
+
+function teamCardHtml(team) {
+  const selected = team.id === state.selectedTeamId;
+  return `
+    <button type="button" class="sd-card sd-team-card${selected ? ' is-selected' : ''}"
+      data-team-id="${team.id}">
+      <span class="sd-team-card__swatch" style="background:${team.colors?.primary || '#5da396'}"></span>
+      <span class="sd-team-card__name">${team.city} ${team.name}</span>
+      <span class="sd-team-card__abbr">${team.abbreviation}</span>
+    </button>`;
+}
+
+function renderTeamList() {
+  const el = $('#team-list');
+  if (!state.teams.length) {
+    el.innerHTML = emptyStateHtml({
+      title: 'No teams available',
+      detail: 'Team data could not be loaded. Refresh to try again.',
+    });
     return;
   }
-  el.innerHTML = rows.slice(0, 5).map((row) => {
-    const cls = movementClass(row.movement);
-    const badge = BADGES[row.dataConfidence] || BADGES.unavailable;
+  el.innerHTML = state.teams.map(teamCardHtml).join('');
+  el.querySelectorAll('.sd-team-card').forEach((btn) => {
+    btn.addEventListener('click', () => selectTeam(btn.dataset.teamId));
+  });
+}
+
+function populateTeamSelects() {
+  const opts = state.teams.map((t) =>
+    `<option value="${t.id}">${t.city} ${t.name}</option>`,
+  ).join('');
+  $('#solo-team').innerHTML = opts;
+  $('#solo-team').value = state.selectedTeamId;
+  $('#matchup-team-a').innerHTML = opts;
+  $('#matchup-team-b').innerHTML = opts;
+  $('#matchup-team-a').value = state.teamA;
+  $('#matchup-team-b').value = state.teamB;
+}
+
+function renderHeroContext() {
+  const isSolo = state.heroMode === 'solo';
+  const isMatchup = state.heroMode === 'matchup';
+
+  $('#solo-context').hidden = !isSolo;
+  $('#matchup-context').hidden = !isMatchup;
+
+  if (isSolo) {
+    const team = findTeam(state.selectedTeamId);
+    $('#hero-title').textContent = 'Franchise Trend';
+    $('#hero-meta').textContent = team
+      ? `${team.city} ${team.name} · ${rangeLabel(state.range)}`
+      : 'Select a team';
+  } else if (isMatchup) {
+    const teamA = findTeam(state.teamA);
+    const teamB = findTeam(state.teamB);
+    $('#hero-title').textContent = 'Head-to-Head';
+    $('#hero-meta').textContent = `${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · ${rangeLabel(state.range)}`;
+  }
+  // Future: heroMode === 'league' → show league context, hide solo + matchup
+}
+
+function latestGameStats(games) {
+  if (!games.length) return { winPct: null, record: null, games: 0 };
+  const wins = games.filter((g) => g.result === 'W').length;
+  const losses = games.length - wins;
+  return {
+    winPct: ((wins / games.length) * 100).toFixed(1),
+    record: `${wins}–${losses}`,
+    games: games.length,
+  };
+}
+
+function renderSoloStats() {
+  const stats = latestGameStats(state.teamGames);
+  $('#stat-winpct').textContent = stats.winPct != null ? `${stats.winPct}%` : '—';
+  $('#stat-record').textContent = stats.record ?? '—';
+  $('#stat-games').textContent = stats.games ?? '—';
+
+  const moveEl = $('#stat-winpct-move');
+  const gamePoints = (state.teamSeries?.points || []).filter((p) => p.gameId && !p.flatline);
+  if (gamePoints.length >= 1) {
+    const last = gamePoints[gamePoints.length - 1];
+    const delta = last.movementAmount ?? 0;
+    if (delta !== 0) {
+      moveEl.textContent = `${delta > 0 ? '+' : ''}${delta.toFixed(1)}% last game`;
+      moveEl.className = movementClass(delta);
+    } else {
+      moveEl.textContent = '';
+    }
+  } else {
+    moveEl.textContent = '';
+  }
+}
+
+function significantPoint(gamePoints) {
+  if (!gamePoints.length) return null;
+  return [...gamePoints].sort((a, b) =>
+    Math.abs(b.movementAmount ?? 0) - Math.abs(a.movementAmount ?? 0))[0];
+}
+
+function formSnippet(games, limit = 4) {
+  const streak = games
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, limit)
+    .map((g) => g.result);
+  if (!streak.length) return null;
+  return streak.join(' · ');
+}
+
+function netMetricChange(gamePoints, metric) {
+  if (gamePoints.length < 1) return null;
+  const first = gamePoints[0].previousValue ?? gamePoints[0].value;
+  const last = gamePoints[gamePoints.length - 1].value;
+  if (first == null || last == null) return null;
+  const delta = Number((last - first).toFixed(metric === 'winPct' ? 1 : 2));
+  return { start: first, end: last, delta };
+}
+
+function renderMarketSummary() {
+  const body = $('#market-summary-body');
+  const skeleton = $('#market-summary-skeleton');
+  if (!body) return;
+
+  if (state.loading) {
+    body.innerHTML = '';
+    body.classList.remove('is-loaded');
+    skeleton.hidden = false;
+    return;
+  }
+
+  skeleton.hidden = true;
+
+  if (state.heroMode === 'matchup') {
+    body.innerHTML = buildMatchupSummary();
+  } else {
+    body.innerHTML = buildSoloSummary();
+  }
+
+  requestAnimationFrame(() => body.classList.add('is-loaded'));
+}
+
+function buildSoloSummary() {
+  const team = findTeam(state.selectedTeamId);
+  const label = rangeLabel(state.range);
+  const series = state.teamSeries;
+
+  if (series?.error) {
+    return emptyStateHtml({
+      title: 'Summary unavailable',
+      detail: series.error,
+    });
+  }
+
+  const gamePoints = (series?.points || []).filter((p) => p.gameId && !p.flatline);
+  const stats = latestGameStats(state.teamGames);
+  const metricName = 'Win %';
+  const suffix = '%';
+
+  if (!gamePoints.length) {
+    const isToday = state.range.preset === 'today';
     return `
-      <div class="sd-move-row">
-        <span class="sd-move-row__matchup">${row.matchup}
-          <span class="sd-flag sd-flag--mini ${badge.cls}">${badge.label}</span>
-        </span>
-        <span class="sd-move-row__delta ${cls}">${row.movement > 0 ? '+' : ''}${row.movement}</span>
+      <div class="sd-market-summary__content">
+        <div class="sd-market-summary__head">
+          <strong class="sd-market-summary__team">${team ? `${team.city} ${team.name}` : '—'}</strong>
+          <span class="sd-market-summary__range">${label}</span>
+        </div>
+        <p class="sd-market-summary__note">${isToday
+    ? 'No games scheduled today — performance holds at the current level.'
+    : 'No games in this range — the chart shows a flat performance line.'}</p>
+      </div>`;
+  }
+
+  const net = netMetricChange(gamePoints, 'winPct');
+  const sig = significantPoint(gamePoints);
+  const form = formSnippet(state.teamGames);
+  const deltaCls = movementClass(net?.delta ?? 0);
+  const sigCls = sig?.result === 'W' ? 'is-up' : 'is-down';
+  const sigVerb = sig?.result === 'W' ? 'Win' : 'Loss';
+
+  return `
+    <div class="sd-market-summary__content">
+      <div class="sd-market-summary__head">
+        <strong class="sd-market-summary__team">${team ? `${team.city} ${team.name}` : '—'}</strong>
+        <span class="sd-market-summary__range">${label}</span>
+      </div>
+      <div class="sd-market-summary__stats">
+        <span class="sd-market-summary__stat">Record: <strong>${stats.record ?? '—'}</strong></span>
+        <span class="sd-market-summary__stat">${metricName}: <strong>${net?.end ?? '—'}${suffix}</strong>${net?.delta != null && net.delta !== 0
+    ? ` <em class="${deltaCls}">${net.delta > 0 ? '+' : ''}${net.delta}${suffix}</em>`
+    : ''}</span>
+      </div>
+      ${sig ? `
+        <p class="sd-market-summary__event">
+          <span class="sd-market-summary__event-label">Most significant event</span>
+          <span class="${sigCls}">${sigVerb} vs ${opponentLabel(sig.opponentId)}, ${sig.pointsFor}–${sig.pointsAgainst}</span>
+        </p>` : ''}
+      ${form ? `<p class="sd-market-summary__form">Recent form · ${form}</p>` : ''}
+    </div>`;
+}
+
+function buildMatchupSummary() {
+  const teamA = findTeam(state.teamA);
+  const teamB = findTeam(state.teamB);
+  const label = rangeLabel(state.range);
+  const matchup = state.matchup;
+
+  if (matchup?.error) {
+    return emptyStateHtml({
+      title: 'Matchup summary unavailable',
+      detail: matchup.error,
+    });
+  }
+
+  if (!matchup?.series?.length) {
+    return emptyStateHtml({
+      title: 'No matchup data',
+      detail: 'Select two teams and a range with overlapping games.',
+    });
+  }
+
+  const allGamePoints = matchup.series.flatMap((s) =>
+    (s.points || []).filter((p) => p.gameId && !p.flatline).map((p) => ({ ...p, teamName: s.teamName, teamId: s.teamId })),
+  );
+
+  if (!allGamePoints.length) {
+    return `
+      <div class="sd-market-summary__content">
+        <div class="sd-market-summary__head">
+          <strong class="sd-market-summary__team">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB}</strong>
+          <span class="sd-market-summary__range">${label}</span>
+        </div>
+        <p class="sd-market-summary__note">No games for either team in this range.</p>
+      </div>`;
+  }
+
+  const sig = significantPoint(allGamePoints);
+  const sigCls = sig?.result === 'W' ? 'is-up' : 'is-down';
+  const sigVerb = sig?.result === 'W' ? 'Win' : 'Loss';
+
+  const teamLines = matchup.series.map((s) => {
+    const pts = (s.points || []).filter((p) => p.gameId && !p.flatline);
+    const net = netMetricChange(pts, 'index');
+    const cls = movementClass(net?.delta ?? 0);
+    return `<span class="sd-market-summary__stat">${s.teamName}: <strong>${net?.end ?? '—'}</strong>${net?.delta != null && net.delta !== 0
+      ? ` <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}</em>`
+      : ''}</span>`;
+  }).join('');
+
+  return `
+    <div class="sd-market-summary__content">
+      <div class="sd-market-summary__head">
+        <strong class="sd-market-summary__team">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB}</strong>
+        <span class="sd-market-summary__range">${label}</span>
+      </div>
+      <div class="sd-market-summary__stats sd-market-summary__stats--matchup">
+        ${teamLines}
+      </div>
+      ${sig ? `
+        <p class="sd-market-summary__event">
+          <span class="sd-market-summary__event-label">Most significant event</span>
+          <span class="${sigCls}">${sig.teamName} · ${sigVerb} vs ${opponentLabel(sig.opponentId)}, ${sig.pointsFor}–${sig.pointsAgainst}</span>
+        </p>` : ''}
+    </div>`;
+}
+
+function heroEmptyState({ title, detail }) {
+  const empty = $('#hero-chart-empty');
+  empty.innerHTML = emptyStateHtml({ title, detail });
+  empty.style.display = 'flex';
+}
+
+function renderHeroLegend() {
+  const legend = $('#hero-legend');
+  if (state.heroMode !== 'matchup' || !state.matchup?.series?.length) {
+    legend.hidden = true;
+    return;
+  }
+  legend.hidden = false;
+  legend.innerHTML = state.matchup.series.map((s) => `
+    <span class="sd-legend-item">
+      <span class="sd-legend-swatch" style="background:${s.color}"></span>
+      <span>${s.teamName}</span>
+      <span class="sd-legend-meta">Index · ${s.gameCount} game${s.gameCount === 1 ? '' : 's'}</span>
+    </span>`).join('');
+}
+
+function renderHeroChart() {
+  const canvas = $('#hero-chart');
+  const empty = $('#hero-chart-empty');
+  const caption = $('#hero-chart-caption');
+  const tooltip = $('#hero-tooltip');
+  const { ctx, w, h } = setupCanvas(canvas);
+
+  if (!state.hoverHit) tooltip.hidden = true;
+  state.heroHitAreas = [];
+  renderHeroContext();
+  renderHeroLegend();
+
+  if (state.heroMode === 'solo') {
+    renderSoloStats();
+    const series = state.teamSeries;
+    if (series?.error) {
+      heroEmptyState({
+        title: 'Data unavailable',
+        detail: series.error,
+      });
+      caption.textContent = 'Unable to load performance data';
+      return;
+    }
+    if (!series?.points?.length) {
+      heroEmptyState({
+        title: 'No data in this range',
+        detail: 'Try a wider timeline or another team.',
+      });
+      caption.textContent = 'Data unavailable';
+      return;
+    }
+    empty.style.display = 'none';
+    const gamePoints = (series.points || []).filter((p) => p.gameId && !p.flatline);
+    caption.textContent = gamePoints.length
+      ? `${rangeLabel(state.range)} · Win % · ${series.gameCount} game${series.gameCount === 1 ? '' : 's'}`
+      : 'No games in this range — flat performance line';
+    const colored = { ...series, color: series.color || findTeam(state.selectedTeamId)?.colors?.primary };
+    const result = drawPerformanceChart(ctx, w, h, colored, state.hoverHit);
+    state.heroHitAreas = (result.hitAreas || []).map((hit) => ({ ...hit, metric: 'winPct' }));
+    return;
+  }
+
+  const matchup = state.matchup;
+  if (matchup?.error) {
+    heroEmptyState({
+      title: 'Matchup unavailable',
+      detail: matchup.error,
+    });
+    caption.textContent = 'Unable to load head-to-head data';
+    return;
+  }
+  if (!matchup?.series?.length) {
+    heroEmptyState({
+      title: 'No matchup data',
+      detail: 'Both teams need games in the selected range.',
+    });
+    caption.textContent = 'Data unavailable';
+    return;
+  }
+  empty.style.display = 'none';
+  const teamA = findTeam(state.teamA);
+  const teamB = findTeam(state.teamB);
+  const hasGames = matchup.series.some((s) =>
+    (s.points || []).some((p) => p.gameId && !p.flatline));
+  caption.textContent = hasGames
+    ? `${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · ${rangeLabel(state.range)} · Performance index`
+    : 'No games in this range for either team';
+  const result = drawMatchupChart(ctx, w, h, matchup, state.hoverHit);
+  state.heroHitAreas = (result.hitAreas || []).map((hit) => ({ ...hit, metric: 'index' }));
+}
+
+function renderRecentResults() {
+  const el = $('#recent-results');
+  const games = [...state.teamGames].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
+  if (!games.length) {
+    const isToday = state.range.preset === 'today';
+    el.innerHTML = emptyStateHtml({
+      title: isToday ? 'No games today' : 'No results in this range',
+      detail: isToday
+        ? 'Check back when the schedule has final scores.'
+        : 'Widen the timeline or pick another team.',
+    });
+    return;
+  }
+  el.innerHTML = games.map((g) => {
+    const cls = g.result === 'W' ? 'is-up' : 'is-down';
+    return `
+      <div class="sd-card sd-form-card">
+        <div class="sd-card__top">
+          <span class="sd-card__matchup ${cls}">${g.result === 'W' ? 'W' : 'L'} vs ${g.opponent}</span>
+          <span class="sd-card__time">${g.date}</span>
+        </div>
+        <div class="sd-card__row">
+          <span class="sd-card__score ${cls}">${g.teamScore} – ${g.opponentScore}</span>
+          <span class="sd-card__status is-final">Final</span>
+        </div>
       </div>`;
   }).join('');
 }
 
-function renderRecent() {
-  const el = $('#recent-games');
-  if (!state.history.length) {
-    renderEmpty(el, state.meta?.mode === 'live'
-      ? 'No stored historical outcomes yet — finals are recorded as they complete.'
-      : 'No completed games in the current data source.');
+function renderHistoricalMovement() {
+  const el = $('#historical-movement');
+  const gamePoints = (state.teamSeries?.points || []).filter((p) => p.gameId && !p.flatline);
+  if (!gamePoints.length) {
+    el.innerHTML = emptyStateHtml({
+      title: 'No movement in this range',
+      detail: 'Game-day swings appear here when results shift the trend.',
+    });
     return;
   }
-  el.innerHTML = state.history.slice(0, 6).map((g) => cardHtml(g, { showScore: true })).join('');
-  bindCards(el);
+  const swings = [...gamePoints]
+    .sort((a, b) => Math.abs(b.movementAmount ?? 0) - Math.abs(a.movementAmount ?? 0))
+    .slice(0, 5);
+
+  el.innerHTML = swings.map((p) => `
+    <div class="sd-move-row">
+      <span class="sd-move-row__matchup">${p.date} vs ${p.opponentId}</span>
+      <span class="sd-move-row__delta ${movementClass(p.movementAmount)}">${(p.movementAmount ?? 0) > 0 ? '+' : ''}${(p.movementAmount ?? 0).toFixed(1)}%</span>
+    </div>`).join('');
 }
 
-/* ----------------------------------------------------------------- detail */
-
-function findGame(gameId) {
-  return state.games.find((g) => g.gameId === gameId)
-    || state.history.find((g) => g.gameId === gameId);
+function renderPanels() {
+  renderRecentResults();
+  renderHistoricalMovement();
+  renderTeamList();
 }
 
-function selectGame(gameId) {
-  state.selectedId = gameId;
-  const game = findGame(gameId);
-  renderToday();
-  renderUpcoming();
-  renderRecent();
-  renderDetail(game);
-  renderDebug();
-}
-
-function renderDetail(game) {
-  const meta = $('#detail-meta');
-  const detailBadge = $('#detail-badge');
-  const matchup = $('#detail-matchup');
-  const spreadEl = $('#detail-spread');
-  const spreadMove = $('#detail-spread-move');
-  const totalEl = $('#detail-total');
-  const mlEl = $('#detail-ml');
-  const closeBlock = $('#close-result');
-  const closeGrid = $('#close-result-grid');
-
-  if (!game) {
-    meta.textContent = 'Select an event';
-    detailBadge.hidden = true;
-    matchup.textContent = '—';
-    spreadEl.textContent = '—';
-    spreadMove.textContent = '';
-    totalEl.textContent = '—';
-    mlEl.textContent = '—';
-    closeBlock.hidden = true;
-    renderChart(null);
-    renderComparisonChart(null);
-    document.querySelectorAll('.sd-card.is-selected').forEach((c) => c.classList.remove('is-selected'));
-    return;
-  }
-
-  meta.textContent = game.status === 'final' ? 'Final · historical outcome' : 'Market watch';
-  const badge = BADGES[game.dataConfidence] || BADGES.unavailable;
-  detailBadge.hidden = false;
-  detailBadge.textContent = badge.label;
-  detailBadge.className = `sd-flag ${badge.cls}`;
-
-  matchup.textContent = matchupLabel(game);
-
-  const spreadVal = game.status === 'final'
-    ? (game.closingSpread ?? game.currentSpread ?? game.spread)
-    : (game.currentSpread ?? game.spread);
-  spreadEl.textContent = spreadVal != null ? fmtSpread(spreadVal, game.homeTeam) : UNAVAILABLE;
-  totalEl.textContent = fmt(game.status === 'final'
-    ? (game.closingTotal ?? game.currentTotal ?? game.total)
-    : (game.currentTotal ?? game.total));
-
-  const movement = game.spreadMovement;
-  if (movement != null) {
-    spreadMove.textContent = `${movement > 0 ? '+' : ''}${movement} vs open`;
-    spreadMove.className = `sd-stat__move ${movementClass(movement)}`;
-  } else {
-    spreadMove.textContent = '';
-    spreadMove.className = 'sd-stat__move';
-  }
-
-  if (game.impliedProbHome != null && game.impliedProbAway != null) {
-    mlEl.textContent = `${game.homeTeam} ${game.impliedProbHome.toFixed(0)}% · ${game.awayTeam} ${game.impliedProbAway.toFixed(0)}%`;
-  } else if (game.moneylineHome != null || game.moneylineAway != null) {
-    mlEl.textContent = `${fmtAmerican(game.moneylineHome)} / ${fmtAmerican(game.moneylineAway)}`;
-  } else {
-    mlEl.textContent = UNAVAILABLE;
-  }
-
-  renderChart(game);
-  renderComparisonChart(game);
-
-  if (game.status === 'final') {
-    closeBlock.hidden = false;
-    const closing = game.closingSpread ?? game.currentSpread ?? game.spread;
-    const margin = game.finalMargin;
-    const marginText = margin == null
-      ? UNAVAILABLE
-      : margin > 0 ? `Home +${margin}` : margin < 0 ? `Away +${Math.abs(margin)}` : 'Even';
-    const combined = (game.homeScore != null && game.awayScore != null)
-      ? game.homeScore + game.awayScore
-      : UNAVAILABLE;
-    const scoreText = (game.homeScore != null && game.awayScore != null)
-      ? `${game.awayScore} – ${game.homeScore}`
-      : UNAVAILABLE;
-    closeGrid.innerHTML = `
-      <dt>Final score</dt><dd>${scoreText}</dd>
-      <dt>Final margin</dt><dd>${marginText}</dd>
-      <dt>Closing line</dt><dd>${closing != null ? fmtSpread(closing, game.homeTeam) : UNAVAILABLE}</dd>
-      <dt>Line result</dt><dd>${game.lineResult ?? UNAVAILABLE}</dd>
-      <dt>Closing total</dt><dd>${fmt(game.closingTotal ?? game.total)}</dd>
-      <dt>Combined pts</dt><dd>${combined}</dd>`;
-  } else {
-    closeBlock.hidden = true;
-  }
-}
-
-/* ----------------------------------------------------------------- charts */
-
-function validHistoryPoints(game) {
-  return (game?.lineHistory || [])
-    .map((p) => ({ ...p, _ts: parseTs(p.ts), _spread: p.spread != null ? Number(p.spread) : null }))
-    .filter((p) => p._ts != null && Number.isFinite(p._spread));
-}
-
-function ohlcPoints(game) {
-  const points = game?.lineHistory || [];
-  if (!points.length) return null;
-  const ok = points.every((p) => ['open', 'high', 'low', 'close'].every((k) => p[k] != null));
-  return ok ? points : null;
-}
-
-/**
- * Chart selection per source-data support:
- *   candles  — only when genuine OHLC fields exist
- *   line     — two or more real snapshots
- *   margin   — final scores only
- *   none     — nothing chartable; show unavailable message
- */
-function chartModel(game) {
-  if (!game) return { type: 'none' };
-  const candles = ohlcPoints(game);
-  if (candles && candles.length >= 2) return { type: 'candles', points: candles };
-  const points = validHistoryPoints(game);
-  if (points.length >= 2) return { type: 'line', points };
-  if (game.homeScore != null && game.awayScore != null) return { type: 'margin' };
-  return { type: 'none' };
-}
-
-function setupCanvas() {
-  const canvas = $('#line-chart');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-  return { ctx, w: rect.width, h: rect.height };
-}
-
-function renderChart(game) {
-  const empty = $('#chart-empty');
-  const caption = $('#chart-caption');
-  const model = chartModel(game);
-  const { ctx, w, h } = setupCanvas();
-
-  empty.style.display = model.type === 'none' ? 'flex' : 'none';
-  caption.hidden = model.type === 'none';
-
-  if (model.type === 'line') {
-    caption.textContent = `Line history — ${model.points.length} observed snapshots`;
-    drawLine(ctx, w, h, model.points);
-  } else if (model.type === 'candles') {
-    caption.textContent = `Candles — ${model.points.length} OHLC periods from source data`;
-    drawCandles(ctx, w, h, model.points);
-  } else if (model.type === 'margin') {
-    caption.textContent = 'Final margin (no line history available for this event)';
-    drawMarginBar(ctx, w, h, game);
-  }
-}
-
-function drawGrid(ctx, w, h, pad) {
-  ctx.strokeStyle = 'rgba(61, 139, 130, 0.2)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad + (i / 4) * (h - pad * 2);
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
-    ctx.stroke();
-  }
-}
-
-function drawLine(ctx, w, h, points) {
-  const pad = 12;
-  const minTs = Math.min(...points.map((p) => p._ts));
-  const maxTs = Math.max(...points.map((p) => p._ts));
-  const spreads = points.map((p) => p._spread);
-  const minY = Math.min(...spreads) - 0.5;
-  const maxY = Math.max(...spreads) + 0.5;
-
-  const xScale = (ts) => pad + ((ts - minTs) / (maxTs - minTs || 1)) * (w - pad * 2);
-  const yScale = (v) => pad + (1 - (v - minY) / (maxY - minY || 1)) * (h - pad * 2);
-
-  drawGrid(ctx, w, h, pad);
-
-  ctx.beginPath();
-  ctx.strokeStyle = '#5da396';
-  ctx.lineWidth = 2;
-  points.forEach((p, i) => {
-    const x = xScale(p._ts);
-    const y = yScale(p._spread);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  const last = points[points.length - 1];
-  ctx.fillStyle = '#5da396';
-  ctx.beginPath();
-  ctx.arc(xScale(last._ts), yScale(last._spread), 4, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawCandles(ctx, w, h, points) {
-  const pad = 14;
-  const values = points.flatMap((p) => [Number(p.high), Number(p.low)]);
-  const minY = Math.min(...values);
-  const maxY = Math.max(...values);
-  const yScale = (v) => pad + (1 - (v - minY) / (maxY - minY || 1)) * (h - pad * 2);
-  const slot = (w - pad * 2) / points.length;
-  const bodyW = Math.max(3, Math.min(14, slot * 0.5));
-
-  drawGrid(ctx, w, h, pad);
-
-  points.forEach((p, i) => {
-    const x = pad + slot * i + slot / 2;
-    const open = Number(p.open);
-    const close = Number(p.close);
-    const up = close >= open;
-    const color = up ? '#6dd4a8' : '#f08080';
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, yScale(Number(p.high)));
-    ctx.lineTo(x, yScale(Number(p.low)));
-    ctx.stroke();
-    const top = yScale(Math.max(open, close));
-    const bottom = yScale(Math.min(open, close));
-    ctx.fillRect(x - bodyW / 2, top, bodyW, Math.max(1, bottom - top));
-  });
-}
-
-function drawMarginBar(ctx, w, h, game) {
-  const margin = game.finalMargin;
-  if (margin == null) return;
-  const pad = 16;
-  const mid = w / 2;
-  const maxAbs = Math.max(Math.abs(margin), 10);
-  const barLen = (Math.abs(margin) / maxAbs) * (w / 2 - pad * 2);
-  const barH = 26;
-  const y = h / 2 - barH / 2;
-
-  ctx.strokeStyle = 'rgba(236, 234, 228, 0.25)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(mid, pad);
-  ctx.lineTo(mid, h - pad);
-  ctx.stroke();
-
-  ctx.fillStyle = margin >= 0 ? '#6dd4a8' : '#f08080';
-  if (margin >= 0) ctx.fillRect(mid, y, barLen, barH);
-  else ctx.fillRect(mid - barLen, y, barLen, barH);
-
-  ctx.fillStyle = 'rgba(236, 234, 228, 0.8)';
-  ctx.font = '12px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`${game.awayTeam}`, pad, h / 2 + 4);
-  ctx.textAlign = 'right';
-  ctx.fillText(`${game.homeTeam}`, w - pad, h / 2 + 4);
-  ctx.textAlign = 'center';
-  ctx.fillText(
-    margin > 0 ? `Home +${margin}` : margin < 0 ? `Away +${Math.abs(margin)}` : 'Even',
-    mid, y - 6,
-  );
-}
-
-/* ---------------------------------------------------- competitor comparison */
-
-function allFinalEvents() {
-  const byId = new Map();
-  [...state.history, ...state.games.filter((g) => g.status === 'final')].forEach((g) => {
-    if (g.status === 'final' && g.homeScore != null && g.awayScore != null) {
-      byId.set(g.gameId, g);
+async function loadPanelData() {
+  try {
+    const payload = await fetchJson(performanceUrl(state.selectedTeamId, soloRange()));
+    if (payload.error && !payload.series) throw new Error(payload.error);
+    state.teamSeries = payload.series ?? null;
+    state.teamGames = payload.games || [];
+    if (payload.mode) state.meta = { ...state.meta, ...payload };
+    if (state.teamSeries?.error) {
+      state.errors = [`Panel data: ${state.teamSeries.error}`];
     }
-  });
-  return [...byId.values()];
-}
-
-function comparisonEventsForMode(game) {
-  const finals = allFinalEvents();
-  if (state.meta?.mode === 'demo') {
-    return finals.filter((g) => g.source === 'demo');
+  } catch (err) {
+    state.errors = [`Panel data: ${err.message}`];
+    state.teamSeries = null;
+    state.teamGames = [];
   }
-  return finals.filter((g) => g.source !== 'demo');
 }
 
-function comparisonModel(game) {
-  if (!game?.awayTeam || !game?.homeTeam) return null;
-  const mode = state.graphMode === 'upcoming' && game.status === 'final' ? 'success' : state.graphMode;
-  const beforeTime = mode === 'upcoming' ? game.startTime : null;
-  return buildComparisonModel({
-    events: comparisonEventsForMode(game),
-    awayTeam: game.awayTeam,
-    homeTeam: game.homeTeam,
-    mode,
-    range: state.graphRange,
-    beforeTime,
-    league: game.league || 'nba',
-    dataMode: state.meta?.mode || 'live',
-  });
-}
-
-function renderComparisonLegend(model, game) {
-  const legend = $('#compare-legend');
-  const badge = $('#compare-badge');
-  if (!model?.hasData) {
-    legend.hidden = true;
-    badge.hidden = true;
-    return;
+async function loadMatchupHero() {
+  try {
+    const payload = await fetchJson(matchupUrl(matchupRange()));
+    if (payload.error && !payload.series) throw new Error(payload.error);
+    state.matchup = payload;
+    if (payload.error) {
+      state.errors = [`Matchup data: ${payload.error}`];
+    }
+  } catch (err) {
+    state.errors = [`Matchup data: ${err.message}`];
+    state.matchup = null;
   }
-  legend.hidden = false;
-  badge.hidden = false;
-  const conf = BADGES[model.confidence] || BADGES.unavailable;
-  badge.textContent = conf.label;
-  badge.className = `sd-flag ${conf.cls}`;
-  legend.innerHTML = model.competitors.map((c) => {
-    const latest = c.latestFormScore;
-    const meta = c.gameCount
-      ? `Form score ${latest ?? UNAVAILABLE} · ${c.gameCount} game${c.gameCount === 1 ? '' : 's'}`
-      : 'Unavailable';
-    return `
-      <span class="sd-legend-item">
-        <span class="sd-legend-swatch" style="background:${c.color}"></span>
-        <span>${c.name}</span>
-        <span class="sd-legend-meta">${meta}</span>
-      </span>`;
-  }).join('');
 }
 
-function renderComparisonChart(game) {
-  const canvas = $('#compare-chart');
-  const empty = $('#compare-empty');
-  const caption = $('#compare-caption');
-  const tooltip = $('#compare-tooltip');
-  const model = comparisonModel(game);
-  const { ctx, w, h } = setupComparisonCanvas(canvas);
-
-  tooltip.hidden = true;
-  state.compareHitAreas = [];
-
-  if (!model?.hasData) {
-    empty.style.display = 'flex';
-    renderComparisonLegend(model, game);
-    if (model?.unavailableTeams?.length && game) {
-      caption.textContent = `No stored outcomes for: ${model.unavailableTeams.join(', ')}. Live mode records finals as they complete.`;
+async function loadData() {
+  state.errors = [];
+  state.hoverHit = null;
+  setLoading(true);
+  try {
+    await loadPanelData();
+    if (state.heroMode === 'matchup') {
+      await loadMatchupHero();
     } else {
-      caption.textContent = 'Recent success score — derived from observed final outcomes only';
+      state.matchup = null;
     }
-    return;
+  } finally {
+    setLoading(false);
+    renderHeroChart();
+    renderMarketSummary();
+    renderPanels();
+    renderHeader();
   }
-
-  empty.style.display = 'none';
-  renderComparisonLegend(model, game);
-
-  const modeLabel = GRAPH_MODE_LABELS[state.graphMode] || state.graphMode;
-  const rangeLabel = GRAPH_RANGE_LABELS[state.graphRange] || state.graphRange;
-  const partial = model.unavailableTeams?.length
-    ? ` · missing: ${model.unavailableTeams.join(', ')}`
-    : '';
-  caption.textContent = `${modeLabel} · ${rangeLabel} · Form score from observed finals${partial}`;
-
-  const result = drawComparisonChart(ctx, w, h, model);
-  state.compareHitAreas = result.hitAreas || [];
 }
 
-function bindComparisonControls() {
-  document.querySelectorAll('[data-graph-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.graphMode = btn.dataset.graphMode;
-      document.querySelectorAll('[data-graph-mode]').forEach((b) => {
-        b.classList.toggle('is-active', b.dataset.graphMode === state.graphMode);
-      });
-      renderComparisonChart(findGame(state.selectedId));
-    });
+function selectTeam(teamId) {
+  state.selectedTeamId = teamId;
+  if (state.heroMode === 'solo') {
+    $('#solo-team').value = teamId;
+  }
+  loadData();
+}
+
+function setHeroMode(mode) {
+  if (mode !== 'solo' && mode !== 'matchup') return;
+  state.heroMode = mode;
+  document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.heroMode === mode);
   });
-  document.querySelectorAll('[data-graph-range]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.graphRange = btn.dataset.graphRange;
-      document.querySelectorAll('[data-graph-range]').forEach((b) => {
-        b.classList.toggle('is-active', b.dataset.graphRange === state.graphRange);
-      });
-      renderComparisonChart(findGame(state.selectedId));
-    });
+  loadData();
+}
+
+function setRange(preset) {
+  state.range = createRange({ preset, mode: state.heroMode === 'solo' ? 'franchise' : 'matchup', metric: state.heroMode === 'solo' ? 'winPct' : 'index' });
+  document.querySelectorAll('[data-range]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.range === preset);
+  });
+  loadData();
+}
+
+/* ------------------------------------------------------------- binds */
+
+function bindControls() {
+  document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
+    btn.addEventListener('click', () => setHeroMode(btn.dataset.heroMode));
   });
 
-  const canvas = $('#compare-chart');
-  const tooltip = $('#compare-tooltip');
+  document.querySelectorAll('[data-range]').forEach((btn) => {
+    btn.addEventListener('click', () => setRange(btn.dataset.range));
+  });
+
+  $('#solo-team').addEventListener('change', (e) => {
+    state.selectedTeamId = e.target.value;
+    loadData();
+  });
+
+  $('#matchup-team-a').addEventListener('change', (e) => {
+    state.teamA = e.target.value;
+    loadData();
+  });
+
+  $('#matchup-team-b').addEventListener('change', (e) => {
+    state.teamB = e.target.value;
+    loadData();
+  });
+
+  const canvas = $('#hero-chart');
+  const tooltip = $('#hero-tooltip');
   const wrap = canvas?.closest('.sd-chart-wrap');
+  let hoverRaf = null;
 
   canvas?.addEventListener('mousemove', (e) => {
-    if (!state.compareHitAreas.length || !wrap) {
+    if (!state.heroHitAreas.length || !wrap) {
       tooltip.hidden = true;
+      if (state.hoverHit) {
+        state.hoverHit = null;
+        renderHeroChart();
+      }
+      canvas.style.cursor = 'default';
       return;
     }
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const hit = findHit(state.compareHitAreas, mx, my);
+    const hit = findHit(state.heroHitAreas, e.clientX - rect.left, e.clientY - rect.top);
     if (!hit) {
       tooltip.hidden = true;
+      canvas.style.cursor = 'default';
+      if (state.hoverHit) {
+        state.hoverHit = null;
+        cancelAnimationFrame(hoverRaf);
+        hoverRaf = requestAnimationFrame(() => renderHeroChart());
+      }
       return;
     }
-    tooltip.textContent = formatTooltipPoint(hit.tooltip, state.meta?.mode);
+    canvas.style.cursor = 'crosshair';
+    tooltip.innerHTML = formatTooltipHtml(hit);
     tooltip.hidden = false;
     const wrapRect = wrap.getBoundingClientRect();
-    tooltip.style.left = `${e.clientX - wrapRect.left + 12}px`;
-    tooltip.style.top = `${e.clientY - wrapRect.top - 8}px`;
-  });
+    const tipW = tooltip.offsetWidth;
+    const tipH = tooltip.offsetHeight;
+    let left = e.clientX - wrapRect.left + 14;
+    let top = e.clientY - wrapRect.top - tipH - 10;
+    if (left + tipW > wrapRect.width - 8) left = e.clientX - wrapRect.left - tipW - 14;
+    if (top < 8) top = e.clientY - wrapRect.top + 14;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
 
+    const changed = state.hoverHit?.point !== hit.point || state.hoverHit?.teamId !== hit.teamId;
+    if (changed) {
+      state.hoverHit = { point: hit.point, teamId: hit.teamId };
+      cancelAnimationFrame(hoverRaf);
+      hoverRaf = requestAnimationFrame(() => renderHeroChart());
+    }
+  });
   canvas?.addEventListener('mouseleave', () => {
     tooltip.hidden = true;
+    canvas.style.cursor = 'default';
+    if (state.hoverHit) {
+      state.hoverHit = null;
+      renderHeroChart();
+    }
   });
 }
 
-/* ------------------------------------------------------------ debug panel */
+/* --------------------------------------------------------------- init */
 
-function renderDebug() {
-  const metaEl = $('#debug-meta');
-  const missingEl = $('#debug-missing');
-  const timesEl = $('#debug-times');
-  const normalizedEl = $('#debug-normalized');
-
-  if (state.meta) {
-    const updated = state.meta.cachedAt
-      ? new Date(state.meta.cachedAt * 1000).toLocaleString()
-      : UNAVAILABLE;
-    const errs = (state.meta.errors || []).length
-      ? ` · errors: ${state.meta.errors.join('; ')}`
-      : '';
-    metaEl.textContent = `mode: ${state.meta.mode} · last updated: ${updated}${errs}`;
-  }
-
-  const game = findGame(state.selectedId);
-  if (!game) {
-    missingEl.textContent = 'No event selected.';
-    timesEl.textContent = '—';
-    normalizedEl.textContent = '—';
-    return;
-  }
-  missingEl.textContent = game.missingFields?.length
-    ? `Missing fields: ${game.missingFields.join(', ')}`
-    : 'Missing fields: none';
-  timesEl.textContent = [
-    `raw provider timestamp: ${game.rawStartTime ?? UNAVAILABLE}`,
-    `normalized startTime:   ${game.startTime ?? UNAVAILABLE}`,
-    `local display time:     ${formatTime(game.startTime)}`,
-    `status:                 ${game.status ?? UNAVAILABLE}`,
-    `league:                 ${game.league ?? UNAVAILABLE}`,
-    `sourceProvider:         ${game.sourceProvider ?? UNAVAILABLE}`,
-  ].join('\n');
-  normalizedEl.textContent = JSON.stringify(game, null, 2);
-}
-
-async function loadDebugProviders() {
-  const container = $('#debug-providers');
-  try {
-    const payload = await fetchJson('/api/debug');
-    const providers = payload.providers || {};
-    if (!Object.keys(providers).length) {
-      container.innerHTML = '<p class="sd-debug__line">No provider responses recorded.</p>';
-      return;
-    }
-    container.innerHTML = Object.entries(providers).map(([key, value]) => {
-      let body = JSON.stringify(value, null, 2);
-      const truncated = body.length > 20000;
-      if (truncated) body = `${body.slice(0, 20000)}\n… (truncated)`;
-      return `
-        <div class="sd-debug__provider">
-          <p class="sd-debug__line">${value.provider ?? key} · fetched ${value.fetchedAt ?? UNAVAILABLE}${value.error ? ` · error: ${value.error}` : ''}</p>
-          <pre class="sd-debug__pre">${body.replace(/</g, '&lt;')}</pre>
-        </div>`;
-    }).join('');
-  } catch (err) {
-    container.innerHTML = `<p class="sd-debug__line">Debug endpoint failed: ${err.message}</p>`;
-  }
-}
-
-/* ------------------------------------------------------------------- load */
-
-async function loadDashboard() {
+async function init() {
   state.errors = [];
-  const [gamesRes, oddsRes, historyRes] = await Promise.allSettled([
-    fetchJson('/api/games'),
-    fetchJson('/api/odds'),
-    fetchJson('/api/history'),
-  ]);
-
-  if (gamesRes.status === 'fulfilled') {
-    state.games = gamesRes.value.games || [];
-    state.meta = {
-      mode: gamesRes.value.mode,
-      errors: gamesRes.value.errors,
-      cachedAt: gamesRes.value.cachedAt,
-      updatedAt: gamesRes.value.updatedAt,
-      refreshSec: gamesRes.value.refreshSec,
-    };
-  } else {
-    state.errors.push('Could not load games.');
-    state.games = [];
+  setLoading(true);
+  try {
+    const payload = await fetchJson('/api/teams?league=NBA');
+    if (payload.error) throw new Error(payload.error);
+    state.teams = payload.teams || [];
+    state.meta = payload;
+  } catch (err) {
+    state.errors = [`Teams: ${err.message}`];
+    state.teams = [];
   }
-  state.odds = oddsRes.status === 'fulfilled' ? oddsRes.value : null;
-  if (oddsRes.status === 'rejected') state.errors.push('Could not load market lines.');
-  state.history = historyRes.status === 'fulfilled' ? (historyRes.value.games || []) : [];
-  if (historyRes.status === 'rejected') state.errors.push('Could not load history.');
 
-  renderModeBadge();
-  renderLastUpdated();
-  renderStatus();
-  renderToday();
-  renderUpcoming();
-  renderMovement();
-  renderRecent();
-
-  if (!state.selectedId || !findGame(state.selectedId)) {
-    const first = state.games.find((g) => isToday(g.startTime)) || state.games[0] || state.history[0];
-    if (first) selectGame(first.gameId);
-    else {
-      renderDetail(null);
-      renderDebug();
-    }
-  } else {
-    renderDetail(findGame(state.selectedId));
-    renderDebug();
-  }
+  populateTeamSelects();
+  bindControls();
+  await loadData();
 }
 
 window.addEventListener('resize', () => {
-  const game = findGame(state.selectedId);
-  renderChart(game);
-  renderComparisonChart(game);
+  renderHeroChart();
 });
 
-bindComparisonControls();
-
-$('#debug-panel').addEventListener('toggle', (e) => {
-  if (e.target.open) loadDebugProviders();
-});
-
-loadDashboard();
-setInterval(loadDashboard, 5 * 60 * 1000);
+init();

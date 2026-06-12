@@ -1,0 +1,93 @@
+{
+  "source": "demo",
+  "teams": [
+    {
+      "id": "BOS",
+      "league": "NBA",
+      "name": "Celtics",
+      "abbreviation": "BOS",
+      "city": "Boston",
+      "colors": {
+        "primary": "#007A33"
+      },
+      "logo": null
+    },
+    {
+      "id": "NYK",
+      "league": "NBA",
+      "name": "Knicks",
+      "abbreviation": "NYK",
+      "city": "New York",
+      "colors": {
+        "primary": "#F58426"
+      },
+      "logo": null
+    },
+    {
+      "id": "SAS",
+      "league": "NBA",
+      "name": "Spurs",
+      "abbreviation": "SAS",
+      "city": "San Antonio",
+      "colors": {
+        "primary": "#C4CED4"
+      },
+      "logo": null
+    },
+    {
+      "id": "GSW",
+      "league": "NBA",
+      "name": "Warriors",
+      "abbreviation": "GSW",
+      "city": "Golden State",
+      "colors": {
+        "primary": "#1D428A"
+      },
+      "logo": null
+    },
+    {
+      "id": "LAL",
+      "league": "NBA",
+      "name": "Lakers",
+      "abbreviation": "LAL",
+      "city": "Los Angeles",
+      "colors": {
+        "primary": "#552583"
+      },
+      "logo": null
+    },
+    {
+      "id": "MIA",
+      "league": "NBA",
+      "name": "Heat",
+      "abbreviation": "MIA",
+      "city": "Miami",
+      "colors": {
+        "primary": "#98002E"
+      },
+      "logo": null
+    },
+    {
+      "id": "DEN",
+      "league": "NBA",
+      "name": "Nuggets",
+      "abbreviation": "DEN",
+      "city": "Denver",
+      "colors": {
+        "primary": "#0E2240"
+      },
+      "logo": null
+    },
+    {
+      "id": "PHX",
+      "league": "NBA",
+      "name": "Suns",
+      "abbreviation": "PHX",
+      "city": "Phoenix",
+      "colors": {
+        "primary": "#E56020"
+      },
+      "logo": null
+    }
+  ]
+}
