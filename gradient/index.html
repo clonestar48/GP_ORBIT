@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080a0e">
+  <title>GRADIENT — GP Orbit</title>
+  <link rel="stylesheet" href="/gradient/style.css">
+</head>
+<body>
+  <a class="back-link" href="/">← GP Orbit</a>
+
+  <main class="shell">
+    <section class="stage" aria-label="Gradient preview">
+      <canvas id="gradient-canvas" aria-hidden="true"></canvas>
+      <span class="type-caret" id="type-caret" aria-hidden="true"></span>
+      <label class="type-input-wrap">
+        <span class="sr-only">Type up to 20 characters</span>
+        <textarea
+          id="text-input"
+          class="type-input"
+          rows="1"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          aria-label="Type up to 20 characters"
+        >FUTURA CHROME</textarea>
+      </label>
+    </section>
+
+    <div class="panel-wrap">
+      <section class="panel" aria-label="Gradient controls">
+        <div class="panel__head">
+          <div>
+            <p class="panel__tag">Lab</p>
+            <h1 class="panel__title">Gradient</h1>
+          </div>
+          <p class="char-count" id="char-count" aria-live="polite">13/20</p>
+        </div>
+
+        <p class="readout" id="readout" aria-live="polite">—</p>
+
+        <div class="preset-section">
+          <p class="preset-section__label">Stock fills</p>
+          <div class="presets" id="preset-list" aria-label="Gradient presets"></div>
+        </div>
+
+        <p class="hint">Click the type and start typing · Shift+Enter new row · wraps at word · up to 20 chars · Futura Bold</p>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="/gradient/main.js"></script>
+</body>
+</html>
