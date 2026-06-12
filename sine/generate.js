@@ -1,5 +1,5 @@
 /**
- * Procedural song + patch generation — playful monophonic worlds.
+ * Procedural song + patch generation — eight distinct sonic territories.
  */
 
 export const MUTATE_INTENSITY = {
@@ -8,227 +8,192 @@ export const MUTATE_INTENSITY = {
   wild: { preserve: 0.4, label: 'Wild' },
 };
 
+/** Radar + shuffle pool — each world has a unique compositional voice. */
+export const FEATURED_WORLD_KEYS = [
+  'space-age',
+  'arcade',
+  'dungeon',
+  'bubble',
+  'beach',
+  'desert',
+  'ice-cave',
+  'speedway',
+];
+
 export const WORLDS = {
   'space-age': {
     label: 'Space Age',
-    mood: 'Neon glide',
+    mood: 'Optimistic transmission',
+    compose: 'beacon',
     mode: 'major',
-    noteDensity: 0.82,
-    mutateSpread: 1,
-    params: { pitch: [720, 1680], tone: [0, 0.45], decay: [0.06, 0.22], crunch: [0.1, 0.35], noise: [0, 0.12], attack: [0, 0.08], bend: [0.55, 0.82], wobble: [0, 0.15], detune: [0.08, 0.28], filter: [0, 0.15], volume: [0.42, 0.58], gap: [0.02, 0.1] },
-    tempo: [120, 175],
-    restChance: 0.12,
-    leapChance: 0.18,
-    homeRow: 0,
-  },
-  disco: {
-    label: 'Disco',
-    mood: 'Mirror ball',
-    mode: 'major',
-    noteDensity: 0.92,
-    mutateSpread: 1.05,
-    params: { pitch: [520, 1180], tone: [0.42, 0.88], decay: [0.12, 0.32], crunch: [0.2, 0.45], noise: [0.04, 0.18], attack: [0, 0.06], bend: [0.48, 0.65], wobble: [0.2, 0.55], detune: [0.15, 0.38], filter: [0, 0.2], volume: [0.48, 0.62], gap: [0.04, 0.14] },
-    tempo: [130, 190],
-    restChance: 0.08,
-    leapChance: 0.22,
+    noteDensity: 0.78,
+    mutateSpread: 0.95,
+    params: {
+      pitch: [920, 1760], tone: [0, 0.22], decay: [0.08, 0.22], crunch: [0.04, 0.18],
+      noise: [0, 0.08], attack: [0, 0.06], bend: [0.58, 0.78], wobble: [0, 0.1],
+      detune: [0.06, 0.18], filter: [0, 0.1], volume: [0.44, 0.58], gap: [0.03, 0.1],
+    },
+    tempo: [145, 185],
+    restChance: 0.1,
+    leapChance: 0.14,
     homeRow: 5,
+  },
+  arcade: {
+    label: 'Arcade',
+    mood: 'Coin-drop hooks',
+    compose: 'hook',
+    mode: 'major',
+    noteDensity: 0.94,
+    mutateSpread: 1.05,
+    params: {
+      pitch: [720, 1480], tone: [0.48, 0.82], decay: [0.04, 0.12], crunch: [0.22, 0.42],
+      noise: [0.02, 0.1], attack: [0, 0.03], bend: [0.55, 0.72], wobble: [0, 0.06],
+      detune: [0.08, 0.2], filter: [0, 0.08], volume: [0.5, 0.64], gap: [0.02, 0.07],
+    },
+    tempo: [88, 128],
+    restChance: 0.05,
+    leapChance: 0.32,
+    homeRow: 2,
   },
   dungeon: {
     label: 'Dungeon',
-    mood: 'Torch echo',
+    mood: 'Crypt wander',
+    compose: 'wander',
     mode: 'minor',
-    noteDensity: 0.58,
-    mutateSpread: 0.85,
-    params: { pitch: [140, 420], tone: [0.05, 0.42], decay: [0.35, 0.72], crunch: [0.15, 0.4], noise: [0.18, 0.45], attack: [0.04, 0.22], bend: [0.32, 0.48], wobble: [0.1, 0.35], detune: [0.05, 0.2], filter: [0.35, 0.72], volume: [0.35, 0.52], gap: [0.12, 0.28] },
-    tempo: [190, 290],
-    restChance: 0.18,
-    leapChance: 0.12,
+    noteDensity: 0.52,
+    mutateSpread: 0.82,
+    params: {
+      pitch: [110, 360], tone: [0.08, 0.38], decay: [0.42, 0.78], crunch: [0.12, 0.35],
+      noise: [0.2, 0.42], attack: [0.06, 0.2], bend: [0.28, 0.45], wobble: [0.08, 0.28],
+      detune: [0.04, 0.16], filter: [0.4, 0.75], volume: [0.34, 0.5], gap: [0.14, 0.3],
+    },
+    tempo: [215, 295],
+    restChance: 0.2,
+    leapChance: 0.22,
     homeRow: 7,
   },
   bubble: {
     label: 'Bubble',
-    mood: 'Bouncy pop',
+    mood: 'Toy bounce',
+    compose: 'bounce',
     mode: 'major',
-    noteDensity: 0.88,
-    mutateSpread: 1.15,
-    params: { pitch: [380, 920], tone: [0, 0.35], decay: [0.1, 0.38], crunch: [0.05, 0.22], noise: [0.04, 0.14], attack: [0.12, 0.42], bend: [0.55, 0.78], wobble: [0.05, 0.22], detune: [0.1, 0.3], filter: [0.05, 0.25], volume: [0.4, 0.55], gap: [0.08, 0.2] },
-    tempo: [150, 220],
-    restChance: 0.1,
-    leapChance: 0.35,
+    noteDensity: 0.86,
+    mutateSpread: 1.12,
+    params: {
+      pitch: [420, 980], tone: [0, 0.32], decay: [0.1, 0.28], crunch: [0.04, 0.16],
+      noise: [0.03, 0.1], attack: [0.18, 0.45], bend: [0.58, 0.8], wobble: [0.35, 0.62],
+      detune: [0.12, 0.28], filter: [0.04, 0.18], volume: [0.42, 0.56], gap: [0.06, 0.16],
+    },
+    tempo: [155, 205],
+    restChance: 0.08,
+    leapChance: 0.5,
     homeRow: 3,
   },
   beach: {
     label: 'Beach',
-    mood: 'Tidal sway',
+    mood: 'Coastal drift',
+    compose: 'wave',
     mode: 'major',
-    noteDensity: 0.62,
-    mutateSpread: 0.9,
-    params: { pitch: [440, 880], tone: [0, 0.28], decay: [0.28, 0.58], crunch: [0.04, 0.18], noise: [0.06, 0.16], attack: [0.08, 0.28], bend: [0.42, 0.58], wobble: [0.04, 0.18], detune: [0.05, 0.18], filter: [0.08, 0.28], volume: [0.38, 0.52], gap: [0.14, 0.32] },
-    tempo: [200, 300],
-    restChance: 0.16,
-    leapChance: 0.1,
-    homeRow: 7,
+    noteDensity: 0.55,
+    mutateSpread: 0.88,
+    params: {
+      pitch: [380, 760], tone: [0, 0.2], decay: [0.38, 0.68], crunch: [0, 0.1],
+      noise: [0.05, 0.14], attack: [0.1, 0.3], bend: [0.4, 0.55], wobble: [0.04, 0.14],
+      detune: [0.04, 0.14], filter: [0.06, 0.22], volume: [0.36, 0.5], gap: [0.16, 0.34],
+    },
+    tempo: [235, 310],
+    restChance: 0.18,
+    leapChance: 0.06,
+    homeRow: 6,
   },
   desert: {
     label: 'Desert',
-    mood: 'Dry mirage',
+    mood: 'Mirage echo',
+    compose: 'sparse',
     mode: 'minor',
-    noteDensity: 0.48,
-    mutateSpread: 0.8,
-    params: { pitch: [300, 680], tone: [0.08, 0.48], decay: [0.22, 0.55], crunch: [0.1, 0.3], noise: [0.08, 0.22], attack: [0.02, 0.15], bend: [0.38, 0.52], wobble: [0.02, 0.15], detune: [0.04, 0.16], filter: [0.12, 0.35], volume: [0.36, 0.5], gap: [0.18, 0.38] },
-    tempo: [210, 320],
-    restChance: 0.28,
-    leapChance: 0.14,
+    noteDensity: 0.32,
+    mutateSpread: 0.75,
+    params: {
+      pitch: [260, 580], tone: [0.1, 0.4], decay: [0.48, 0.82], crunch: [0.08, 0.24],
+      noise: [0.06, 0.18], attack: [0.02, 0.12], bend: [0.35, 0.5], wobble: [0.02, 0.1],
+      detune: [0.04, 0.14], filter: [0.14, 0.32], volume: [0.34, 0.48], gap: [0.28, 0.48],
+    },
+    tempo: [265, 345],
+    restChance: 0.38,
+    leapChance: 0.1,
     homeRow: 7,
   },
   'ice-cave': {
     label: 'Ice Cave',
-    mood: 'Crystal ring',
+    mood: 'Crystal shimmer',
+    compose: 'crystal',
     mode: 'minor',
-    noteDensity: 0.7,
-    mutateSpread: 0.95,
-    params: { pitch: [880, 1980], tone: [0, 0.38], decay: [0.32, 0.68], crunch: [0.06, 0.22], noise: [0.02, 0.1], attack: [0.02, 0.12], bend: [0.5, 0.68], wobble: [0.08, 0.28], detune: [0.18, 0.42], filter: [0.05, 0.22], volume: [0.4, 0.54], gap: [0.1, 0.22] },
-    tempo: [170, 250],
-    restChance: 0.14,
-    leapChance: 0.2,
+    noteDensity: 0.72,
+    mutateSpread: 0.92,
+    params: {
+      pitch: [1040, 2200], tone: [0, 0.28], decay: [0.22, 0.48], crunch: [0.04, 0.14],
+      noise: [0, 0.06], attack: [0, 0.08], bend: [0.52, 0.68], wobble: [0.1, 0.26],
+      detune: [0.22, 0.48], filter: [0.02, 0.14], volume: [0.4, 0.54], gap: [0.08, 0.18],
+    },
+    tempo: [165, 215],
+    restChance: 0.12,
+    leapChance: 0.24,
     homeRow: 0,
   },
   speedway: {
     label: 'Speedway',
-    mood: 'Racing pulse',
+    mood: 'Turbo circuit',
+    compose: 'race',
     mode: 'major',
-    noteDensity: 0.96,
-    mutateSpread: 1.25,
-    params: { pitch: [620, 1420], tone: [0.55, 0.95], decay: [0.06, 0.2], crunch: [0.22, 0.48], noise: [0.06, 0.16], attack: [0, 0.05], bend: [0.52, 0.72], wobble: [0.05, 0.2], detune: [0.12, 0.32], filter: [0, 0.12], volume: [0.5, 0.65], gap: [0.02, 0.08] },
-    tempo: [90, 150],
-    restChance: 0.05,
-    leapChance: 0.42,
+    noteDensity: 0.97,
+    mutateSpread: 1.2,
+    params: {
+      pitch: [640, 1380], tone: [0.58, 0.92], decay: [0.04, 0.14], crunch: [0.24, 0.48],
+      noise: [0.05, 0.14], attack: [0, 0.03], bend: [0.54, 0.72], wobble: [0.02, 0.12],
+      detune: [0.1, 0.26], filter: [0, 0.1], volume: [0.52, 0.66], gap: [0.02, 0.06],
+    },
+    tempo: [78, 118],
+    restChance: 0.03,
+    leapChance: 0.28,
     homeRow: 2,
   },
-  arcade: {
+  /** @deprecated use arcade — kept for shared URLs */
+  disco: {
     label: 'Arcade',
-    mood: '8-bit blips',
+    mood: 'Coin-drop hooks',
+    compose: 'hook',
     mode: 'major',
     noteDensity: 0.94,
-    mutateSpread: 1.1,
-    params: { pitch: [680, 1560], tone: [0.38, 0.72], decay: [0.04, 0.14], crunch: [0.18, 0.42], noise: [0.02, 0.1], attack: [0, 0.04], bend: [0.58, 0.78], wobble: [0, 0.08], detune: [0.08, 0.22], filter: [0, 0.1], volume: [0.46, 0.6], gap: [0.02, 0.08] },
-    tempo: [100, 165],
-    restChance: 0.07,
-    leapChance: 0.38,
-    homeRow: 2,
-  },
-  lullaby: {
-    label: 'Lullaby',
-    mood: 'Soft hush',
-    mode: 'major',
-    noteDensity: 0.42,
-    mutateSpread: 0.75,
-    params: { pitch: [260, 520], tone: [0, 0.18], decay: [0.45, 0.78], crunch: [0, 0.12], noise: [0, 0.08], attack: [0.18, 0.45], bend: [0.35, 0.52], wobble: [0.02, 0.12], detune: [0.04, 0.14], filter: [0.1, 0.32], volume: [0.32, 0.46], gap: [0.2, 0.38] },
-    tempo: [240, 340],
-    restChance: 0.32,
-    leapChance: 0.08,
-    homeRow: 7,
-  },
-  noir: {
-    label: 'Noir',
-    mood: 'Smoky filter',
-    mode: 'minor',
-    noteDensity: 0.55,
-    mutateSpread: 0.88,
-    params: { pitch: [200, 480], tone: [0.12, 0.48], decay: [0.22, 0.48], crunch: [0.12, 0.32], noise: [0.14, 0.32], attack: [0.06, 0.2], bend: [0.38, 0.55], wobble: [0.08, 0.22], detune: [0.06, 0.18], filter: [0.45, 0.75], volume: [0.34, 0.48], gap: [0.16, 0.3] },
-    tempo: [160, 240],
-    restChance: 0.22,
-    leapChance: 0.14,
-    homeRow: 6,
-  },
-  haunted: {
-    label: 'Haunted',
-    mood: 'Ghost wobble',
-    mode: 'minor',
-    noteDensity: 0.52,
-    mutateSpread: 0.92,
-    params: { pitch: [100, 320], tone: [0.02, 0.28], decay: [0.48, 0.82], crunch: [0.08, 0.28], noise: [0.28, 0.55], attack: [0.22, 0.48], bend: [0.42, 0.62], wobble: [0.35, 0.65], detune: [0.12, 0.28], filter: [0.28, 0.58], volume: [0.3, 0.44], gap: [0.18, 0.34] },
-    tempo: [200, 280],
-    restChance: 0.24,
-    leapChance: 0.1,
-    homeRow: 7,
-  },
-  circuit: {
-    label: 'Circuit',
-    mood: 'Digital zip',
-    mode: 'major',
-    noteDensity: 0.9,
-    mutateSpread: 1.15,
-    params: { pitch: [1200, 2200], tone: [0.48, 0.82], decay: [0.05, 0.12], crunch: [0.35, 0.55], noise: [0.1, 0.22], attack: [0, 0.03], bend: [0.62, 0.82], wobble: [0, 0.1], detune: [0.15, 0.35], filter: [0, 0.08], volume: [0.44, 0.58], gap: [0.02, 0.06] },
-    tempo: [110, 180],
-    restChance: 0.06,
+    mutateSpread: 1.05,
+    params: {
+      pitch: [720, 1480], tone: [0.48, 0.82], decay: [0.04, 0.12], crunch: [0.22, 0.42],
+      noise: [0.02, 0.1], attack: [0, 0.03], bend: [0.55, 0.72], wobble: [0, 0.06],
+      detune: [0.08, 0.2], filter: [0, 0.08], volume: [0.5, 0.64], gap: [0.02, 0.07],
+    },
+    tempo: [88, 128],
+    restChance: 0.05,
     leapChance: 0.32,
-    homeRow: 0,
-  },
-  temple: {
-    label: 'Temple',
-    mood: 'Sparse ritual',
-    mode: 'minor',
-    noteDensity: 0.38,
-    mutateSpread: 0.78,
-    params: { pitch: [220, 560], tone: [0, 0.22], decay: [0.38, 0.68], crunch: [0.04, 0.18], noise: [0.06, 0.16], attack: [0.14, 0.35], bend: [0.4, 0.55], wobble: [0.04, 0.14], detune: [0.05, 0.16], filter: [0.18, 0.42], volume: [0.34, 0.48], gap: [0.22, 0.4] },
-    tempo: [260, 360],
-    restChance: 0.34,
-    leapChance: 0.08,
-    homeRow: 7,
-  },
-  meadow: {
-    label: 'Meadow',
-    mood: 'Sunny leaps',
-    mode: 'major',
-    noteDensity: 0.68,
-    mutateSpread: 0.95,
-    params: { pitch: [500, 920], tone: [0, 0.25], decay: [0.18, 0.42], crunch: [0.02, 0.14], noise: [0.04, 0.12], attack: [0.1, 0.28], bend: [0.45, 0.6], wobble: [0.03, 0.12], detune: [0.06, 0.18], filter: [0.05, 0.2], volume: [0.38, 0.52], gap: [0.12, 0.26] },
-    tempo: [170, 260],
-    restChance: 0.14,
-    leapChance: 0.28,
-    homeRow: 5,
-  },
-  volcano: {
-    label: 'Volcano',
-    mood: 'Bass rumble',
-    mode: 'minor',
-    noteDensity: 0.44,
-    mutateSpread: 0.82,
-    params: { pitch: [90, 240], tone: [0.22, 0.58], decay: [0.32, 0.62], crunch: [0.45, 0.72], noise: [0.22, 0.42], attack: [0.08, 0.22], bend: [0.28, 0.45], wobble: [0.04, 0.16], detune: [0.04, 0.14], filter: [0.22, 0.48], volume: [0.42, 0.58], gap: [0.2, 0.36] },
-    tempo: [220, 320],
-    restChance: 0.26,
-    leapChance: 0.1,
-    homeRow: 7,
+    homeRow: 2,
   },
 };
 
 /** @deprecated use WORLDS */
 export const FAMILIES = WORLDS;
 
-const WORLD_KEYS = Object.keys(WORLDS);
 const PHRASE_STEPS = [8, 16, 24, 32];
-
 const MAJOR_PENT = [0, 2, 3, 5, 6, 7];
 const MINOR_PENT = [1, 3, 4, 5, 7];
 
 const TITLE_BITS = {
-  'space-age': { a: ['Neon', 'Star', 'Cosmic', 'Lunar', 'Lost', 'Solar'], b: ['Beacon', 'Radar', 'Relay', 'Signal', 'Highway', 'Probe'] },
-  disco: { a: ['Mirror', 'Velvet', 'Chrome', 'Glitter', 'Electric', 'Midnight'], b: ['Groove', 'Flash', 'Pulse', 'Slide', 'Hook', 'Boogie'] },
-  dungeon: { a: ['Hollow', 'Crypt', 'Shadow', 'Rust', 'Pixel', 'Lost'], b: ['Hall', 'Caverns', 'Whisper', 'Torch', 'Chain', 'Drift'] },
-  bubble: { a: ['Pop', 'Bouncy', 'Gummy', 'Silly', 'Jelly', 'Bubble'], b: ['Kingdom', 'Hop', 'Blob', 'Bounce', 'Loop', 'Plop'] },
-  beach: { a: ['Sandy', 'Tidal', 'Seafoam', 'Sunny', 'Palm', 'Salt'], b: ['Shore', 'Wave', 'Radio', 'Lagoon', 'Shell', 'Glow'] },
-  desert: { a: ['Dust', 'Mirage', 'Dune', 'Dry', 'Sage', 'Lost'], b: ['Signal', 'Trail', 'Echo', 'Wind', 'Bloom', 'Wander'] },
-  'ice-cave': { a: ['Frost', 'Crystal', 'Frozen', 'Glacier', 'Polar', 'Shiver'], b: ['Chime', 'Relay', 'Gleam', 'Shard', 'Spark', 'Drift'] },
-  speedway: { a: ['Turbo', 'Neon', 'Rapid', 'Blitz', 'Rocket', 'Hyper'], b: ['Dash', 'Lap', 'Rush', 'Sprint', 'Heat', 'Line'] },
-  arcade: { a: ['Pixel', 'Bonus', 'Insert', 'High', 'Token', 'Level'], b: ['Run', 'Blip', 'Quest', 'Score', 'Start', 'Loop'] },
-  lullaby: { a: ['Sleepy', 'Moon', 'Soft', 'Dream', 'Quiet', 'Star'], b: ['Hush', 'Drift', 'Cradle', 'Glow', 'Nest', 'Sway'] },
-  noir: { a: ['Smoke', 'Velvet', 'Rain', 'Neon', 'Midnight', 'Jazz'], b: ['Alley', 'Cipher', 'Shadow', 'Sax', 'Case', 'Blue'] },
-  haunted: { a: ['Phantom', 'Spectral', 'Eerie', 'Pale', 'Wisp', 'Ghost'], b: ['Hall', 'Moan', 'Shade', 'Creak', 'Mist', 'Veil'] },
-  circuit: { a: ['Logic', 'Binary', 'Pulse', 'Data', 'Wire', 'Cache'], b: ['Gate', 'Spark', 'Node', 'Burst', 'Trace', 'Flux'] },
-  temple: { a: ['Sacred', 'Stone', 'Ancient', 'Quiet', 'Lotus', 'Deep'], b: ['Bell', 'Chant', 'Pool', 'Echo', 'Path', 'Glow'] },
-  meadow: { a: ['Sunny', 'Wild', 'Green', 'Daisy', 'Breeze', 'Bright'], b: ['Field', 'Hop', 'Trail', 'Bloom', 'Song', 'Glade'] },
-  volcano: { a: ['Magma', 'Ash', 'Rumble', 'Ember', 'Basalt', 'Deep'], b: ['Core', 'Surge', 'Fault', 'Roar', 'Vent', 'Pulse'] },
+  'space-age': { a: ['Solar', 'Orbital', 'Beacon', 'Relay', 'Cosmic', 'Uplink'], b: ['Signal', 'Probe', 'Scan', 'Rise', 'Pulse', 'Trail'] },
+  arcade: { a: ['Bonus', 'High', 'Token', 'Pixel', 'Insert', 'Level'], b: ['Score', 'Run', 'Blip', 'Loop', 'Start', 'Coin'] },
+  dungeon: { a: ['Crypt', 'Hollow', 'Shadow', 'Lost', 'Ancient', 'Rust'], b: ['Hall', 'Depths', 'Whisper', 'Gate', 'Maze', 'Echo'] },
+  bubble: { a: ['Bouncy', 'Gummy', 'Pop', 'Float', 'Jelly', 'Wobble'], b: ['Hop', 'Blob', 'Drift', 'Plop', 'Ring', 'Bounce'] },
+  beach: { a: ['Tidal', 'Sandy', 'Coastal', 'Seafoam', 'Palm', 'Salt'], b: ['Drift', 'Shore', 'Glow', 'Lagoon', 'Breeze', 'Wave'] },
+  desert: { a: ['Mirage', 'Dune', 'Dust', 'Dry', 'Caravan', 'Sage'], b: ['Echo', 'Trail', 'Bloom', 'Wind', 'Wander', 'Haze'] },
+  'ice-cave': { a: ['Frost', 'Crystal', 'Frozen', 'Aurora', 'Glacier', 'Shimmer'], b: ['Chime', 'Shard', 'Gleam', 'Spark', 'Bell', 'Glint'] },
+  speedway: { a: ['Turbo', 'Rapid', 'Blitz', 'Neon', 'Rocket', 'Hyper'], b: ['Lap', 'Dash', 'Circuit', 'Rush', 'Sprint', 'Heat'] },
+  disco: { a: ['Bonus', 'High', 'Token', 'Pixel', 'Insert', 'Level'], b: ['Score', 'Run', 'Blip', 'Loop', 'Start', 'Coin'] },
 };
 
 export function mulberry32(seed) {
@@ -260,60 +225,215 @@ function scaleIndex(scale, row) {
 }
 
 function effectiveRestChance(world) {
-  return Math.min(0.42, world.restChance * (1.35 - world.noteDensity));
+  return Math.min(0.48, world.restChance * (1.4 - world.noteDensity));
 }
 
-function pickNote(rng, scale, prev, world) {
-  const restChance = effectiveRestChance(world);
-  if (rng() < restChance) return -1;
-  if (prev < 0) return pick(rng, scale);
+function resolveWorldKey(worldKey) {
+  if (worldKey === 'disco') return 'arcade';
+  return worldKey;
+}
 
+function rest(rng, world) {
+  return rng() < effectiveRestChance(world) ? -1 : null;
+}
+
+function stepInScale(rng, scale, prev, delta) {
   const idx = scaleIndex(scale, prev);
-  if (rng() < world.leapChance) {
-    return pick(rng, scale);
-  }
-  const step = rng() < 0.5 ? -1 : 1;
-  const next = Math.max(0, Math.min(scale.length - 1, idx + step));
+  const next = Math.max(0, Math.min(scale.length - 1, idx + delta));
   return scale[next];
 }
 
-function generatePhrase(rng, scale, len, world) {
-  const out = [];
-  let prev = world.homeRow;
-  if (!scale.includes(prev)) prev = scale[0];
-  for (let i = 0; i < len; i++) {
-    const n = pickNote(rng, scale, prev, world);
-    out.push(n);
-    if (n >= 0) prev = n;
-  }
-  return out;
+function pickLeap(rng, scale, prev, world) {
+  const idx = scaleIndex(scale, prev);
+  const jump = 2 + Math.floor(rng() * 2);
+  const dir = rng() < 0.5 ? -1 : 1;
+  const next = Math.max(0, Math.min(scale.length - 1, idx + dir * jump));
+  return scale[next];
 }
 
-function varyPhrase(rng, phrase, scale, len, world) {
-  const out = [];
-  for (let i = 0; i < len; i++) {
-    const src = phrase[i % phrase.length];
-    if (rng() < 0.55) {
-      out.push(src);
-    } else {
-      const prev = out.length ? out[out.length - 1] : src;
-      out.push(pickNote(rng, scale, prev >= 0 ? prev : world.homeRow, world));
-    }
-  }
-  return out;
-}
-
-function generateMelody(rng, world, steps) {
+function composeBeacon(rng, world, steps) {
   const scale = scaleFor(world.mode);
   const half = steps / 2;
-  const a = generatePhrase(rng, scale, half, world);
-  const b = varyPhrase(rng, a, scale, half, world);
-  const pattern = [...a, ...b];
+  let prev = world.homeRow;
+  if (!scale.includes(prev)) prev = scale[0];
+  const a = [];
+  for (let i = 0; i < half; i++) {
+    const r = rest(rng, world);
+    if (r !== null) { a.push(r); continue; }
+    const dir = rng() < 0.72 ? 1 : (rng() < 0.4 ? 0 : -1);
+    prev = stepInScale(rng, scale, prev, dir);
+    a.push(prev);
+  }
+  const motif = a.filter((n) => n >= 0).slice(-3);
+  const b = [];
+  for (let i = 0; i < half; i++) {
+    if (rng() < 0.15 && motif.length) {
+      b.push(motif[i % motif.length]);
+    } else if (rng() < effectiveRestChance(world) * 0.6) {
+      b.push(-1);
+    } else {
+      prev = stepInScale(rng, scale, prev, rng() < 0.6 ? 1 : 0);
+      b.push(prev);
+    }
+  }
+  return stitchPhrase(a, b, steps, world, scale, rng);
+}
+
+function composeHook(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  const motifLen = Math.min(4, Math.max(3, Math.floor(steps / 4)));
+  const motif = [];
+  let prev = world.homeRow;
+  for (let i = 0; i < motifLen; i++) {
+    if (rng() < 0.08) { motif.push(-1); continue; }
+    if (rng() < world.leapChance) prev = pickLeap(rng, scale, prev, world);
+    else prev = stepInScale(rng, scale, prev, rng() < 0.55 ? 1 : -1);
+    motif.push(prev);
+  }
+  const out = [];
+  for (let i = 0; i < steps; i++) {
+    if (rng() < 0.04) { out.push(-1); continue; }
+    out.push(motif[i % motifLen]);
+  }
+  out[steps - 1] = world.homeRow;
+  return out;
+}
+
+function composeWander(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  let prev = world.homeRow;
+  const out = [];
+  for (let i = 0; i < steps; i++) {
+    const r = rest(rng, world);
+    if (r !== null) { out.push(r); continue; }
+    if (rng() < world.leapChance) {
+      prev = pick(rng, scale);
+    } else {
+      const dir = rng() < 0.62 ? -1 : (rng() < 0.35 ? 1 : 0);
+      prev = stepInScale(rng, scale, prev, dir);
+    }
+    out.push(prev);
+  }
+  return stitchPhrase(out.slice(0, steps / 2), out.slice(steps / 2), steps, world, scale, rng);
+}
+
+function composeBounce(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  let prev = world.homeRow;
+  const out = [];
+  let lastDir = 1;
+  for (let i = 0; i < steps; i++) {
+    const r = rest(rng, world);
+    if (r !== null) { out.push(r); continue; }
+    if (rng() < world.leapChance) {
+      lastDir *= -1;
+      const jump = 2 + Math.floor(rng() * 2);
+      prev = stepInScale(rng, scale, prev, lastDir * jump);
+    } else {
+      prev = stepInScale(rng, scale, prev, lastDir);
+      if (rng() < 0.45) lastDir *= -1;
+    }
+    out.push(prev);
+  }
+  out[steps - 1] = pick(rng, scale.filter((n) => n <= 4));
+  return out;
+}
+
+function composeWave(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  let prev = world.homeRow;
+  const out = [];
+  let drift = 1;
+  for (let i = 0; i < steps; i++) {
+    const r = rest(rng, world);
+    if (r !== null) { out.push(r); continue; }
+    if (i > 0 && i % 4 === 0) drift *= -1;
+    prev = stepInScale(rng, scale, prev, drift);
+    out.push(prev);
+  }
+  return stitchPhrase(out.slice(0, steps / 2), out.slice(steps / 2), steps, world, scale, rng, 0.35);
+}
+
+function composeSparse(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  const out = Array(steps).fill(-1);
+  const noteCount = Math.max(2, Math.floor(steps * world.noteDensity * 0.45));
+  const slots = [...Array(steps).keys()].sort(() => rng() - 0.5);
+  let prev = world.homeRow;
+  for (let i = 0; i < noteCount; i++) {
+    const slot = slots[i];
+    if (rng() < 0.35) prev = pick(rng, scale);
+    else prev = stepInScale(rng, scale, prev, rng() < 0.5 ? -1 : 1);
+    out[slot] = prev;
+  }
+  out[steps - 1] = world.homeRow;
+  if (steps > 2 && rng() < 0.5) out[0] = world.homeRow;
+  return out;
+}
+
+function composeCrystal(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  const high = scale.filter((n) => n <= 3);
+  const pool = high.length ? high : scale.slice(0, 3);
+  const out = [];
+  for (let i = 0; i < steps; i++) {
+    if (rng() < effectiveRestChance(world)) { out.push(-1); continue; }
+    if (i % 2 === 0) {
+      out.push(pick(rng, pool));
+    } else {
+      out.push(stepInScale(rng, scale, out[out.length - 1] >= 0 ? out[out.length - 1] : pool[0], rng() < 0.5 ? 1 : -1));
+    }
+  }
+  return stitchPhrase(out.slice(0, steps / 2), out.slice(steps / 2), steps, world, scale, rng, 0.5);
+}
+
+function composeRace(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  const out = [];
+  let prev = world.homeRow;
+  let run = 0;
+  for (let i = 0; i < steps; i++) {
+    if (rng() < 0.03) { out.push(-1); run = 0; continue; }
+    if (run > 0 && run < 4) {
+      prev = stepInScale(rng, scale, prev, 1);
+      run += 1;
+    } else if (rng() < 0.7) {
+      prev = stepInScale(rng, scale, prev, 1);
+      run = 1;
+    } else {
+      prev = stepInScale(rng, scale, prev, -2);
+      run = 0;
+    }
+    out.push(prev);
+  }
+  return stitchPhrase(out.slice(0, steps / 2), out.slice(0, steps / 2), steps, world, scale, rng, 0.75);
+}
+
+function stitchPhrase(a, b, steps, world, scale, rng, varyChance = 0.45) {
+  const pattern = [...a, ...b].slice(0, steps);
+  while (pattern.length < steps) pattern.push(-1);
   pattern[steps - 1] = world.homeRow;
-  if (steps > 1 && rng() < 0.6) {
-    pattern[steps - 2] = pickNote(rng, scale, pattern[steps - 1], { ...world, restChance: 0, leapChance: 0.35 });
+  if (steps > 1 && rng() < varyChance) {
+    const idx = steps - 2;
+    pattern[idx] = stepInScale(rng, scale, pattern[steps - 1], rng() < 0.5 ? -1 : 1);
   }
   return pattern;
+}
+
+const COMPOSERS = {
+  beacon: composeBeacon,
+  hook: composeHook,
+  wander: composeWander,
+  bounce: composeBounce,
+  wave: composeWave,
+  sparse: composeSparse,
+  crystal: composeCrystal,
+  race: composeRace,
+};
+
+function generateMelody(rng, world, steps) {
+  const compose = COMPOSERS[world.compose] || composeBeacon;
+  return compose(rng, world, steps);
 }
 
 function generateParams(rng, world) {
@@ -335,19 +455,21 @@ function generateParams(rng, world) {
 }
 
 function generateTitle(rng, worldKey) {
-  const bits = TITLE_BITS[worldKey];
+  const key = resolveWorldKey(worldKey);
+  const bits = TITLE_BITS[key] || TITLE_BITS.bubble;
   return `${pick(rng, bits.a)} ${pick(rng, bits.b)}`;
 }
 
 function buildSong(seed, worldKey, rng) {
-  const world = WORLDS[worldKey];
+  const key = resolveWorldKey(worldKey);
+  const world = WORLDS[key] || WORLDS['space-age'];
   const steps = pick(rng, PHRASE_STEPS);
   const tempo = Math.round(lerp(rng, world.tempo));
   return {
     seed: seed >>> 0,
-    worldKey,
+    worldKey: key,
     worldLabel: world.label,
-    title: generateTitle(rng, worldKey),
+    title: generateTitle(rng, key),
     steps,
     tempo,
     pattern: generateMelody(rng, world, steps),
@@ -357,14 +479,15 @@ function buildSong(seed, worldKey, rng) {
 
 export function generateFromSeed(seed) {
   const rng = mulberry32(seed >>> 0);
-  const worldKey = pick(rng, WORLD_KEYS);
+  const worldKey = pick(rng, FEATURED_WORLD_KEYS);
   return buildSong(seed, worldKey, rng);
 }
 
 export function generateFromWorld(worldKey, seed = randomSeed()) {
-  if (!WORLDS[worldKey]) return generateFromSeed(seed);
+  const key = resolveWorldKey(worldKey);
+  if (!WORLDS[key]) return generateFromSeed(seed);
   const rng = mulberry32(seed >>> 0);
-  return buildSong(seed, worldKey, rng);
+  return buildSong(seed, key, rng);
 }
 
 /** @deprecated use generateFromWorld */
@@ -381,7 +504,8 @@ function changeChance(intensity, world, base = 1) {
 
 export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
   const rng = mulberry32((seed + revision * 0x9E3779B9) >>> 0);
-  const world = WORLDS[current.worldKey] || WORLDS[pick(rng, WORLD_KEYS)];
+  const key = resolveWorldKey(current.worldKey);
+  const world = WORLDS[key] || WORLDS[pick(rng, FEATURED_WORLD_KEYS)];
   const scale = scaleFor(world.mode);
   const steps = current.steps;
   const noteChange = changeChance(intensity, world, 1);
@@ -408,7 +532,7 @@ export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
     gap: mutateValue(rng, current.params.gap, 0, 1, paramChange),
   };
 
-  const titleBits = TITLE_BITS[current.worldKey] || TITLE_BITS.bubble;
+  const titleBits = TITLE_BITS[key] || TITLE_BITS.bubble;
   const retitleChance = intensity === 'wild' ? 0.55 : intensity === 'medium' ? 0.35 : 0.2;
   const title = rng() < retitleChance
     ? `${pick(rng, titleBits.a)} ${pick(rng, titleBits.b)}`
@@ -416,7 +540,7 @@ export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
 
   return {
     seed: seed >>> 0,
-    worldKey: current.worldKey,
+    worldKey: key,
     worldLabel: world.label,
     title,
     steps,
@@ -436,13 +560,22 @@ function mutateValue(rng, value, lo, hi, chance) {
 
 function mutateNote(rng, note, scale, world, chance) {
   if (rng() > chance) return note;
-  if (rng() < 0.22) return -1;
-  if (rng() < world.leapChance + 0.15) return pick(rng, scale);
-  return pickNote(rng, scale, note >= 0 ? note : world.homeRow, world);
+  if (rng() < effectiveRestChance(world) + 0.08) return -1;
+  if (rng() < world.leapChance + 0.12) return pick(rng, scale);
+  const prev = note >= 0 ? note : world.homeRow;
+  const composer = COMPOSERS[world.compose];
+  if (composer === composeWander || composer === composeSparse) {
+    return pick(rng, scale);
+  }
+  if (composer === composeRace) {
+    return stepInScale(rng, scale, prev, 1);
+  }
+  return stepInScale(rng, scale, prev, rng() < 0.5 ? -1 : 1);
 }
 
 export function replayFromSeed(seed, revision = 0, worldKey = null, intensity = 'medium') {
-  let song = worldKey ? generateFromWorld(worldKey, seed) : generateFromSeed(seed);
+  const key = worldKey ? resolveWorldKey(worldKey) : null;
+  let song = key ? generateFromWorld(key, seed) : generateFromSeed(seed);
   for (let r = 0; r < revision; r++) {
     song = mutateSong(song, seed, r, intensity);
   }

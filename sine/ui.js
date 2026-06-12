@@ -9,6 +9,7 @@ import {
   applyMelody,
   getMelodyState,
   isMelodyEmpty,
+  remixPattern,
 } from './melody.js';
 import {
   WORLDS,
@@ -19,6 +20,7 @@ import {
   randomSeed,
   replayFromSeed,
 } from './generate.js';
+import { renderWorldRadar } from './world-radar.js';
 
 const DEFAULTS = {
   pitch: 880,
@@ -41,8 +43,6 @@ const URL_KEYS = {
   volume: 'v', gap: 'g',
 };
 
-const MUTATE_ORDER = ['subtle', 'medium', 'wild'];
-
 const CORE_KNOBS = [
   { id: 'pitch', label: 'Pitch', min: 80, max: 2400, step: 1, fmt: (v) => `${Math.round(v)} Hz` },
   { id: 'tone', label: 'Tone', min: 0, max: 1, step: 0.01, fmt: (v) => waveLabel(v) },
@@ -62,6 +62,25 @@ const SHAPE_KNOBS = [
 ];
 
 const ALL_KNOBS = [...CORE_KNOBS, ...SHAPE_KNOBS];
+
+const MACROS = [
+  { id: 'brightness', label: 'Brightness' },
+  { id: 'texture', label: 'Texture' },
+  { id: 'energy', label: 'Energy' },
+  { id: 'space', label: 'Space' },
+];
+
+const MACRO_DEFAULT = 0.5;
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function avg(...vals) {
+  const clean = vals.filter((v) => Number.isFinite(v));
+  if (!clean.length) return MACRO_DEFAULT;
+  return clean.reduce((sum, v) => sum + v, 0) / clean.length;
+}
 
 function waveLabel(tone) {
   if (tone < 0.34) return 'sine';
@@ -115,7 +134,9 @@ function setRotaryValue(k, value) {
 
 let currentGeneration = null;
 let applyingGeneration = false;
+let applyingMacros = false;
 let mutationIntensity = 'medium';
+let soundBasePitch = DEFAULTS.pitch;
 
 function clearGeneration() {
   currentGeneration = null;
@@ -123,29 +144,57 @@ function clearGeneration() {
   updateWorldSelection();
 }
 
-function updateWorldSelection() {
-  document.querySelectorAll('.world-btn').forEach((btn) => {
-    btn.classList.toggle(
-      'is-selected',
-      currentGeneration?.worldKey === btn.dataset.world,
-    );
+function updateIntensityUi() {
+  document.querySelectorAll('.mutate-intensity-btn').forEach((btn) => {
+    btn.classList.toggle('is-selected', btn.dataset.intensity === mutationIntensity);
   });
 }
 
+function updateWorldSelection() {
+  const worldKey = currentGeneration?.worldKey;
+  document.querySelectorAll('.world-node').forEach((btn) => {
+    btn.classList.toggle('is-selected', worldKey === btn.dataset.world);
+  });
+  document.getElementById('worlds-flyout')?.classList.toggle('is-selected', !!worldKey);
+  updateSoundWorldLabel();
+}
+
+function updateSoundWorldLabel() {
+  const el = document.getElementById('sound-world-name');
+  if (!el) return;
+  el.textContent = currentGeneration?.worldLabel || 'Custom';
+}
+
+function syncWrapperActive(wrapper) {
+  if (!wrapper) return;
+  wrapper.classList.toggle('is-active', wrapper.contains(document.activeElement));
+}
+
+function bindWrapperActive(wrapper) {
+  if (!wrapper) return;
+  const sync = () => syncWrapperActive(wrapper);
+  wrapper.addEventListener('focusin', sync);
+  wrapper.addEventListener('focusout', () => requestAnimationFrame(sync));
+}
+
 function updateArtifactCard() {
-  const card = document.getElementById('artifact-card');
-  if (!card) return;
+  const title = document.getElementById('artifact-title');
+  const world = document.getElementById('artifact-world');
+  const seed = document.getElementById('artifact-seed');
+  const steps = document.getElementById('artifact-steps');
+  if (!title || !world || !seed || !steps) return;
 
   if (!currentGeneration) {
-    card.hidden = true;
+    title.textContent = '—';
+    world.textContent = '—';
+    seed.textContent = '—';
+    steps.textContent = '—';
     return;
   }
 
-  card.hidden = false;
-  document.getElementById('artifact-title').textContent = currentGeneration.title;
-  document.getElementById('artifact-world').textContent = currentGeneration.worldLabel;
-  document.getElementById('artifact-seed').textContent = String(currentGeneration.seed);
-  const steps = document.getElementById('artifact-steps');
+  title.textContent = currentGeneration.title;
+  world.textContent = currentGeneration.worldLabel;
+  seed.textContent = String(currentGeneration.seed);
   const rev = currentGeneration.revision > 0 ? ` · rv ${currentGeneration.revision}` : '';
   steps.textContent = `${currentGeneration.steps} steps${rev}`;
 }
@@ -176,20 +225,14 @@ function generateWorldSong(worldKey) {
 }
 
 function renderWorldPresets() {
-  const root = document.getElementById('world-presets');
-  if (!root) return;
-  root.replaceChildren();
-
-  for (const [key, world] of Object.entries(WORLDS)) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'preset-btn world-btn';
-    btn.dataset.world = key;
-
-    btn.textContent = world.label;
-    btn.addEventListener('click', () => generateWorldSong(key));
-    root.appendChild(btn);
-  }
+  renderWorldRadar(document.getElementById('world-radar'), {
+    onSelect: (worldKey) => {
+      if (!WORLDS[worldKey]) return;
+      generateWorldSong(worldKey);
+      document.getElementById('worlds-flyout')?.removeAttribute('open');
+    },
+  });
+  updateWorldSelection();
 }
 
 function mutateCurrentSong() {
@@ -207,12 +250,89 @@ function mutateCurrentSong() {
   };
   const next = mutateSong(base, currentGeneration.seed, revision - 1, mutationIntensity);
   applyGenerated({ ...next, seed: currentGeneration.seed, revision, intensity: mutationIntensity });
-  mutationIntensity = MUTATE_ORDER[(MUTATE_ORDER.indexOf(mutationIntensity) + 1) % MUTATE_ORDER.length];
-  syncUrl();
 }
 
-function applyParams(params, { keepGeneration = false } = {}) {
+function macrosFromParams(params) {
+  const base = soundBasePitch || DEFAULTS.pitch;
+  const pitchNorm = base > 0 ? (params.pitch / base - 0.9) / 0.18 : MACRO_DEFAULT;
+  return {
+    brightness: clamp01(avg(
+      params.tone / 0.92,
+      1 - params.filter / 0.65,
+      pitchNorm,
+    )),
+    texture: clamp01(avg(
+      params.crunch / 0.9,
+      params.noise / 0.8,
+      params.detune / 0.5,
+    )),
+    energy: clamp01(avg(
+      params.attack / 0.7,
+      1 - (params.decay - 0.06) / 0.42,
+      (params.volume - 0.32) / 0.58,
+      (params.bend - 0.42) / 0.45 + 0.5,
+    )),
+    space: clamp01(avg(
+      params.wobble / 0.75,
+      params.gap / 0.5,
+      (params.decay - 0.08) / 0.82,
+    )),
+  };
+}
+
+function paramsFromMacros(macros) {
+  const b = clamp01(macros.brightness ?? MACRO_DEFAULT);
+  const t = clamp01(macros.texture ?? MACRO_DEFAULT);
+  const e = clamp01(macros.energy ?? MACRO_DEFAULT);
+  const s = clamp01(macros.space ?? MACRO_DEFAULT);
+  const base = soundBasePitch || DEFAULTS.pitch;
+  const energyDecay = 0.06 + (1 - e) * 0.42;
+  const spaceDecay = 0.08 + s * 0.82;
+
+  return {
+    filter: clamp01((1 - b) * 0.65),
+    tone: clamp01(b * 0.92),
+    pitch: Math.max(80, Math.min(2400, base * (0.9 + b * 0.18))),
+    crunch: clamp01(t * 0.9),
+    noise: clamp01(t * 0.8),
+    detune: clamp01(t * 0.5),
+    attack: clamp01(e * 0.7),
+    decay: clamp01(energyDecay * (1 - s * 0.35) + spaceDecay * (s * 0.5 + 0.15)),
+    volume: clamp01(0.32 + e * 0.58),
+    bend: clamp01(0.42 + (e - 0.5) * 0.45),
+    wobble: clamp01(s * 0.75),
+    gap: clamp01(s * 0.5),
+  };
+}
+
+function syncMacroSliders(params = readParams()) {
+  const macros = macrosFromParams(params);
+  for (const macro of MACROS) {
+    const input = document.getElementById(`macro-${macro.id}`);
+    if (input) input.value = macros[macro.id].toFixed(2);
+  }
+}
+
+function applyMacroValues(macros) {
+  applyingMacros = true;
+  const next = { ...readParams(), ...paramsFromMacros(macros) };
+  for (const k of ALL_KNOBS) {
+    const el = document.getElementById(`knob-${k.id}`);
+    if (!el) continue;
+    el.value = next[k.id];
+    if (document.querySelector(`[data-rotary="${k.id}"]`)) {
+      setRotaryValue(k, next[k.id]);
+    } else {
+      const val = document.getElementById(`val-${k.id}`);
+      if (val) val.textContent = k.fmt(parseFloat(el.value));
+    }
+  }
+  applyingMacros = false;
+}
+
+function applyParams(params, { keepGeneration = false, skipMacros = false } = {}) {
   const merged = mergeParams(params);
+  soundBasePitch = merged.pitch;
   for (const k of ALL_KNOBS) {
     const el = document.getElementById(`knob-${k.id}`);
     el.value = merged[k.id];
@@ -222,6 +342,7 @@ function applyParams(params, { keepGeneration = false } = {}) {
       document.getElementById(`val-${k.id}`).textContent = k.fmt(parseFloat(el.value));
     }
   }
+  if (!skipMacros) syncMacroSliders(merged);
   if (!keepGeneration && !applyingGeneration) clearGeneration();
   updateLoopParams(readParams());
   syncUrl();
@@ -257,10 +378,50 @@ function togglePlay() {
 }
 
 function onParamChange() {
+  if (!applyingMacros) syncMacroSliders();
   clearGeneration();
   updateLoopParams(readParams());
   syncUrl();
   updateReadout();
+}
+
+function buildMacroSliders(root) {
+  for (const macro of MACROS) {
+    const row = document.createElement('label');
+    row.className = 'macro-slider';
+    row.htmlFor = `macro-${macro.id}`;
+
+    const head = document.createElement('span');
+    head.className = 'macro-slider__label';
+    head.textContent = macro.label;
+
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.className = 'macro-slider__input';
+    input.id = `macro-${macro.id}`;
+    input.min = 0;
+    input.max = 1;
+    input.step = 0.01;
+    input.value = MACRO_DEFAULT;
+    input.setAttribute('aria-label', macro.label);
+
+    input.addEventListener('input', () => {
+      const macros = Object.fromEntries(
+        MACROS.map((m) => [m.id, parseFloat(document.getElementById(`macro-${m.id}`).value)]),
+      );
+      applyMacroValues(macros);
+      onParamChange();
+    });
+
+    const setSliderActive = (active) => row.classList.toggle('is-active', active);
+    input.addEventListener('pointerdown', () => setSliderActive(true));
+    input.addEventListener('pointerup', () => setSliderActive(false));
+    input.addEventListener('pointercancel', () => setSliderActive(false));
+    input.addEventListener('blur', () => setSliderActive(false));
+
+    row.append(head, input);
+    root.appendChild(row);
+  }
 }
 
 function buildRotaryKnobs(knobs, root) {
@@ -387,6 +548,12 @@ function buildSliders(knobs, root) {
       onParamChange();
     });
 
+    const setSliderActive = (active) => row.classList.toggle('is-active', active);
+    input.addEventListener('pointerdown', () => setSliderActive(true));
+    input.addEventListener('pointerup', () => setSliderActive(false));
+    input.addEventListener('pointercancel', () => setSliderActive(false));
+    input.addEventListener('blur', () => setSliderActive(false));
+
     row.append(head, val, input);
     root.appendChild(row);
     val.textContent = k.fmt(parseFloat(input.value));
@@ -445,21 +612,20 @@ async function copyText(text, btnId, okLabel = 'Copied') {
   }
 }
 
-function copySeed() {
-  if (!currentGeneration?.seed) {
-    copyText('', 'melody-copy-seed-btn', 'No seed');
-    return;
-  }
+function seedSnippet() {
+  if (!currentGeneration?.seed) return null;
   const rv = currentGeneration.revision > 0 ? `&rv=${currentGeneration.revision}` : '';
   const world = currentGeneration.worldKey ? `&world=${currentGeneration.worldKey}` : '';
   const mi = mutationIntensity !== 'medium' ? `&mi=${mutationIntensity}` : '';
-  copyText(`seed=${currentGeneration.seed}${rv}${world}${mi}`, 'melody-copy-seed-btn', 'Copied');
+  return `seed=${currentGeneration.seed}${rv}${world}${mi}`;
 }
 
 function copyShareLink() {
   const qs = paramsToSearch(readParams());
   const url = `${location.origin}${location.pathname}${qs ? `?${qs}` : ''}`;
-  copyText(url, 'melody-share-btn', 'Link copied');
+  const seed = seedSnippet();
+  const text = seed ? `${url}\n${seed}` : url;
+  copyText(text, 'melody-share-btn', 'Copied');
 }
 
 function stopSynthRepeat() {
@@ -467,6 +633,7 @@ function stopSynthRepeat() {
 }
 
 function init() {
+  buildMacroSliders(document.getElementById('macro-sliders'));
   buildRotaryKnobs(CORE_KNOBS, document.getElementById('knobs-core'));
   buildSliders(SHAPE_KNOBS, document.getElementById('knobs-shape'));
 
@@ -505,9 +672,18 @@ function init() {
   }
 
   document.getElementById('melody-share-btn').addEventListener('click', copyShareLink);
-  document.getElementById('melody-copy-seed-btn').addEventListener('click', copySeed);
+  document.getElementById('shuffle-btn').addEventListener('click', generateSong);
+  document.getElementById('remix-btn').addEventListener('click', remixPattern);
   document.getElementById('mutate-btn').addEventListener('click', mutateCurrentSong);
-  document.getElementById('generate-btn').addEventListener('click', generateSong);
+
+  document.querySelectorAll('.mutate-intensity-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      mutationIntensity = btn.dataset.intensity;
+      updateIntensityUi();
+      syncUrl();
+    });
+  });
+  updateIntensityUi();
 
   document.addEventListener('keydown', (e) => {
     if (
@@ -530,6 +706,9 @@ function init() {
   document.addEventListener('keydown', unlockOnce);
 
   renderWorldPresets();
+  updateWorldSelection();
+  bindWrapperActive(document.getElementById('sound-module'));
+  bindWrapperActive(document.getElementById('sound-advanced'));
   updateReadout();
 }
 

@@ -11,38 +11,98 @@
   <a class="back-link" href="/">← GP Orbit</a>
 
   <div class="toy-shell">
-    <article class="artifact-card" id="artifact-card" hidden aria-live="polite">
+    <article class="artifact-card" id="artifact-card" aria-live="polite">
       <p class="artifact-card__label">Now playing</p>
       <h1 class="artifact-card__title" id="artifact-title">—</h1>
-      <dl class="artifact-card__meta">
-        <div class="artifact-card__row">
-          <dt>World</dt>
-          <dd id="artifact-world">—</dd>
-        </div>
-        <div class="artifact-card__row">
-          <dt>Seed</dt>
-          <dd id="artifact-seed">—</dd>
-        </div>
-        <div class="artifact-card__row">
-          <dt>Steps</dt>
-          <dd id="artifact-steps">—</dd>
-        </div>
-      </dl>
+      <div class="artifact-card__body">
+        <dl class="artifact-card__meta">
+          <div class="artifact-card__row">
+            <dt>World</dt>
+            <dd id="artifact-world">—</dd>
+          </div>
+          <div class="artifact-card__row">
+            <dt>Seed</dt>
+            <dd id="artifact-seed">—</dd>
+          </div>
+          <div class="artifact-card__row">
+            <dt>Steps</dt>
+            <dd id="artifact-steps">—</dd>
+          </div>
+        </dl>
+        <dl class="artifact-card__meta artifact-card__meta--end">
+          <div class="artifact-card__row">
+            <dd id="readout" aria-live="polite">—</dd>
+          </div>
+        </dl>
+      </div>
     </article>
 
-    <section class="worlds-band" aria-label="Worlds">
-      <h2 class="worlds-band__title">Worlds</h2>
-      <div class="presets presets--worlds" id="world-presets" aria-label="Worlds"></div>
-    </section>
+    <header class="sound-rack" aria-label="Sound controls">
+      <section class="sound-module" id="sound-module" aria-label="Sound">
+        <div class="sound-module__head">
+          <details class="worlds-flyout" id="worlds-flyout">
+            <summary class="worlds-flyout__summary">Worlds</summary>
+            <div class="worlds-flyout__panel">
+              <div class="world-radar" id="world-radar" aria-label="Mission select"></div>
+            </div>
+          </details>
+          <p class="sound-module__world">
+            <span class="sound-module__world-label">World</span>
+            <span class="sound-module__world-name" id="sound-world-name">—</span>
+          </p>
+        </div>
+
+        <div class="macro-sliders" id="macro-sliders" aria-label="Sound macros"></div>
+
+        <details class="sound-advanced" id="sound-advanced">
+          <summary class="sound-advanced__summary">Advanced Sound</summary>
+          <div class="sound-advanced__body">
+            <section class="sound-advanced__section" aria-label="Tone details">
+              <h3 class="sound-advanced__section-title">Tone</h3>
+              <div class="rotary-grid rotary-grid--tone" id="knobs-core"></div>
+            </section>
+            <section class="sound-advanced__section" aria-label="Shape details">
+              <h3 class="sound-advanced__section-title">Shape</h3>
+              <div class="knobs knobs--compact" id="knobs-shape"></div>
+            </section>
+          </div>
+        </details>
+      </section>
+    </header>
 
     <div class="workspace workspace--solo">
       <aside class="panel panel--melody" id="melody-panel" aria-label="Melody toy">
         <div class="melody-head">
           <p class="panel__tag">Melody</p>
           <div class="creator-bar">
-            <button type="button" class="btn btn--small" id="mutate-btn">Mutate</button>
-            <button type="button" class="btn btn--ghost btn--small" id="generate-btn">New</button>
+            <button type="button" class="btn btn--ghost btn--small" id="remix-btn">Remix</button>
+            <div class="mutate-group">
+              <button type="button" class="btn btn--small" id="mutate-btn">Mutate</button>
+              <div class="mutate-intensity" role="group" aria-label="Mutate intensity">
+                <button type="button" class="preset-btn mutate-intensity-btn" data-intensity="subtle">Subtle</button>
+                <button type="button" class="preset-btn mutate-intensity-btn is-selected" data-intensity="medium">Medium</button>
+                <button type="button" class="preset-btn mutate-intensity-btn" data-intensity="wild">Wild</button>
+              </div>
+            </div>
           </div>
+        </div>
+
+        <div class="melody-controls">
+          <div class="melody-steps" aria-label="Step count">
+            <span class="melody-controls__label">Steps</span>
+            <div class="melody-steps__btns">
+              <button type="button" class="preset-btn melody-steps-btn" data-steps="8">8</button>
+              <button type="button" class="preset-btn melody-steps-btn" data-steps="12">12</button>
+              <button type="button" class="preset-btn melody-steps-btn is-selected" data-steps="16">16</button>
+              <button type="button" class="preset-btn melody-steps-btn" data-steps="24">24</button>
+              <button type="button" class="preset-btn melody-steps-btn" data-steps="32">32</button>
+            </div>
+          </div>
+          <label class="melody-tempo melody-tempo--melody">
+            <span class="melody-controls__label">Speed</span>
+            <span class="melody-tempo__val" id="melody-tempo-val">160 ms</span>
+            <input type="range" id="melody-tempo" min="80" max="400" step="10" value="160" aria-label="Milliseconds per step">
+          </label>
         </div>
 
         <div class="melody-stage">
@@ -53,46 +113,17 @@
         </div>
 
         <div class="actions melody-actions">
-          <button type="button" class="btn" id="melody-play-btn">Play</button>
+          <div class="transport" aria-label="Playback">
+            <button type="button" class="btn btn--transport btn--play" id="melody-play-btn" aria-label="Play">▶</button>
+            <button type="button" class="btn btn--transport btn--stop" id="melody-stop-btn" aria-label="Stop">■</button>
+          </div>
           <button type="button" class="btn btn--ghost" id="melody-loop-btn" aria-pressed="false">Loop</button>
           <button type="button" class="btn btn--ghost" id="melody-clear-btn">Clear</button>
+          <button type="button" class="btn btn--ghost" id="shuffle-btn">Shuffle</button>
           <button type="button" class="btn btn--ghost" id="melody-share-btn">Copy link</button>
-          <button type="button" class="btn btn--ghost" id="melody-copy-seed-btn">Copy seed</button>
         </div>
 
-        <p class="hint toy-hint">Pick a world · tap the grid · space to play · copy a seed to share</p>
-
-        <details class="optional-tweak">
-          <summary class="optional-tweak__summary">Tweak</summary>
-          <div class="optional-tweak__body">
-            <div class="melody-controls">
-              <div class="melody-steps" aria-label="Step count">
-                <span class="melody-controls__label">Steps</span>
-                <div class="melody-steps__btns">
-                  <button type="button" class="preset-btn melody-steps-btn" data-steps="8">8</button>
-                  <button type="button" class="preset-btn melody-steps-btn" data-steps="12">12</button>
-                  <button type="button" class="preset-btn melody-steps-btn is-selected" data-steps="16">16</button>
-                  <button type="button" class="preset-btn melody-steps-btn" data-steps="24">24</button>
-                  <button type="button" class="preset-btn melody-steps-btn" data-steps="32">32</button>
-                </div>
-              </div>
-              <label class="melody-tempo">
-                <span class="melody-controls__label">Speed</span>
-                <span class="melody-tempo__val" id="melody-tempo-val">160 ms</span>
-                <input type="range" id="melody-tempo" min="80" max="400" step="10" value="160" aria-label="Milliseconds per step">
-              </label>
-            </div>
-            <p class="readout readout--compact" id="readout" aria-live="polite">—</p>
-            <section class="synth-block">
-              <h3 class="synth-block__title">Tone</h3>
-              <div class="rotary-grid" id="knobs-core"></div>
-            </section>
-            <section class="synth-block">
-              <h3 class="synth-block__title">Shape</h3>
-              <div class="knobs" id="knobs-shape"></div>
-            </section>
-          </div>
-        </details>
+        <p class="hint toy-hint">Open Worlds · Shuffle for new · Remix shuffles your notes · space to play</p>
       </aside>
     </div>
   </div>
