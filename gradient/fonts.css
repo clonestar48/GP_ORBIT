@@ -1,0 +1,11 @@
+/**
+ * Display face for gradient fills.
+ * v1 uses Bebas Neue (thick condensed display). Swap the @import + --font-display
+ * for an Adobe Fonts kit (e.g. Futura Bold, Acumin Pro ExtraBold, Helvetica Neue Black).
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
+
+:root {
+  --font-display: 'Bebas Neue', 'Helvetica Neue', 'Arial Black', sans-serif;
+}
