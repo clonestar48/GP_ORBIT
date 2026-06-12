@@ -2,18 +2,23 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "builds": [
-    {
-      "src": "api/**/*.py",
-      "use": "@vercel/python"
-    }
+    { "src": "api/odds.py", "use": "@vercel/python" },
+    { "src": "api/games.py", "use": "@vercel/python" },
+    { "src": "api/history.py", "use": "@vercel/python" },
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "odds/**", "use": "@vercel/static" },
+    { "src": "sine/**", "use": "@vercel/static" },
+    { "src": "gradient/**", "use": "@vercel/static" },
+    { "src": "css/**", "use": "@vercel/static" },
+    { "src": "js/**", "use": "@vercel/static" },
+    { "src": "assets/**", "use": "@vercel/static" },
+    { "src": "fonts/**", "use": "@vercel/static" },
+    { "src": "lib/**", "use": "@vercel/static" }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "handle": "filesystem"
-    }
+    { "src": "/api/odds", "dest": "/api/odds.py" },
+    { "src": "/api/games", "dest": "/api/games.py" },
+    { "src": "/api/history", "dest": "/api/history.py" },
+    { "handle": "filesystem" }
   ]
 }
