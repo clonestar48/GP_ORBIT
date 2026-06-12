@@ -1,0 +1,2 @@
+# GP Orbit sports API — Python stdlib only (urllib, json, http.server).
+# This file enables Vercel's Python runtime for /api/*.py serverless functions.

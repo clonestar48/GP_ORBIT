@@ -21,12 +21,17 @@ def send_json(handler: BaseHTTPRequestHandler, status: int, body: dict) -> None:
 
 
 def make_get_handler(get_payload: Callable[[], dict]) -> type[BaseHTTPRequestHandler]:
-    class handler(BaseHTTPRequestHandler):
+    """Return a Vercel-compatible handler class (must be assigned to `handler`)."""
+
+    class handler(BaseHTTPRequestHandler):  # noqa: N801 — Vercel entrypoint name
         def do_GET(self) -> None:
             try:
                 send_json(self, 200, get_payload())
             except Exception as err:
                 send_json(self, 500, {'error': str(err)})
+            return
+
+        def log_message(self, format: str, *args) -> None:
             return
 
     return handler
