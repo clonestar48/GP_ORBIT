@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#080a0e">
+  <title>NBA Stats — GP Orbit</title>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/odds/style.css">
+</head>
+<body>
+  <div class="sd-app">
+    <header class="sd-header">
+      <div class="sd-header__left">
+        <a class="sd-back" href="/">← Orbit</a>
+        <div class="sd-brand">
+          <span class="sd-brand__tag">Lab</span>
+          <h1 class="sd-brand__title">NBA Stats</h1>
+        </div>
+      </div>
+      <div class="sd-header__right">
+        <span class="sd-flag" id="mode-badge" hidden></span>
+        <p class="sd-updated" id="last-updated">Loading…</p>
+      </div>
+    </header>
+
+    <p class="sd-mission">Public market data — lines, movement, and historical outcomes. Research only.</p>
+
+    <div class="sd-status" id="status-banner" hidden></div>
+
+    <main class="sd-main">
+      <section class="sd-detail" id="detail-panel" aria-label="Game detail">
+        <div class="sd-detail__head">
+          <p class="sd-detail__meta" id="detail-meta">Select an event</p>
+          <span class="sd-flag" id="detail-badge" hidden></span>
+        </div>
+        <h2 class="sd-detail__matchup" id="detail-matchup">—</h2>
+        <div class="sd-detail__stats">
+          <div class="sd-stat">
+            <span class="sd-stat__label">Current line</span>
+            <span class="sd-stat__value" id="detail-spread">—</span>
+            <span class="sd-stat__move" id="detail-spread-move"></span>
+          </div>
+          <div class="sd-stat">
+            <span class="sd-stat__label">Total</span>
+            <span class="sd-stat__value" id="detail-total">—</span>
+          </div>
+          <div class="sd-stat">
+            <span class="sd-stat__label">Implied probability</span>
+            <span class="sd-stat__value sd-stat__value--sm" id="detail-ml">—</span>
+          </div>
+        </div>
+        <div class="sd-chart-wrap">
+          <canvas id="line-chart" aria-label="Line history"></canvas>
+          <p class="sd-chart-empty" id="chart-empty">Chart unavailable — insufficient source data</p>
+        </div>
+        <p class="sd-chart-caption" id="chart-caption" hidden></p>
+
+        <section class="sd-compare" aria-label="Competitor comparison">
+          <div class="sd-compare__head">
+            <h3 class="sd-compare__title">Competitor comparison</h3>
+            <span class="sd-flag" id="compare-badge" hidden></span>
+          </div>
+          <div class="sd-compare__controls">
+            <div class="sd-toggle-group" role="group" aria-label="Graph mode">
+              <button type="button" class="sd-toggle is-active" data-graph-mode="success">General success</button>
+              <button type="button" class="sd-toggle" data-graph-mode="upcoming">Upcoming event</button>
+              <button type="button" class="sd-toggle" data-graph-mode="history">Past history</button>
+            </div>
+            <div class="sd-toggle-group" role="group" aria-label="Range">
+              <button type="button" class="sd-toggle is-active" data-graph-range="5">Last 5</button>
+              <button type="button" class="sd-toggle" data-graph-range="10">Last 10</button>
+              <button type="button" class="sd-toggle" data-graph-range="season">Season</button>
+            </div>
+          </div>
+          <div class="sd-compare__legend" id="compare-legend" hidden></div>
+          <div class="sd-chart-wrap sd-chart-wrap--compare">
+            <canvas id="compare-chart" aria-label="Competitor form comparison"></canvas>
+            <p class="sd-chart-empty" id="compare-empty">Form comparison unavailable — no stored outcomes for these teams</p>
+            <div class="sd-chart-tooltip" id="compare-tooltip" hidden role="tooltip"></div>
+          </div>
+          <p class="sd-chart-caption" id="compare-caption">Recent success score — derived from observed final outcomes only</p>
+        </section>
+        <div class="sd-close-result" id="close-result" hidden>
+          <h3 class="sd-section-label">Closing line vs final result</h3>
+          <dl class="sd-close-result__grid" id="close-result-grid"></dl>
+        </div>
+      </section>
+
+      <div class="sd-grid">
+        <section class="sd-panel" aria-label="Today's games">
+          <h2 class="sd-section-label">Today's games</h2>
+          <div class="sd-panel__body" id="today-games">
+            <p class="sd-empty">Loading…</p>
+          </div>
+        </section>
+
+        <section class="sd-panel" aria-label="Upcoming events">
+          <h2 class="sd-section-label">Upcoming events</h2>
+          <div class="sd-panel__body" id="upcoming-games">
+            <p class="sd-empty">Loading…</p>
+          </div>
+        </section>
+
+        <section class="sd-panel" aria-label="Biggest line movement">
+          <h2 class="sd-section-label">Biggest line movement</h2>
+          <div class="sd-panel__body" id="line-movement">
+            <p class="sd-empty">Loading…</p>
+          </div>
+        </section>
+
+        <section class="sd-panel" aria-label="Recently completed">
+          <h2 class="sd-section-label">Recently completed</h2>
+          <div class="sd-panel__body" id="recent-games">
+            <p class="sd-empty">Loading…</p>
+          </div>
+        </section>
+      </div>
+
+      <details class="sd-debug" id="debug-panel">
+        <summary class="sd-debug__summary">Debug — data provenance</summary>
+        <div class="sd-debug__body">
+          <div class="sd-debug__block">
+            <h3 class="sd-section-label">Status</h3>
+            <p class="sd-debug__line" id="debug-meta">—</p>
+          </div>
+          <div class="sd-debug__block">
+            <h3 class="sd-section-label">Selected event — normalized</h3>
+            <p class="sd-debug__line" id="debug-missing">—</p>
+            <pre class="sd-debug__pre" id="debug-times">—</pre>
+            <pre class="sd-debug__pre" id="debug-normalized">—</pre>
+          </div>
+          <div class="sd-debug__block">
+            <h3 class="sd-section-label">Raw provider responses</h3>
+            <div id="debug-providers"><p class="sd-debug__line">—</p></div>
+          </div>
+        </div>
+      </details>
+    </main>
+  </div>
+  <script type="module" src="/odds/main.js"></script>
+</body>
+</html>
