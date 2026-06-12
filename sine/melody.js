@@ -14,6 +14,16 @@ const NOTE_ROWS = [
 const STEP_OPTIONS = [8, 12, 16, 24, 32];
 const DEFAULT_STEPS = 16;
 const DEFAULT_TEMPO = 160;
+const TEMPO_MIN = 80;
+const TEMPO_MAX = 400;
+
+function tempoToSlider(ms) {
+  return TEMPO_MAX + TEMPO_MIN - ms;
+}
+
+function sliderToTempo(value) {
+  return TEMPO_MAX + TEMPO_MIN - value;
+}
 
 function midiToHz(midi) {
   return 440 * 2 ** ((midi - 69) / 12);
@@ -40,7 +50,7 @@ function syncStepUi() {
 
 function syncTempoUi() {
   const tempoEl = document.getElementById('melody-tempo');
-  if (tempoEl) tempoEl.value = tempo;
+  if (tempoEl) tempoEl.value = tempoToSlider(tempo);
   document.getElementById('melody-tempo-val').textContent = `${tempo} ms`;
 }
 
@@ -56,7 +66,7 @@ function decodeMelody(raw) {
   const t = parseInt(tempoStr, 10);
   if (!STEP_OPTIONS.includes(s) || !body || body.length !== s) return false;
   steps = s;
-  tempo = Number.isFinite(t) ? Math.max(80, Math.min(400, t)) : DEFAULT_TEMPO;
+  tempo = Number.isFinite(t) ? Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, t)) : DEFAULT_TEMPO;
   pattern = body.split('').map((ch) => (ch === 'x' ? -1 : parseInt(ch, 36)));
   if (pattern.some((n) => n < -1 || n >= NOTE_ROWS.length)) return false;
   return true;
@@ -180,6 +190,8 @@ function togglePlayback() {
 }
 
 function clearPattern() {
+  stopPlayback();
+  setLoopMelody(false);
   pattern = emptyPattern(steps);
   renderGrid();
   onMelodyChange();
@@ -203,6 +215,31 @@ export function getMelodyState() {
 
 export function isMelodyEmpty() {
   return pattern.every((n) => n < 0);
+}
+
+export function remixPattern() {
+  const notes = [];
+  const slots = [];
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] >= 0) {
+      slots.push(i);
+      notes.push(pattern[i]);
+    }
+  }
+  if (notes.length < 2) return;
+
+  for (let i = notes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [notes[i], notes[j]] = [notes[j], notes[i]];
+  }
+
+  const next = [...pattern];
+  slots.forEach((step, i) => {
+    next[step] = notes[i];
+  });
+  pattern = next;
+  renderGrid();
+  onMelodyChange();
 }
 
 export function getLoopMelody() {
@@ -253,25 +290,28 @@ export function initMelody({ getParams, onChange, onPlayStart }) {
   });
 
   document.getElementById('melody-tempo').addEventListener('input', (e) => {
-    tempo = parseInt(e.target.value, 10);
+    tempo = sliderToTempo(parseInt(e.target.value, 10));
     document.getElementById('melody-tempo-val').textContent = `${tempo} ms`;
     onMelodyChange();
   });
 
   document.getElementById('melody-play-btn').addEventListener('click', () => {
     if (onPlayStart) onPlayStart();
-    togglePlayback();
+    if (!playing) startPlayback();
   });
 
-  document.getElementById('melody-loop-btn').addEventListener('click', (e) => {
-    loopMelody = !loopMelody;
-    e.currentTarget.classList.toggle('is-selected', loopMelody);
-    e.currentTarget.setAttribute('aria-pressed', loopMelody ? 'true' : 'false');
+  document.getElementById('melody-stop-btn').addEventListener('click', () => {
+    stopPlayback();
+  });
+
+  document.getElementById('melody-loop-btn').addEventListener('click', () => {
+    setLoopMelody(!loopMelody);
   });
 
   document.getElementById('melody-clear-btn').addEventListener('click', clearPattern);
 
   syncStepUi();
+  syncTempoUi();
   renderGrid();
 }
 
