@@ -1,5 +1,5 @@
-@import url('../css/tokens.css');
-@import url('../css/fonts.css');
+@import url('/css/tokens.css');
+@import url('/css/fonts.css');
 
 :root {
   --orange-soft: #e8a87c;
@@ -8,7 +8,7 @@
   --orange-glow-soft: rgba(232, 168, 124, 0.32);
 }
 
-*
+*,
 *::before,
 *::after {
   box-sizing: border-box;
