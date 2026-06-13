@@ -1,54 +1,52 @@
 /**
- * NBA stats dashboard — data integrity first.
- *
- * Every event arrives from the server with a provenance envelope:
- *   source, sourceProvider, sourceTimestamp, dataConfidence, missingFields.
- * Nothing is invented client-side: missing fields render as "Unavailable",
- * charts only draw from real source data, movement only shows when the
- * server derived it from two real observations.
+ * Performance Market — sports performance dashboard.
+ * Charts reflect real historical game results only.
  */
 
-import { buildComparisonModel } from '/lib/normalizers/competitorHistory.js';
 import {
-  drawComparisonChart,
+  drawMatchupChart,
+  drawPerformanceChart,
+  findContextHit,
   findHit,
-  formatTooltipPoint,
-  setupComparisonCanvas,
-} from './comparisonChart.js';
+  formatContextTooltipHtml,
+  formatTooltipHtml,
+  setupCanvas,
+} from './performanceChart.js';
+import { createRange, createRangeForGameDate, jumpPresetForLastPlayed, rangeLabel, rangeToQuery, setReferenceDate } from './range.js';
+import { ghostOpponentEnabled as isGhostOpponentRange, resolveProfile } from './resolution.js';
+import { TeamPicker } from './teamPicker.js';
 
 const $ = (sel) => document.querySelector(sel);
 
-const UNAVAILABLE = 'Unavailable';
+const teamPickers = {};
 
-const BADGES = {
-  live: { label: 'LIVE DATA', cls: 'sd-flag--live' },
-  partial: { label: 'PARTIAL DATA', cls: 'sd-flag--partial' },
-  demo: { label: 'DEMO DATA', cls: 'sd-flag--demo' },
-  unavailable: { label: 'DATA UNAVAILABLE', cls: 'sd-flag--unavailable' },
-};
+const GAME_LOG_VISIBLE = 5;
+const TEAM_EXPLORER_VISIBLE = 8;
 
 const state = {
-  games: [],
-  history: [],
-  odds: null,
+  teams: [],
   meta: null,
-  selectedId: null,
+  heroMode: 'matchup',
+  selectedTeamId: 'BOS',
+  teamA: 'BOS',
+  teamB: 'NYK',
+  range: createRange({ preset: 'today', mode: 'matchup', metric: 'index' }),
+  teamSeries: null,
+  teamGames: [],
+  gameLogGames: [],
+  lastPlayedGame: null,
+  contextOpponentId: null,
+  contextSeries: null,
+  matchup: null,
+  homepageFeature: null,
+  focusedGameLogKey: null,
+  logFocusOpponent: null,
+  logFocusDate: null,
+  heroHitAreas: [],
+  hoverHit: null,
+  ghostHover: false,
+  loading: false,
   errors: [],
-  graphMode: 'success',
-  graphRange: '5',
-  compareHitAreas: [],
-};
-
-const GRAPH_MODE_LABELS = {
-  success: 'General success',
-  upcoming: 'Upcoming event',
-  history: 'Past history',
-};
-
-const GRAPH_RANGE_LABELS = {
-  5: 'Last 5',
-  10: 'Last 10',
-  season: 'Season',
 };
 
 async function fetchJson(url) {
@@ -57,767 +55,1663 @@ async function fetchJson(url) {
   return res.json();
 }
 
-function parseTs(value) {
-  if (!value) return null;
-  const ts = Date.parse(value);
-  return Number.isFinite(ts) ? ts : null;
-}
-
-function formatTime(iso) {
-  const ts = parseTs(iso);
-  if (!ts) return UNAVAILABLE;
-  return new Date(ts).toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function fmt(value) {
-  return value == null ? UNAVAILABLE : String(value);
-}
-
-function fmtSpread(value, homeTeam) {
-  if (value == null) return UNAVAILABLE;
-  const n = Number(value);
-  return `${homeTeam ?? ''} ${n > 0 ? '+' : ''}${n}`.trim();
-}
-
-function fmtAmerican(value) {
-  if (value == null) return UNAVAILABLE;
-  const n = Number(value);
-  return n > 0 ? `+${n}` : String(n);
-}
-
 function movementClass(delta) {
   if (delta > 0) return 'is-up';
   if (delta < 0) return 'is-down';
   return '';
 }
 
-function isToday(iso) {
-  const ts = parseTs(iso);
-  if (!ts) return false;
-  const d = new Date(ts);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear()
-    && d.getMonth() === now.getMonth()
-    && d.getDate() === now.getDate();
+function findTeam(id) {
+  const needle = String(id || '').toUpperCase();
+  if (!needle) return undefined;
+  return state.teams.find((t) => t.id === id || t.id.toUpperCase() === needle);
 }
 
-function isPast(iso) {
-  const ts = parseTs(iso);
-  return ts != null && ts < Date.now();
+let loadGeneration = 0;
+
+function clearLogFocus() {
+  state.focusedGameLogKey = null;
+  state.logFocusOpponent = null;
+  state.logFocusDate = null;
 }
 
-function matchupLabel(g) {
-  return `${g.awayTeam ?? UNAVAILABLE} @ ${g.homeTeam ?? UNAVAILABLE}`;
+function chartProfileForRange(range = state.range) {
+  if (range?.preset) return resolveProfile(range.preset);
+  return resolveProfile('week');
 }
 
-function badgeHtml(event) {
-  const badge = BADGES[event.dataConfidence] || BADGES.unavailable;
-  return `<span class="sd-flag ${badge.cls}">${badge.label}</span>`;
+function opponentLabel(abbr) {
+  const t = findTeam(abbr);
+  return t ? `${t.city} ${t.name}` : abbr;
 }
 
-/* ------------------------------------------------------------- top chrome */
-
-function renderModeBadge() {
-  const badge = $('#mode-badge');
-  if (!badge || !state.meta) return;
-  badge.hidden = false;
-  if (state.meta.mode === 'live') {
-    badge.textContent = 'LIVE DATA';
-    badge.className = 'sd-flag sd-flag--live';
-  } else {
-    badge.textContent = 'DEMO DATA';
-    badge.className = 'sd-flag sd-flag--demo';
-  }
-}
-
-function renderLastUpdated() {
-  const el = $('#last-updated');
-  if (!el) return;
-  const ts = state.meta?.cachedAt;
-  el.textContent = ts
-    ? `Last updated ${new Date(ts * 1000).toLocaleTimeString()}`
-    : `Last updated ${UNAVAILABLE}`;
-}
-
-function renderStatus() {
-  const banner = $('#status-banner');
-  if (!banner) return;
-  const notices = [...state.errors];
-  (state.meta?.errors || []).forEach((e) => notices.push(`Provider error: ${e}`));
-  if (state.meta?.mode === 'demo') {
-    notices.unshift('Demo data — fabricated values for layout testing only. Add ODDS_API_KEY for live data.');
-  }
-  if (!notices.length) {
-    banner.hidden = true;
-    return;
-  }
-  banner.hidden = false;
-  banner.classList.toggle('is-notice', state.errors.length === 0);
-  banner.textContent = notices.join(' ');
-}
-
-/* ----------------------------------------------------------------- cards */
-
-function renderEmpty(container, message) {
-  container.innerHTML = `<p class="sd-empty">${message}</p>`;
-}
-
-function cardHtml(game, { showMovement = false, showScore = false } = {}) {
-  const movement = game.spreadMovement;
-  const moveHtml = showMovement && movement != null
-    ? `<span class="sd-card__move ${movementClass(movement)}">${movement > 0 ? '+' : ''}${movement}</span>`
-    : '';
-  const status = game.status || 'upcoming';
-  const hasScores = game.homeScore != null && game.awayScore != null;
-  const scoreHtml = showScore && hasScores
-    ? `<span class="sd-card__score">${game.awayScore} – ${game.homeScore}</span>`
-    : '';
-  const lineHtml = game.spread != null || game.currentSpread != null
-    ? `<span class="sd-card__line">${fmtSpread(game.currentSpread ?? game.spread, game.homeTeam)}</span>`
-    : '<span class="sd-card__line sd-card__line--na">Line unavailable</span>';
-  const totalVal = game.currentTotal ?? game.total;
-  const totalHtml = totalVal != null ? `<span>O/U ${totalVal}</span>` : '';
+function emptyStateHtml({ title, detail = '' }) {
   return `
-    <button type="button" class="sd-card${state.selectedId === game.gameId ? ' is-selected' : ''}"
-      data-game-id="${game.gameId}">
-      <div class="sd-card__top">
-        <span class="sd-card__matchup">${matchupLabel(game)}</span>
-        <span class="sd-card__time">${formatTime(game.startTime)}</span>
-      </div>
-      <div class="sd-card__row">
-        ${badgeHtml(game)}
-        <span class="sd-card__status${status === 'final' ? ' is-final' : ''}">${status}</span>
-        ${lineHtml}
-        ${totalHtml}
-        ${moveHtml}
-        ${scoreHtml}
-      </div>
+    <div class="sd-empty-state">
+      <p class="sd-empty-state__title">${title}</p>
+      ${detail ? `<p class="sd-empty-state__detail">${detail}</p>` : ''}
+    </div>`;
+}
+
+function setLoading(loading) {
+  state.loading = loading;
+  const chartSkeleton = $('#hero-chart-skeleton');
+  const wrap = $('#hero-chart-wrap');
+  const netSummary = $('#hero-net-summary');
+
+  if (loading) {
+    chartSkeleton.hidden = false;
+    wrap?.classList.add('is-loading');
+    if (netSummary) {
+      netSummary.textContent = '';
+      netSummary.classList.remove('is-loaded');
+    }
+  } else {
+    chartSkeleton.hidden = true;
+    wrap?.classList.remove('is-loading');
+  }
+}
+
+function ghostOpponentEnabled() {
+  if (state.heroMode !== 'solo') return false;
+  if (state.logFocusOpponent) return true;
+  return isGhostOpponentRange(state.range.preset, true);
+}
+
+/** Pick a single opponent for the ghost layer — today or week only. */
+function resolveContextOpponent(games) {
+  if (!games?.length) return null;
+
+  if (state.range.preset === 'today') {
+    const sorted = [...games].sort((a, b) => b.date.localeCompare(a.date));
+    return sorted[0]?.opponent ?? null;
+  }
+
+  const counts = {};
+  for (const g of games) {
+    if (!g.opponent) continue;
+    counts[g.opponent] = (counts[g.opponent] || 0) + 1;
+  }
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return null;
+  if (ranked.length === 1) return ranked[0][0];
+  const [top, second] = ranked;
+  if (top[1] > second[1]) return top[0];
+  return null;
+}
+
+/** Ghost layer: opponent win % only on days the selected team played them — not a full franchise week. */
+function buildContextSeries(teamGames, oppId, opponentSeries) {
+  if (!opponentSeries?.points?.length) return null;
+
+  const h2hDates = new Set(
+    teamGames.filter((g) => g.opponent === oppId).map((g) => g.date.slice(0, 10)),
+  );
+  if (!h2hDates.size) return null;
+
+  const points = opponentSeries.points.filter((p) => h2hDates.has(p.date.slice(0, 10)));
+  if (!points.length) return null;
+
+  return { ...opponentSeries, points };
+}
+
+function seriesWithTeamColor(series, teamId) {
+  const team = findTeam(teamId);
+  return {
+    ...series,
+    teamId,
+    teamName: team ? `${team.city} ${team.name}` : teamId,
+    color: series?.color || team?.colors?.primary || '#5da396',
+  };
+}
+
+function panelTeamId() {
+  return state.heroMode === 'matchup' ? state.teamA : state.selectedTeamId;
+}
+
+function soloRange() {
+  const base = {
+    teams: [panelTeamId()],
+    mode: 'franchise',
+    metric: 'winPct',
+  };
+  if (state.range.preset) {
+    return createRange({ preset: state.range.preset, ...base });
+  }
+  return createRange({
+    startDate: state.range.startDate,
+    endDate: state.range.endDate,
+    ...base,
+  });
+}
+
+function gameLogUsesMonthScope() {
+  const preset = state.range.preset;
+  return preset === 'today' || preset === 'week';
+}
+
+function gamesForGameLog() {
+  if (gameLogUsesMonthScope()) {
+    const monthGames = state.gameLogGames;
+    if (monthGames?.length) return monthGames;
+  }
+  return state.teamGames;
+}
+
+function soloGameLogRange() {
+  if (gameLogUsesMonthScope()) {
+    return createRange({
+      preset: 'month',
+      teams: [panelTeamId()],
+      mode: 'franchise',
+      metric: 'winPct',
+    });
+  }
+  return soloRange();
+}
+
+function matchupRange() {
+  const base = {
+    teams: [state.teamA, state.teamB],
+    mode: 'matchup',
+    metric: 'index',
+  };
+  if (state.range.preset) {
+    return createRange({ preset: state.range.preset, ...base });
+  }
+  return createRange({
+    startDate: state.range.startDate,
+    endDate: state.range.endDate,
+    ...base,
+  });
+}
+
+function performanceUrl(teamId, range) {
+  const q = rangeToQuery({ ...range, teams: [teamId] });
+  return `/api/performance?teamId=${encodeURIComponent(teamId)}&${q}`;
+}
+
+function matchupUrl(range) {
+  const q = rangeToQuery(range);
+  return `/api/matchup?teamA=${encodeURIComponent(state.teamA)}&teamB=${encodeURIComponent(state.teamB)}&${q}`;
+}
+
+/* ------------------------------------------------------------- chrome */
+
+function renderHeader() {
+  const banner = $('#status-banner');
+  if (state.errors.length) {
+    banner.hidden = false;
+    banner.classList.remove('is-notice');
+    banner.textContent = state.errors.join(' ');
+  } else {
+    banner.hidden = true;
+    banner.classList.remove('is-notice');
+  }
+}
+
+/* ------------------------------------------------------------- teams */
+
+function teamCardHtml(team) {
+  const color = team.colors?.primary || '#5da396';
+  const selected = team.id === state.selectedTeamId;
+  return `
+    <button type="button" class="sd-team-chip${selected ? ' is-selected' : ''}"
+      data-team-id="${team.id}" data-league="${team.league || 'NBA'}"
+      style="--team-color: ${color}"
+      title="${team.city} ${team.name}"
+      aria-pressed="${selected ? 'true' : 'false'}"
+      aria-label="${team.city} ${team.name}">
+      <span class="sd-team-chip__swatch" aria-hidden="true"></span>
+      <span class="sd-team-chip__abbr">${team.abbreviation}</span>
     </button>`;
 }
 
-function bindCards(container) {
-  container.querySelectorAll('.sd-card').forEach((btn) => {
-    btn.addEventListener('click', () => selectGame(btn.dataset.gameId));
+function renderTeamList() {
+  const el = $('#team-list');
+  if (!state.teams.length) {
+    el.innerHTML = emptyStateHtml({
+      title: 'No teams available',
+      detail: 'Team data could not be loaded. Refresh to try again.',
+    });
+    requestAnimationFrame(updateTeamExplorerScroll);
+    return;
+  }
+  el.innerHTML = state.teams.map(teamCardHtml).join('');
+  el.querySelectorAll('.sd-team-chip').forEach((btn) => {
+    btn.addEventListener('click', () => selectTeam(btn.dataset.teamId));
+  });
+  el.querySelector('.sd-team-chip.is-selected')
+    ?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  requestAnimationFrame(updateTeamExplorerScroll);
+}
+
+function updateTeamExplorerWidthCap() {
+  const list = $('#team-list');
+  const wrap = list?.closest('.sd-team-explorer__scroll-wrap');
+  if (!list || !wrap) return;
+
+  const chips = [...list.querySelectorAll('.sd-team-chip')];
+  if (!chips.length) {
+    wrap.style.removeProperty('--team-explorer-cap-width');
+    return;
+  }
+
+  const count = Math.min(TEAM_EXPLORER_VISIBLE, chips.length);
+  const gap = parseFloat(getComputedStyle(list).columnGap || getComputedStyle(list).gap) || 0;
+  let width = 0;
+  for (let i = 0; i < count; i += 1) {
+    width += chips[i].getBoundingClientRect().width;
+  }
+  width += gap * Math.max(0, count - 1);
+  wrap.style.setProperty('--team-explorer-cap-width', `${Math.ceil(width)}px`);
+}
+
+function initTeamPickers() {
+  teamPickers.matchupA = new TeamPicker('#matchup-team-a', {
+    label: 'Team A',
+    teams: state.teams,
+    value: state.teamA,
+    onChange: (id) => {
+      clearLogFocus();
+      state.teamA = id;
+      state.homepageFeature = null;
+      loadData();
+    },
+  });
+  teamPickers.matchupB = new TeamPicker('#matchup-team-b', {
+    label: 'Team B',
+    teams: state.teams,
+    value: state.teamB,
+    onChange: (id) => {
+      clearLogFocus();
+      state.teamB = id;
+      state.homepageFeature = null;
+      loadData();
+    },
   });
 }
 
-function renderToday() {
-  const el = $('#today-games');
-  // A stale 'upcoming' status on a game that already started must not
-  // resurface it as a today/tonight event — only live or genuinely future.
-  const today = state.games.filter((g) => isToday(g.startTime)
-    && g.status !== 'final'
-    && !(g.status === 'upcoming' && isPast(g.startTime)));
-  if (!today.length) {
-    renderEmpty(el, 'No NBA events for today in the current data source.');
-    return;
-  }
-  el.innerHTML = today.map((g) => cardHtml(g, { showMovement: true })).join('');
-  bindCards(el);
+function syncTeamPickers() {
+  if (!teamPickers.matchupA) return;
+  teamPickers.matchupA.setTeams(state.teams);
+  teamPickers.matchupB.setTeams(state.teams);
+  teamPickers.matchupA.setValue(state.teamA, { silent: true });
+  teamPickers.matchupB.setValue(state.teamB, { silent: true });
 }
 
-function renderUpcoming() {
-  const el = $('#upcoming-games');
-  // Upcoming = startTime >= now only. Status alone is not trusted because
-  // providers (and demo fixtures) can carry stale 'upcoming' on past games.
-  const upcoming = state.games.filter((g) => g.status === 'upcoming'
-    && !isPast(g.startTime)
-    && !isToday(g.startTime));
-  if (!upcoming.length) {
-    renderEmpty(el, 'No upcoming events in the current data source.');
-    return;
-  }
-  el.innerHTML = upcoming.map((g) => cardHtml(g, { showMovement: true })).join('');
-  bindCards(el);
+function updateTeamExplorerScroll() {
+  const list = $('#team-list');
+  const wrap = list?.closest('.sd-team-explorer__scroll-wrap');
+  if (!list || !wrap) return;
+
+  updateTeamExplorerWidthCap();
+
+  const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth);
+  const overflowing = maxScroll > 4;
+  wrap.classList.toggle('is-overflowing', overflowing);
+  wrap.classList.toggle('is-at-start', !overflowing || list.scrollLeft <= 4);
+  wrap.classList.toggle('is-at-end', !overflowing || list.scrollLeft >= maxScroll - 4);
 }
 
-function renderMovement() {
-  const el = $('#line-movement');
-  const rows = state.odds?.biggestMovement || [];
-  if (!rows.length) {
-    renderEmpty(el, state.meta?.mode === 'live'
-      ? 'No movement yet — needs two observed line snapshots per event.'
-      : 'No movement data in the current data source.');
-    return;
-  }
-  el.innerHTML = rows.slice(0, 5).map((row) => {
-    const cls = movementClass(row.movement);
-    const badge = BADGES[row.dataConfidence] || BADGES.unavailable;
-    return `
-      <div class="sd-move-row">
-        <span class="sd-move-row__matchup">${row.matchup}
-          <span class="sd-flag sd-flag--mini ${badge.cls}">${badge.label}</span>
-        </span>
-        <span class="sd-move-row__delta ${cls}">${row.movement > 0 ? '+' : ''}${row.movement}</span>
-      </div>`;
-  }).join('');
-}
+function bindTeamExplorerScroll() {
+  const list = $('#team-list');
+  const wrap = list?.closest('.sd-team-explorer__scroll-wrap');
+  if (!list || !wrap || list.dataset.scrollBound === '1') return;
+  list.dataset.scrollBound = '1';
 
-function renderRecent() {
-  const el = $('#recent-games');
-  if (!state.history.length) {
-    renderEmpty(el, state.meta?.mode === 'live'
-      ? 'No stored historical outcomes yet — finals are recorded as they complete.'
-      : 'No completed games in the current data source.');
-    return;
-  }
-  el.innerHTML = state.history.slice(0, 6).map((g) => cardHtml(g, { showScore: true })).join('');
-  bindCards(el);
-}
+  list.addEventListener('scroll', updateTeamExplorerScroll, { passive: true });
+  window.addEventListener('resize', updateTeamExplorerScroll);
 
-/* ----------------------------------------------------------------- detail */
-
-function findGame(gameId) {
-  return state.games.find((g) => g.gameId === gameId)
-    || state.history.find((g) => g.gameId === gameId);
-}
-
-function selectGame(gameId) {
-  state.selectedId = gameId;
-  const game = findGame(gameId);
-  renderToday();
-  renderUpcoming();
-  renderRecent();
-  renderDetail(game);
-  renderDebug();
-}
-
-function renderDetail(game) {
-  const meta = $('#detail-meta');
-  const detailBadge = $('#detail-badge');
-  const matchup = $('#detail-matchup');
-  const spreadEl = $('#detail-spread');
-  const spreadMove = $('#detail-spread-move');
-  const totalEl = $('#detail-total');
-  const mlEl = $('#detail-ml');
-  const closeBlock = $('#close-result');
-  const closeGrid = $('#close-result-grid');
-
-  if (!game) {
-    meta.textContent = 'Select an event';
-    detailBadge.hidden = true;
-    matchup.textContent = '—';
-    spreadEl.textContent = '—';
-    spreadMove.textContent = '';
-    totalEl.textContent = '—';
-    mlEl.textContent = '—';
-    closeBlock.hidden = true;
-    renderChart(null);
-    renderComparisonChart(null);
-    document.querySelectorAll('.sd-card.is-selected').forEach((c) => c.classList.remove('is-selected'));
-    return;
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => updateTeamExplorerScroll());
+    observer.observe(list);
   }
 
-  meta.textContent = game.status === 'final' ? 'Final · historical outcome' : 'Market watch';
-  const badge = BADGES[game.dataConfidence] || BADGES.unavailable;
-  detailBadge.hidden = false;
-  detailBadge.textContent = badge.label;
-  detailBadge.className = `sd-flag ${badge.cls}`;
+  list.addEventListener('wheel', (event) => {
+    if (list.scrollWidth <= list.clientWidth) return;
+    if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    list.scrollLeft += event.deltaY;
+  }, { passive: false });
 
-  matchup.textContent = matchupLabel(game);
+  requestAnimationFrame(updateTeamExplorerScroll);
+}
 
-  const spreadVal = game.status === 'final'
-    ? (game.closingSpread ?? game.currentSpread ?? game.spread)
-    : (game.currentSpread ?? game.spread);
-  spreadEl.textContent = spreadVal != null ? fmtSpread(spreadVal, game.homeTeam) : UNAVAILABLE;
-  totalEl.textContent = fmt(game.status === 'final'
-    ? (game.closingTotal ?? game.currentTotal ?? game.total)
-    : (game.currentTotal ?? game.total));
+function updateGameLogScroll() {
+  const list = $('#recent-results');
+  const wrap = list?.closest('.sd-game-log__scroll-wrap');
+  if (!list || !wrap) return;
 
-  const movement = game.spreadMovement;
-  if (movement != null) {
-    spreadMove.textContent = `${movement > 0 ? '+' : ''}${movement} vs open`;
-    spreadMove.className = `sd-stat__move ${movementClass(movement)}`;
-  } else {
-    spreadMove.textContent = '';
-    spreadMove.className = 'sd-stat__move';
+  const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
+  const overflowing = maxScroll > 4;
+  wrap.classList.toggle('is-overflowing', overflowing);
+  wrap.classList.toggle('is-at-start', !overflowing || list.scrollTop <= 4);
+  wrap.classList.toggle('is-at-end', !overflowing || list.scrollTop >= maxScroll - 4);
+}
+
+function bindGameLogScroll() {
+  const list = $('#recent-results');
+  const wrap = list?.closest('.sd-game-log__scroll-wrap');
+  if (!list || !wrap || list.dataset.scrollBound === '1') return;
+  list.dataset.scrollBound = '1';
+
+  list.addEventListener('scroll', updateGameLogScroll, { passive: true });
+  window.addEventListener('resize', updateGameLogScroll);
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => updateGameLogScroll());
+    observer.observe(list);
   }
 
-  if (game.impliedProbHome != null && game.impliedProbAway != null) {
-    mlEl.textContent = `${game.homeTeam} ${game.impliedProbHome.toFixed(0)}% · ${game.awayTeam} ${game.impliedProbAway.toFixed(0)}%`;
-  } else if (game.moneylineHome != null || game.moneylineAway != null) {
-    mlEl.textContent = `${fmtAmerican(game.moneylineHome)} / ${fmtAmerican(game.moneylineAway)}`;
-  } else {
-    mlEl.textContent = UNAVAILABLE;
-  }
-
-  renderChart(game);
-  renderComparisonChart(game);
-
-  if (game.status === 'final') {
-    closeBlock.hidden = false;
-    const closing = game.closingSpread ?? game.currentSpread ?? game.spread;
-    const margin = game.finalMargin;
-    const marginText = margin == null
-      ? UNAVAILABLE
-      : margin > 0 ? `Home +${margin}` : margin < 0 ? `Away +${Math.abs(margin)}` : 'Even';
-    const combined = (game.homeScore != null && game.awayScore != null)
-      ? game.homeScore + game.awayScore
-      : UNAVAILABLE;
-    const scoreText = (game.homeScore != null && game.awayScore != null)
-      ? `${game.awayScore} – ${game.homeScore}`
-      : UNAVAILABLE;
-    closeGrid.innerHTML = `
-      <dt>Final score</dt><dd>${scoreText}</dd>
-      <dt>Final margin</dt><dd>${marginText}</dd>
-      <dt>Closing line</dt><dd>${closing != null ? fmtSpread(closing, game.homeTeam) : UNAVAILABLE}</dd>
-      <dt>Line result</dt><dd>${game.lineResult ?? UNAVAILABLE}</dd>
-      <dt>Closing total</dt><dd>${fmt(game.closingTotal ?? game.total)}</dd>
-      <dt>Combined pts</dt><dd>${combined}</dd>`;
-  } else {
-    closeBlock.hidden = true;
-  }
-}
-
-/* ----------------------------------------------------------------- charts */
-
-function validHistoryPoints(game) {
-  return (game?.lineHistory || [])
-    .map((p) => ({ ...p, _ts: parseTs(p.ts), _spread: p.spread != null ? Number(p.spread) : null }))
-    .filter((p) => p._ts != null && Number.isFinite(p._spread));
-}
-
-function ohlcPoints(game) {
-  const points = game?.lineHistory || [];
-  if (!points.length) return null;
-  const ok = points.every((p) => ['open', 'high', 'low', 'close'].every((k) => p[k] != null));
-  return ok ? points : null;
-}
-
-/**
- * Chart selection per source-data support:
- *   candles  — only when genuine OHLC fields exist
- *   line     — two or more real snapshots
- *   margin   — final scores only
- *   none     — nothing chartable; show unavailable message
- */
-function chartModel(game) {
-  if (!game) return { type: 'none' };
-  const candles = ohlcPoints(game);
-  if (candles && candles.length >= 2) return { type: 'candles', points: candles };
-  const points = validHistoryPoints(game);
-  if (points.length >= 2) return { type: 'line', points };
-  if (game.homeScore != null && game.awayScore != null) return { type: 'margin' };
-  return { type: 'none' };
-}
-
-function setupCanvas() {
-  const canvas = $('#line-chart');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-  return { ctx, w: rect.width, h: rect.height };
-}
-
-function renderChart(game) {
-  const empty = $('#chart-empty');
-  const caption = $('#chart-caption');
-  const model = chartModel(game);
-  const { ctx, w, h } = setupCanvas();
-
-  empty.style.display = model.type === 'none' ? 'flex' : 'none';
-  caption.hidden = model.type === 'none';
-
-  if (model.type === 'line') {
-    caption.textContent = `Line history — ${model.points.length} observed snapshots`;
-    drawLine(ctx, w, h, model.points);
-  } else if (model.type === 'candles') {
-    caption.textContent = `Candles — ${model.points.length} OHLC periods from source data`;
-    drawCandles(ctx, w, h, model.points);
-  } else if (model.type === 'margin') {
-    caption.textContent = 'Final margin (no line history available for this event)';
-    drawMarginBar(ctx, w, h, game);
-  }
-}
-
-function drawGrid(ctx, w, h, pad) {
-  ctx.strokeStyle = 'rgba(61, 139, 130, 0.2)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad + (i / 4) * (h - pad * 2);
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
-    ctx.stroke();
-  }
-}
-
-function drawLine(ctx, w, h, points) {
-  const pad = 12;
-  const minTs = Math.min(...points.map((p) => p._ts));
-  const maxTs = Math.max(...points.map((p) => p._ts));
-  const spreads = points.map((p) => p._spread);
-  const minY = Math.min(...spreads) - 0.5;
-  const maxY = Math.max(...spreads) + 0.5;
-
-  const xScale = (ts) => pad + ((ts - minTs) / (maxTs - minTs || 1)) * (w - pad * 2);
-  const yScale = (v) => pad + (1 - (v - minY) / (maxY - minY || 1)) * (h - pad * 2);
-
-  drawGrid(ctx, w, h, pad);
-
-  ctx.beginPath();
-  ctx.strokeStyle = '#5da396';
-  ctx.lineWidth = 2;
-  points.forEach((p, i) => {
-    const x = xScale(p._ts);
-    const y = yScale(p._spread);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  list.addEventListener('click', (event) => {
+    const row = event.target.closest('.sd-log-row--action');
+    if (!row?.dataset.gameDate) return;
+    focusGameFromLog({
+      date: row.dataset.gameDate,
+      opponent: row.dataset.opponent,
+    });
   });
-  ctx.stroke();
 
-  const last = points[points.length - 1];
-  ctx.fillStyle = '#5da396';
-  ctx.beginPath();
-  ctx.arc(xScale(last._ts), yScale(last._spread), 4, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawCandles(ctx, w, h, points) {
-  const pad = 14;
-  const values = points.flatMap((p) => [Number(p.high), Number(p.low)]);
-  const minY = Math.min(...values);
-  const maxY = Math.max(...values);
-  const yScale = (v) => pad + (1 - (v - minY) / (maxY - minY || 1)) * (h - pad * 2);
-  const slot = (w - pad * 2) / points.length;
-  const bodyW = Math.max(3, Math.min(14, slot * 0.5));
-
-  drawGrid(ctx, w, h, pad);
-
-  points.forEach((p, i) => {
-    const x = pad + slot * i + slot / 2;
-    const open = Number(p.open);
-    const close = Number(p.close);
-    const up = close >= open;
-    const color = up ? '#6dd4a8' : '#f08080';
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, yScale(Number(p.high)));
-    ctx.lineTo(x, yScale(Number(p.low)));
-    ctx.stroke();
-    const top = yScale(Math.max(open, close));
-    const bottom = yScale(Math.min(open, close));
-    ctx.fillRect(x - bodyW / 2, top, bodyW, Math.max(1, bottom - top));
+  list.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('.sd-log-row--action');
+    if (!row?.dataset.gameDate) return;
+    event.preventDefault();
+    focusGameFromLog({
+      date: row.dataset.gameDate,
+      opponent: row.dataset.opponent,
+    });
   });
+
+  requestAnimationFrame(updateGameLogScroll);
 }
 
-function drawMarginBar(ctx, w, h, game) {
-  const margin = game.finalMargin;
-  if (margin == null) return;
-  const pad = 16;
-  const mid = w / 2;
-  const maxAbs = Math.max(Math.abs(margin), 10);
-  const barLen = (Math.abs(margin) / maxAbs) * (w / 2 - pad * 2);
-  const barH = 26;
-  const y = h / 2 - barH / 2;
-
-  ctx.strokeStyle = 'rgba(236, 234, 228, 0.25)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(mid, pad);
-  ctx.lineTo(mid, h - pad);
-  ctx.stroke();
-
-  ctx.fillStyle = margin >= 0 ? '#6dd4a8' : '#f08080';
-  if (margin >= 0) ctx.fillRect(mid, y, barLen, barH);
-  else ctx.fillRect(mid - barLen, y, barLen, barH);
-
-  ctx.fillStyle = 'rgba(236, 234, 228, 0.8)';
-  ctx.font = '12px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`${game.awayTeam}`, pad, h / 2 + 4);
-  ctx.textAlign = 'right';
-  ctx.fillText(`${game.homeTeam}`, w - pad, h / 2 + 4);
-  ctx.textAlign = 'center';
-  ctx.fillText(
-    margin > 0 ? `Home +${margin}` : margin < 0 ? `Away +${Math.abs(margin)}` : 'Even',
-    mid, y - 6,
-  );
+function gameLogKey(game) {
+  if (game.id) return String(game.id).split('__log')[0];
+  const date = (game.date || '').slice(0, 10);
+  const opp = game.opponent || '';
+  const teamScore = game.teamScore ?? '';
+  const opponentScore = game.opponentScore ?? '';
+  return `${date}|${opp}|${teamScore}|${opponentScore}`;
 }
 
-/* ---------------------------------------------------- competitor comparison */
+/** Real games only — sorted newest first, deduped, no visual padding. */
+function dedupeGameLogEntries(games) {
+  const sorted = [...games].sort((a, b) => b.date.localeCompare(a.date));
+  const seen = new Set();
+  const out = [];
+  for (const game of sorted) {
+    const key = gameLogKey(game);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(game);
+  }
+  return out;
+}
 
-function allFinalEvents() {
-  const byId = new Map();
-  [...state.history, ...state.games.filter((g) => g.status === 'final')].forEach((g) => {
-    if (g.status === 'final' && g.homeScore != null && g.awayScore != null) {
-      byId.set(g.gameId, g);
+const GAME_LOG_STREAK_MIN = 4;
+const GAME_LOG_BLOWOUT_MARGIN = 25;
+
+/** Streak badge only on the newest game that completes each W4+/L4+ run. */
+function computeGameStreakPeaks(games) {
+  const sorted = [...games].sort((a, b) => a.date.localeCompare(b.date));
+  const peaks = new Map();
+  let run = 0;
+  let runResult = null;
+  let runGames = [];
+
+  const flushRun = () => {
+    if (run >= GAME_LOG_STREAK_MIN && runGames.length) {
+      const last = runGames[runGames.length - 1];
+      peaks.set(gameLogKey(last), { result: runResult, length: run });
     }
-  });
-  return [...byId.values()];
-}
+    run = 0;
+    runResult = null;
+    runGames = [];
+  };
 
-function comparisonEventsForMode(game) {
-  const finals = allFinalEvents();
-  if (state.meta?.mode === 'demo') {
-    return finals.filter((g) => g.source === 'demo');
-  }
-  return finals.filter((g) => g.source !== 'demo');
-}
-
-function comparisonModel(game) {
-  if (!game?.awayTeam || !game?.homeTeam) return null;
-  const mode = state.graphMode === 'upcoming' && game.status === 'final' ? 'success' : state.graphMode;
-  const beforeTime = mode === 'upcoming' ? game.startTime : null;
-  return buildComparisonModel({
-    events: comparisonEventsForMode(game),
-    awayTeam: game.awayTeam,
-    homeTeam: game.homeTeam,
-    mode,
-    range: state.graphRange,
-    beforeTime,
-    league: game.league || 'nba',
-    dataMode: state.meta?.mode || 'live',
-  });
-}
-
-function renderComparisonLegend(model, game) {
-  const legend = $('#compare-legend');
-  const badge = $('#compare-badge');
-  if (!model?.hasData) {
-    legend.hidden = true;
-    badge.hidden = true;
-    return;
-  }
-  legend.hidden = false;
-  badge.hidden = false;
-  const conf = BADGES[model.confidence] || BADGES.unavailable;
-  badge.textContent = conf.label;
-  badge.className = `sd-flag ${conf.cls}`;
-  legend.innerHTML = model.competitors.map((c) => {
-    const latest = c.latestFormScore;
-    const meta = c.gameCount
-      ? `Form score ${latest ?? UNAVAILABLE} · ${c.gameCount} game${c.gameCount === 1 ? '' : 's'}`
-      : 'Unavailable';
-    return `
-      <span class="sd-legend-item">
-        <span class="sd-legend-swatch" style="background:${c.color}"></span>
-        <span>${c.name}</span>
-        <span class="sd-legend-meta">${meta}</span>
-      </span>`;
-  }).join('');
-}
-
-function renderComparisonChart(game) {
-  const canvas = $('#compare-chart');
-  const empty = $('#compare-empty');
-  const caption = $('#compare-caption');
-  const tooltip = $('#compare-tooltip');
-  const model = comparisonModel(game);
-  const { ctx, w, h } = setupComparisonCanvas(canvas);
-
-  tooltip.hidden = true;
-  state.compareHitAreas = [];
-
-  if (!model?.hasData) {
-    empty.style.display = 'flex';
-    renderComparisonLegend(model, game);
-    if (model?.unavailableTeams?.length && game) {
-      caption.textContent = `No stored outcomes for: ${model.unavailableTeams.join(', ')}. Live mode records finals as they complete.`;
+  for (const game of sorted) {
+    const result = game.result;
+    if (result === runResult) {
+      run += 1;
+      runGames.push(game);
     } else {
-      caption.textContent = 'Recent success score — derived from observed final outcomes only';
+      flushRun();
+      run = 1;
+      runResult = result;
+      runGames = [game];
     }
+  }
+  flushRun();
+  return peaks;
+}
+
+function gameMargin(game, pt) {
+  if (game.teamScore != null && game.opponentScore != null) {
+    return game.teamScore - game.opponentScore;
+  }
+  if (pt?.margin != null) return pt.margin;
+  if (pt?.pointsFor != null && pt?.pointsAgainst != null) {
+    return pt.pointsFor - pt.pointsAgainst;
+  }
+  return null;
+}
+
+function streakBadge(streakInfo) {
+  if (!streakInfo || streakInfo.length < GAME_LOG_STREAK_MIN) return null;
+  const cls = streakInfo.result === 'W' ? 'is-up' : 'is-down';
+  return {
+    kind: 'streak',
+    label: `${streakInfo.result}${streakInfo.length}`,
+    cls: `sd-log-row__tag--streak ${cls}`,
+  };
+}
+
+function blowoutBadge(game, pt) {
+  const margin = gameMargin(game, pt);
+  if (margin == null) return null;
+  if (game.result === 'W' && margin >= GAME_LOG_BLOWOUT_MARGIN) {
+    return { kind: 'blowout', label: 'Blowout Win', cls: 'is-up' };
+  }
+  if (game.result === 'L' && margin <= -GAME_LOG_BLOWOUT_MARGIN) {
+    return { kind: 'blowout', label: 'Blowout Loss', cls: 'is-down' };
+  }
+  return null;
+}
+
+function largestMoveBadge(isSwing) {
+  if (!isSwing) return null;
+  return { kind: 'swing', label: 'Largest Move', cls: '' };
+}
+
+/** Streak → blowout/bad loss → largest move; max two badges (streak + one secondary). */
+function pickGameLogBadges(game, pt, isSwing, streakInfo) {
+  const streak = streakBadge(streakInfo);
+  const blowout = blowoutBadge(game, pt);
+  const swing = largestMoveBadge(isSwing);
+
+  if (streak) {
+    const secondary = blowout || swing;
+    return secondary ? [streak, secondary] : [streak];
+  }
+  if (blowout) return [blowout];
+  if (swing) return [swing];
+  return [];
+}
+
+function gameLogTagsHtml(badges) {
+  if (!badges.length) return '';
+  return badges.map((badge) => {
+    const tone = badge.cls ? ` ${badge.cls}` : '';
+    return `<span class="sd-log-row__tag${tone}">${badge.label}</span>`;
+  }).join('');
+}
+
+function teamDisplayName(id) {
+  const team = findTeam(id);
+  return team ? `${team.city} ${team.name}` : id ?? '—';
+}
+
+function teamAbbrev(id) {
+  const team = findTeam(id);
+  return team?.abbreviation ?? id ?? '—';
+}
+
+function teamMatchupTitle(teamAId, teamBId) {
+  return `${teamAbbrev(teamAId)} vs ${teamAbbrev(teamBId)}`;
+}
+
+function renderHeroContext() {
+  const isSolo = state.heroMode === 'solo';
+  const isMatchup = state.heroMode === 'matchup';
+
+  $('#team-explorer').hidden = !isSolo;
+  $('#solo-stats').hidden = !isSolo;
+  $('#matchup-row').hidden = !isMatchup;
+
+  if (isSolo) requestAnimationFrame(updateTeamExplorerScroll);
+
+  if (isSolo) {
+    const title = $('#hero-title');
+    title.textContent = teamDisplayName(state.selectedTeamId);
+    title.removeAttribute('title');
+  } else if (isMatchup) {
+    const title = $('#hero-title');
+    title.textContent = teamMatchupTitle(state.teamA, state.teamB);
+    title.title = `${teamDisplayName(state.teamA)} vs ${teamDisplayName(state.teamB)}`;
+  }
+
+  const featuredEl = $('#hero-featured-headline');
+  if (featuredEl) {
+    const feat = state.homepageFeature;
+    if (feat?.headline && isMatchup) {
+      featuredEl.hidden = false;
+      featuredEl.innerHTML = feat.subheadline
+        ? `<span class="sd-hero__featured-label">${feat.headline}</span><span class="sd-hero__featured-sub">${feat.subheadline}</span>`
+        : `<span class="sd-hero__featured-label">${feat.headline}</span>`;
+    } else {
+      featuredEl.hidden = true;
+      featuredEl.innerHTML = '';
+    }
+  }
+  // Future: heroMode === 'league' → show league context, hide solo + matchup
+}
+
+function latestGameStats(games) {
+  if (!games.length) return { winPct: null, record: null, games: 0 };
+  const wins = games.filter((g) => g.result === 'W').length;
+  const losses = games.length - wins;
+  return {
+    winPct: ((wins / games.length) * 100).toFixed(1),
+    record: `${wins}–${losses}`,
+    games: games.length,
+  };
+}
+
+/** Game row targeted by a Game Log click — used for stats + chart focus. */
+function focusedLogGame() {
+  if (!state.logFocusOpponent || !state.teamGames?.length) return null;
+  const date = state.logFocusDate || state.focusedGameLogKey?.split('|')[0];
+  const opp = state.logFocusOpponent;
+  if (date) {
+    const exact = state.teamGames.find((g) =>
+      g.date.slice(0, 10) === date
+      && String(g.opponent || '').toUpperCase() === opp);
+    if (exact) return exact;
+  }
+  return state.teamGames.find((g) => String(g.opponent || '').toUpperCase() === opp);
+}
+
+function applyLogGameChartFocus() {
+  if (!state.logFocusDate) return false;
+  const date = state.logFocusDate;
+  const primaryTeamId = state.heroMode === 'solo' ? state.selectedTeamId : state.teamA;
+  const hit = state.heroHitAreas.find((h) =>
+    h.layer !== 'context'
+    && h.isGame
+    && (h.point?.date || '').slice(0, 10) === date
+    && h.teamId === primaryTeamId);
+  if (!hit) return false;
+  state.hoverHit = { point: hit.point, teamId: hit.teamId, layer: 'primary' };
+  return true;
+}
+
+function renderSoloStats() {
+  const statsEl = $('#solo-stats');
+  const moveEl = $('#stat-winpct-move');
+  const winEl = $('#stat-winpct');
+  const recordEl = $('#stat-record');
+  const gamesEl = $('#stat-games');
+  const labels = soloStatLabels();
+
+  if (soloTodayIdle()) {
+    statsEl?.classList.add('is-idle-today');
+    statsEl?.classList.remove('is-today-event');
+    if (labels[0]) labels[0].textContent = 'Status';
+    if (labels[1]) labels[1].textContent = 'Last result';
+    if (labels[2]) labels[2].textContent = 'Last played';
+
+    winEl.textContent = 'Idle';
+    winEl.className = 'is-idle';
+
+    const last = state.lastPlayedGame;
+    if (last) {
+      recordEl.textContent = `${last.result} ${last.teamScore}–${last.opponentScore}`;
+      recordEl.className = last.result === 'W' ? 'is-up' : 'is-down';
+      const opp = findTeam(last.opponent);
+      gamesEl.textContent = `${formatResultDate(last.date)} vs ${opp?.abbreviation ?? last.opponent}`;
+      gamesEl.className = 'is-context';
+    } else {
+      recordEl.textContent = '—';
+      recordEl.className = '';
+      gamesEl.textContent = '—';
+      gamesEl.className = '';
+    }
+    moveEl.textContent = '';
+    moveEl.className = '';
     return;
   }
 
-  empty.style.display = 'none';
-  renderComparisonLegend(model, game);
+  if (soloTodayWithGame() && !state.logFocusOpponent) {
+    statsEl?.classList.remove('is-idle-today');
+    statsEl?.classList.add('is-today-event');
+    if (labels[0]) labels[0].textContent = 'Result';
+    if (labels[1]) labels[1].textContent = 'Opponent';
+    if (labels[2]) labels[2].textContent = 'Final';
 
-  const modeLabel = GRAPH_MODE_LABELS[state.graphMode] || state.graphMode;
-  const rangeLabel = GRAPH_RANGE_LABELS[state.graphRange] || state.graphRange;
-  const partial = model.unavailableTeams?.length
-    ? ` · missing: ${model.unavailableTeams.join(', ')}`
-    : '';
-  caption.textContent = `${modeLabel} · ${rangeLabel} · Form score from observed finals${partial}`;
+    const todayGame = [...state.teamGames].sort((a, b) => b.date.localeCompare(a.date))[0];
+    const result = todayGame?.result === 'W' ? 'W' : 'L';
+    winEl.textContent = result;
+    winEl.className = result === 'W' ? 'is-up' : 'is-down';
 
-  const result = drawComparisonChart(ctx, w, h, model);
-  state.compareHitAreas = result.hitAreas || [];
-}
+    const opp = findTeam(todayGame?.opponent);
+    recordEl.textContent = opp?.abbreviation ?? todayGame?.opponent ?? '—';
+    recordEl.className = 'is-context';
 
-function bindComparisonControls() {
-  document.querySelectorAll('[data-graph-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.graphMode = btn.dataset.graphMode;
-      document.querySelectorAll('[data-graph-mode]').forEach((b) => {
-        b.classList.toggle('is-active', b.dataset.graphMode === state.graphMode);
-      });
-      renderComparisonChart(findGame(state.selectedId));
-    });
-  });
-  document.querySelectorAll('[data-graph-range]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.graphRange = btn.dataset.graphRange;
-      document.querySelectorAll('[data-graph-range]').forEach((b) => {
-        b.classList.toggle('is-active', b.dataset.graphRange === state.graphRange);
-      });
-      renderComparisonChart(findGame(state.selectedId));
-    });
-  });
-
-  const canvas = $('#compare-chart');
-  const tooltip = $('#compare-tooltip');
-  const wrap = canvas?.closest('.sd-chart-wrap');
-
-  canvas?.addEventListener('mousemove', (e) => {
-    if (!state.compareHitAreas.length || !wrap) {
-      tooltip.hidden = true;
-      return;
+    if (todayGame?.teamScore != null && todayGame?.opponentScore != null) {
+      gamesEl.textContent = `${todayGame.teamScore}–${todayGame.opponentScore}`;
+    } else {
+      gamesEl.textContent = '—';
     }
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const hit = findHit(state.compareHitAreas, mx, my);
-    if (!hit) {
-      tooltip.hidden = true;
-      return;
-    }
-    tooltip.textContent = formatTooltipPoint(hit.tooltip, state.meta?.mode);
-    tooltip.hidden = false;
-    const wrapRect = wrap.getBoundingClientRect();
-    tooltip.style.left = `${e.clientX - wrapRect.left + 12}px`;
-    tooltip.style.top = `${e.clientY - wrapRect.top - 8}px`;
-  });
+    gamesEl.className = '';
 
-  canvas?.addEventListener('mouseleave', () => {
-    tooltip.hidden = true;
-  });
-}
-
-/* ------------------------------------------------------------ debug panel */
-
-function renderDebug() {
-  const metaEl = $('#debug-meta');
-  const missingEl = $('#debug-missing');
-  const timesEl = $('#debug-times');
-  const normalizedEl = $('#debug-normalized');
-
-  if (state.meta) {
-    const updated = state.meta.cachedAt
-      ? new Date(state.meta.cachedAt * 1000).toLocaleString()
-      : UNAVAILABLE;
-    const errs = (state.meta.errors || []).length
-      ? ` · errors: ${state.meta.errors.join('; ')}`
-      : '';
-    metaEl.textContent = `mode: ${state.meta.mode} · last updated: ${updated}${errs}`;
-  }
-
-  const game = findGame(state.selectedId);
-  if (!game) {
-    missingEl.textContent = 'No event selected.';
-    timesEl.textContent = '—';
-    normalizedEl.textContent = '—';
+    moveEl.textContent = '';
+    moveEl.className = '';
     return;
   }
-  missingEl.textContent = game.missingFields?.length
-    ? `Missing fields: ${game.missingFields.join(', ')}`
-    : 'Missing fields: none';
-  timesEl.textContent = [
-    `raw provider timestamp: ${game.rawStartTime ?? UNAVAILABLE}`,
-    `normalized startTime:   ${game.startTime ?? UNAVAILABLE}`,
-    `local display time:     ${formatTime(game.startTime)}`,
-    `status:                 ${game.status ?? UNAVAILABLE}`,
-    `league:                 ${game.league ?? UNAVAILABLE}`,
-    `sourceProvider:         ${game.sourceProvider ?? UNAVAILABLE}`,
-  ].join('\n');
-  normalizedEl.textContent = JSON.stringify(game, null, 2);
+
+  const logGame = focusedLogGame();
+  if (logGame) {
+    statsEl?.classList.remove('is-idle-today');
+    statsEl?.classList.add('is-today-event');
+    if (labels[0]) labels[0].textContent = 'Result';
+    if (labels[1]) labels[1].textContent = 'Opponent';
+    if (labels[2]) labels[2].textContent = 'Final';
+
+    const result = logGame.result === 'W' ? 'W' : 'L';
+    winEl.textContent = result;
+    winEl.className = result === 'W' ? 'is-up' : 'is-down';
+
+    const opp = findTeam(logGame.opponent);
+    recordEl.textContent = opp?.abbreviation ?? logGame.opponent ?? '—';
+    recordEl.className = 'is-context';
+
+    if (logGame.teamScore != null && logGame.opponentScore != null) {
+      gamesEl.textContent = `${logGame.teamScore}–${logGame.opponentScore}`;
+    } else {
+      gamesEl.textContent = '—';
+    }
+    gamesEl.className = '';
+
+    moveEl.textContent = '';
+    moveEl.className = '';
+    return;
+  }
+
+  statsEl?.classList.remove('is-idle-today', 'is-today-event');
+  if (labels[0]) labels[0].textContent = 'Win %';
+  if (labels[1]) labels[1].textContent = 'Record';
+  if (labels[2]) labels[2].textContent = 'Games';
+
+  const stats = latestGameStats(state.teamGames);
+  winEl.textContent = stats.winPct != null ? `${stats.winPct}%` : '—';
+  winEl.className = '';
+  recordEl.textContent = stats.record ?? '—';
+  recordEl.className = '';
+  gamesEl.textContent = stats.games ?? '—';
+  gamesEl.className = '';
+
+  const gamePoints = (state.teamSeries?.points || []).filter((p) => p.gameId && !p.flatline);
+  if (gamePoints.length >= 1) {
+    const last = gamePoints[gamePoints.length - 1];
+    const delta = last.movementAmount ?? 0;
+    if (delta !== 0) {
+      moveEl.textContent = `${delta > 0 ? '+' : ''}${delta.toFixed(1)}% last game`;
+      moveEl.className = movementClass(delta);
+    } else {
+      moveEl.textContent = '';
+      moveEl.className = '';
+    }
+  } else {
+    moveEl.textContent = '';
+    moveEl.className = '';
+  }
 }
 
-async function loadDebugProviders() {
-  const container = $('#debug-providers');
+function gamePointsEnriched() {
+  const raw = (state.teamSeries?.points || [])
+    .filter((p) => p.gameId && !p.flatline)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return raw.map((p, i) => {
+    const prevVal = p.previousValue ?? (i > 0 ? raw[i - 1].value : p.value);
+    const move = p.movementAmount ?? Number((p.value - prevVal).toFixed(2));
+    return { ...p, previousValue: prevVal, movementAmount: move };
+  });
+}
+
+function gamePointLookup() {
+  const byId = new Map();
+  const byDate = new Map();
+  for (const p of gamePointsEnriched()) {
+    byId.set(p.gameId, p);
+    byDate.set(p.date, p);
+  }
+  return { byId, byDate };
+}
+
+function formatMovePct(amount) {
+  if (amount == null || Number.isNaN(Number(amount)) || amount === 0) return null;
+  return `${amount > 0 ? '+' : ''}${Number(amount).toFixed(1)}%`;
+}
+
+function significantPoint(gamePoints) {
+  if (!gamePoints.length) return null;
+  return [...gamePoints].sort((a, b) =>
+    Math.abs(b.movementAmount ?? 0) - Math.abs(a.movementAmount ?? 0))[0];
+}
+
+function netMetricChange(gamePoints, metric) {
+  if (gamePoints.length < 1) return null;
+  const first = gamePoints[0].previousValue ?? gamePoints[0].value;
+  const last = gamePoints[gamePoints.length - 1].value;
+  if (first == null || last == null) return null;
+  const delta = Number((last - first).toFixed(metric === 'winPct' ? 1 : 2));
+  return { start: first, end: last, delta };
+}
+
+function aggregateOpponents(games, limit = 5) {
+  const map = new Map();
+  for (const g of games) {
+    if (!g.opponent) continue;
+    let entry = map.get(g.opponent);
+    if (!entry) {
+      entry = { id: g.opponent, wins: 0, losses: 0, lastDate: g.date };
+      map.set(g.opponent, entry);
+    }
+    if (g.result === 'W') entry.wins += 1;
+    else entry.losses += 1;
+    if (g.date > entry.lastDate) entry.lastDate = g.date;
+  }
+  return [...map.values()]
+    .sort((a, b) => {
+      const gamesA = a.wins + a.losses;
+      const gamesB = b.wins + b.losses;
+      if (gamesB !== gamesA) return gamesB - gamesA;
+      return b.lastDate.localeCompare(a.lastDate);
+    })
+    .slice(0, limit);
+}
+
+/** Most frequent opponents in the active range — selected team's record vs each. */
+function rangeOpponentRecords(games, limit = 5) {
+  return aggregateOpponents(games, limit);
+}
+
+function soloHasGameActivity() {
+  return (state.teamGames?.length ?? 0) > 0;
+}
+
+const EMPTY_RANGE_MSG = 'No games in this range';
+
+function rangeHasGames(series) {
+  if (!series) return false;
+  if ((series.gameCount ?? 0) > 0) return true;
+  if (series.hasGames) return true;
+  return false;
+}
+
+function matchupHasGames(matchup) {
+  return matchup?.series?.some((s) => (s.gameCount ?? 0) > 0) ?? false;
+}
+
+/** Chart points for net/swing — game-level when available, else aggregated period points. */
+function seriesActivityPoints(series) {
+  const points = series?.points || [];
+  const gamePoints = points.filter((p) => p.gameId && !p.flatline);
+  if (gamePoints.length) return gamePoints;
+  const aggregated = points.filter((p) => p.aggregated && (p.gamesInPeriod ?? 0) > 0);
+  if (aggregated.length) return aggregated;
+  return points.filter((p) => !p.flatline);
+}
+
+function netMetricChangeFromSeries(series, metric) {
+  const points = series?.points || [];
+  if (!points.length) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const start = first.previousValue ?? first.value;
+  const end = last.value;
+  if (start == null || end == null) return null;
+  const delta = Number((end - start).toFixed(metric === 'winPct' ? 1 : 2));
+  return { start, end, delta };
+}
+
+function soloTodayIdle() {
+  return state.heroMode === 'solo'
+    && state.range.preset === 'today'
+    && !soloHasGameActivity();
+}
+
+function soloTodayWithGame() {
+  return state.heroMode === 'solo'
+    && state.range.preset === 'today'
+    && soloHasGameActivity();
+}
+
+function soloStatLabels() {
+  return $('#solo-stats')?.querySelectorAll('.sd-hero__stat em') ?? [];
+}
+
+function formatLastPlayedLabel(game) {
+  if (!game) return '';
+  const date = formatResultDate(game.date);
+  const opp = findTeam(game.opponent);
+  const oppLabel = opp?.abbreviation ?? game.opponent;
+  const result = game.result === 'W' ? 'W' : 'L';
+  return `Last played ${date} vs ${oppLabel} · ${result} ${game.teamScore}–${game.opponentScore}`;
+}
+
+async function loadLastPlayedGame() {
+  state.lastPlayedGame = null;
+  if (state.heroMode !== 'solo' || soloHasGameActivity()) return;
+
   try {
-    const payload = await fetchJson('/api/debug');
-    const providers = payload.providers || {};
-    if (!Object.keys(providers).length) {
-      container.innerHTML = '<p class="sd-debug__line">No provider responses recorded.</p>';
-      return;
-    }
-    container.innerHTML = Object.entries(providers).map(([key, value]) => {
-      let body = JSON.stringify(value, null, 2);
-      const truncated = body.length > 20000;
-      if (truncated) body = `${body.slice(0, 20000)}\n… (truncated)`;
-      return `
-        <div class="sd-debug__provider">
-          <p class="sd-debug__line">${value.provider ?? key} · fetched ${value.fetchedAt ?? UNAVAILABLE}${value.error ? ` · error: ${value.error}` : ''}</p>
-          <pre class="sd-debug__pre">${body.replace(/</g, '&lt;')}</pre>
-        </div>`;
-    }).join('');
-  } catch (err) {
-    container.innerHTML = `<p class="sd-debug__line">Debug endpoint failed: ${err.message}</p>`;
+    const payload = await fetchJson(performanceUrl(
+      state.selectedTeamId,
+      createRange({ preset: 'all', mode: 'franchise', metric: 'winPct' }),
+    ));
+    const games = payload.games || [];
+    if (!games.length) return;
+    const sorted = [...games].sort((a, b) => b.date.localeCompare(a.date));
+    state.lastPlayedGame = sorted[0];
+  } catch {
+    state.lastPlayedGame = null;
   }
 }
 
-/* ------------------------------------------------------------------- load */
+function renderLastPlayedContext() {
+  const el = $('#hero-last-played');
+  if (!el) return;
 
-async function loadDashboard() {
-  state.errors = [];
-  const [gamesRes, oddsRes, historyRes] = await Promise.allSettled([
-    fetchJson('/api/games'),
-    fetchJson('/api/odds'),
-    fetchJson('/api/history'),
-  ]);
-
-  if (gamesRes.status === 'fulfilled') {
-    state.games = gamesRes.value.games || [];
-    state.meta = {
-      mode: gamesRes.value.mode,
-      errors: gamesRes.value.errors,
-      cachedAt: gamesRes.value.cachedAt,
-      updatedAt: gamesRes.value.updatedAt,
-      refreshSec: gamesRes.value.refreshSec,
-    };
-  } else {
-    state.errors.push('Could not load games.');
-    state.games = [];
+  if (state.loading || state.heroMode !== 'solo' || soloHasGameActivity()) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
   }
-  state.odds = oddsRes.status === 'fulfilled' ? oddsRes.value : null;
-  if (oddsRes.status === 'rejected') state.errors.push('Could not load market lines.');
-  state.history = historyRes.status === 'fulfilled' ? (historyRes.value.games || []) : [];
-  if (historyRes.status === 'rejected') state.errors.push('Could not load history.');
 
-  renderModeBadge();
-  renderLastUpdated();
-  renderStatus();
-  renderToday();
-  renderUpcoming();
-  renderMovement();
-  renderRecent();
+  const game = state.lastPlayedGame;
+  if (!game) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
 
-  if (!state.selectedId || !findGame(state.selectedId)) {
-    const first = state.games.find((g) => isToday(g.startTime)) || state.games[0] || state.history[0];
-    if (first) selectGame(first.gameId);
-    else {
-      renderDetail(null);
-      renderDebug();
+  const label = formatLastPlayedLabel(game);
+  const jumpPreset = jumpPresetForLastPlayed(state.range.preset, game.date);
+
+  if (jumpPreset) {
+    const jumpLabel = rangeLabel(createRange({ preset: jumpPreset }));
+    el.innerHTML = `
+      <button type="button" class="sd-hero__last-played-btn"
+        data-jump-preset="${jumpPreset}"
+        aria-label="${label}. Jump to ${jumpLabel}.">
+        ${label}
+      </button>`;
+  } else {
+    el.innerHTML = `<span class="sd-hero__last-played-static">${label}</span>`;
+  }
+  el.hidden = false;
+}
+
+function jumpToActivityRange(preset) {
+  if (!preset || state.heroMode !== 'solo') return;
+  setRange(preset);
+}
+
+function buildSoloNetLine() {
+  const label = rangeLabel(state.range);
+  const series = state.teamSeries;
+
+  if (series?.error) {
+    return `<span class="sd-hero__net-line--muted">Summary unavailable — ${series.error}</span>`;
+  }
+
+  if (!rangeHasGames(series)) {
+    if (soloTodayIdle()) {
+      return '<span class="sd-hero__net-line--muted">No game today · franchise holds steady</span>';
     }
-  } else {
-    renderDetail(findGame(state.selectedId));
-    renderDebug();
+    if (state.range.preset === 'today') {
+      return '<span class="sd-hero__net-line--muted">No games scheduled today</span>';
+    }
+    return `<span class="sd-hero__net-line--muted">${EMPTY_RANGE_MSG}</span>`;
   }
+
+  const activityPoints = seriesActivityPoints(series);
+  const net = netMetricChangeFromSeries(series, 'winPct')
+    ?? netMetricChange(activityPoints, 'winPct');
+  const sig = significantPoint(activityPoints);
+  const parts = [];
+
+  if (net?.delta != null && net.delta !== 0) {
+    const cls = movementClass(net.delta);
+    parts.push(`Net <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}%</em>`);
+  } else {
+    parts.push('Net unchanged');
+  }
+
+  if (sig?.opponentId && Math.abs(sig.movementAmount ?? 0) > 0) {
+    const opp = sig.opponentId;
+    const move = formatMovePct(sig.movementAmount);
+    const cls = movementClass(sig.movementAmount ?? 0);
+    parts.push(`Largest swing vs ${opp} <em class="${cls}">${move}</em>`);
+  }
+
+  if (!parts.length) {
+    return `<span class="sd-hero__net-line--muted">${label} · No net movement in this range.</span>`;
+  }
+
+  return parts.join(' · ');
+}
+
+function buildMatchupNetLine() {
+  const teamA = findTeam(state.teamA);
+  const teamB = findTeam(state.teamB);
+  const label = rangeLabel(state.range);
+  const matchup = state.matchup;
+
+  if (matchup?.error) {
+    return `<span class="sd-hero__net-line--muted">Matchup summary unavailable — ${matchup.error}</span>`;
+  }
+
+  if (!matchup?.series?.length) {
+    return '<span class="sd-hero__net-line--muted">Select two teams and a range with overlapping games.</span>';
+  }
+
+  const allGamePoints = matchup.series.flatMap((s) => seriesActivityPoints(s));
+
+  if (!matchupHasGames(matchup)) {
+    return `<span class="sd-hero__net-line--muted">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · ${EMPTY_RANGE_MSG}</span>`;
+  }
+
+  const parts = [];
+  for (const s of matchup.series) {
+    const pts = seriesActivityPoints(s);
+    const net = netMetricChangeFromSeries(s, 'index')
+      ?? netMetricChange(pts, 'index');
+    const abbr = findTeam(s.teamId)?.abbreviation ?? s.teamId;
+    if (net?.delta != null && net.delta !== 0) {
+      const cls = movementClass(net.delta);
+      parts.push(`${abbr} index <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}</em>`);
+    } else {
+      parts.push(`${abbr} index unchanged`);
+    }
+  }
+
+  return parts.join(' · ');
+}
+
+function renderMarketSummary() {
+  const el = $('#hero-net-summary');
+  if (!el) return;
+
+  if (state.loading) {
+    el.textContent = '';
+    el.classList.remove('is-loaded');
+    return;
+  }
+
+  el.innerHTML = state.heroMode === 'matchup'
+    ? buildMatchupNetLine()
+    : buildSoloNetLine();
+
+  renderLastPlayedContext();
+
+  requestAnimationFrame(() => el.classList.add('is-loaded'));
+}
+
+function heroEmptyState({ title, detail }) {
+  const empty = $('#hero-chart-empty');
+  empty.innerHTML = emptyStateHtml({ title, detail });
+  empty.style.display = 'flex';
+}
+
+function renderHeroLegend() {
+  const legend = $('#hero-legend');
+  if (!legend) return;
+
+  if (state.heroMode === 'matchup' && state.matchup?.series?.length) {
+    legend.innerHTML = state.matchup.series.map((s) => `
+    <span class="sd-legend-item">
+      <span class="sd-legend-swatch" style="background:${s.color}"></span>
+      <span>${s.teamName}</span>
+      <span class="sd-legend-meta">Index · ${s.gameCount} game${s.gameCount === 1 ? '' : 's'}</span>
+    </span>`).join('');
+    return;
+  }
+
+  legend.innerHTML = '';
+}
+
+function renderHeroChart() {
+  const canvas = $('#hero-chart');
+  const empty = $('#hero-chart-empty');
+  const caption = $('#hero-chart-caption');
+  const tooltip = $('#hero-tooltip');
+  const { ctx, w, h } = setupCanvas(canvas);
+  const chartWrap = canvas.closest('.sd-chart-wrap');
+
+  if (!state.hoverHit) tooltip.hidden = true;
+  state.heroHitAreas = [];
+  chartWrap?.classList.remove('has-ghost-opponent');
+  renderHeroContext();
+  renderHeroLegend();
+  renderMarketSummary();
+
+  if (state.heroMode === 'solo') {
+    renderSoloStats();
+    const series = state.teamSeries;
+    if (series?.error) {
+      heroEmptyState({
+        title: 'Data unavailable',
+        detail: series.error,
+      });
+      caption.textContent = 'Unable to load performance data';
+      return;
+    }
+    if (!series?.points?.length) {
+      heroEmptyState({
+        title: 'No data in this range',
+        detail: 'Try a wider timeline or another team.',
+      });
+      caption.textContent = 'Data unavailable';
+      return;
+    }
+    empty.style.display = 'none';
+    const hasRangeGames = rangeHasGames(series);
+    const vsLabel = state.logFocusOpponent
+      ? ` vs ${teamAbbrev(state.logFocusOpponent)}`
+      : '';
+    caption.textContent = hasRangeGames
+      ? `${rangeLabel(state.range)}${vsLabel} · Win % · ${series.gameCount} game${series.gameCount === 1 ? '' : 's'}`
+      : (soloTodayIdle() ? 'Today · Win %' : `${rangeLabel(state.range)}${vsLabel} · Win %`);
+    const colored = seriesWithTeamColor(series, state.selectedTeamId);
+    const contextColored = state.contextSeries && state.contextOpponentId
+      ? seriesWithTeamColor(state.contextSeries, state.contextOpponentId)
+      : null;
+    const wrap = chartWrap;
+    wrap?.classList.toggle('has-ghost-opponent', !!contextColored);
+    const primaryHover = state.hoverHit?.layer === 'context' ? null : state.hoverHit;
+    const chartProfile = chartProfileForRange(state.range);
+    const result = drawPerformanceChart(ctx, w, h, colored, primaryHover, {
+      contextSeries: contextColored,
+      ghostHover: state.ghostHover,
+      rangePreset: chartProfile.preset,
+      profile: chartProfile,
+    });
+    state.heroHitAreas = (result.hitAreas || []).map((hit) => ({
+      ...hit,
+      metric: hit.metric || 'winPct',
+    }));
+    return;
+  }
+
+  const matchup = state.matchup;
+  if (matchup?.error) {
+    heroEmptyState({
+      title: 'Matchup unavailable',
+      detail: matchup.error,
+    });
+    caption.textContent = 'Unable to load head-to-head data';
+    return;
+  }
+  if (!matchup?.series?.length) {
+    heroEmptyState({
+      title: 'No matchup data',
+      detail: 'Both teams need games in the selected range.',
+    });
+    caption.textContent = 'Data unavailable';
+    return;
+  }
+  empty.style.display = 'none';
+  const gameCount = Math.max(0, ...matchup.series.map((s) => s.gameCount ?? 0));
+  const hasRangeGames = matchupHasGames(matchup);
+  caption.textContent = hasRangeGames
+    ? `${rangeLabel(state.range)} · Performance index · ${gameCount} game${gameCount === 1 ? '' : 's'}`
+    : `${rangeLabel(state.range)} · Performance index`;
+  const chartProfile = chartProfileForRange(state.range);
+  const result = drawMatchupChart(ctx, w, h, matchup, state.hoverHit, {
+    rangePreset: chartProfile.preset,
+    profile: chartProfile,
+  });
+  state.heroHitAreas = (result.hitAreas || []).map((hit) => ({ ...hit, metric: 'index' }));
+}
+
+function formatResultDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function ledgerOpponents(games, limit = 5) {
+  return rangeOpponentRecords(games, limit);
+}
+
+function opponentSwatchHtml(opponentId) {
+  const team = findTeam(opponentId);
+  const color = team?.colors?.primary || '#5da396';
+  return `<span class="sd-log-swatch" style="--team-color: ${color}" aria-hidden="true"></span>`;
+}
+
+function opponentChipHtml(row, { isContext = false } = {}) {
+  const team = findTeam(row.id);
+  const oppAbbr = team?.abbreviation ?? row.id;
+  const fullName = team ? `${team.city} ${team.name}` : row.id;
+  const selectedAbbr = teamAbbrev(state.selectedTeamId);
+  const range = rangeLabel(state.range);
+  const record = `${row.wins}–${row.losses}`;
+  const color = team?.colors?.primary || '#5da396';
+  const recordCls = row.wins > row.losses ? 'is-up' : row.wins < row.losses ? 'is-down' : '';
+  const tip = `${selectedAbbr} ${record} vs ${fullName} · ${range}`;
+  const safeTip = tip.replace(/"/g, '&quot;');
+  const ariaLabel = `${selectedAbbr} ${record} vs ${oppAbbr} in ${range}`;
+  return `
+    <div class="sd-opp-chip${isContext ? ' sd-opp-chip--context' : ''}" style="--team-color: ${color}" title="${safeTip}" aria-label="${ariaLabel}">
+      <span class="sd-log-swatch" style="--team-color: ${color}" aria-hidden="true"></span>
+      <span class="sd-opp-chip__abbr">${oppAbbr}</span>
+      <span class="sd-opp-chip__record ${recordCls}">${record}</span>
+      ${isContext ? '<span class="sd-opp-chip__tag">Chart</span>' : ''}
+    </div>`;
+}
+
+const GAME_LOG_LEDGER_NOTE = 'Head-to-head records appear in Matchup mode.';
+
+function renderGameLogLedger({ games, isSolo }) {
+  const oppEl = $('#key-opponents');
+  const ledgerEl = $('#game-log-ledger');
+  if (!oppEl || !ledgerEl) return;
+
+  if (!isSolo) {
+    oppEl.innerHTML = `<p class="sd-game-log__note">${GAME_LOG_LEDGER_NOTE}</p>`;
+    return;
+  }
+
+  const ledger = ledgerOpponents(games);
+  if (!ledger.length) {
+    const range = rangeLabel(state.range);
+    oppEl.innerHTML = `<p class="sd-game-log__note">No head-to-head games in ${range}.</p>`;
+    return;
+  }
+
+  oppEl.innerHTML = ledger.map((row) => {
+    const isContext = ghostOpponentEnabled() && state.contextOpponentId === row.id;
+    return opponentChipHtml(row, { isContext });
+  }).join('');
+}
+
+function renderGameLog() {
+  const recentEl = $('#recent-results');
+  const isSolo = state.heroMode === 'solo';
+
+  const games = [...gamesForGameLog()].sort((a, b) => b.date.localeCompare(a.date));
+  const recent = dedupeGameLogEntries(games);
+
+  if (!recent.length) {
+    const isToday = state.range.preset === 'today';
+    recentEl.innerHTML = emptyStateHtml({
+      title: isToday ? 'No games today' : 'No results in this range',
+      detail: isToday
+        ? 'Check back when the schedule has final scores.'
+        : 'Widen the timeline or pick another team.',
+    });
+    renderGameLogLedger({ games, isSolo });
+    requestAnimationFrame(updateGameLogScroll);
+    return;
+  }
+
+  const { byId, byDate } = gamePointLookup();
+  const gamePoints = [...byId.values()];
+  const sigPoint = significantPoint(gamePoints);
+  const streaksByKey = computeGameStreakPeaks(recent);
+
+  recentEl.innerHTML = recent.map((g) => {
+    const gameDate = (g.date || '').slice(0, 10);
+    const pt = byId.get(g.id) || byDate.get(g.date);
+    const cls = g.result === 'W' ? 'is-up' : 'is-down';
+    const move = pt?.movementAmount;
+    const moveText = formatMovePct(move);
+    const moveCls = movementClass(move ?? 0);
+    const isSwing = sigPoint && pt && sigPoint.gameId === pt.gameId
+      && Math.abs(move ?? 0) > 0;
+    const score = g.teamScore != null ? `${g.teamScore} – ${g.opponentScore}` : `${pt?.pointsFor ?? '—'} – ${pt?.pointsAgainst ?? '—'}`;
+    const opp = findTeam(g.opponent);
+    const oppShort = opp ? `${opp.city} ${opp.name}` : g.opponent;
+    const focusCls = state.focusedGameLogKey === `${gameDate}|${g.opponent || ''}`
+      ? ' sd-log-row--focused' : '';
+    const swingCls = isSwing ? ' sd-log-row--swing' : '';
+    const streakInfo = streaksByKey.get(gameLogKey(g));
+    const tagsHtml = gameLogTagsHtml(pickGameLogBadges(g, pt, isSwing, streakInfo));
+    const rowInner = `
+        ${opponentSwatchHtml(g.opponent)}
+        <span class="sd-log-row__badge ${cls}">${g.result === 'W' ? 'W' : 'L'}</span>
+        <div class="sd-log-row__main">
+          <div class="sd-log-row__title-row">
+            <span class="sd-log-row__title">${oppShort}</span>
+            ${tagsHtml}
+          </div>
+          <span class="sd-log-row__sub ${cls}">${score}</span>
+        </div>
+        <div class="sd-log-row__stat">
+          <span class="sd-log-row__value ${moveText ? moveCls : 'is-flat'}">${moveText ?? '—'}</span>
+          <span class="sd-log-row__stat-label">move</span>
+        </div>
+        <time class="sd-log-row__date" datetime="${g.date}">${formatResultDate(g.date)}</time>`;
+
+    if (isSolo) {
+      const label = `View ${formatResultDate(g.date)} vs ${oppShort}`.replace(/"/g, '&quot;');
+      return `
+      <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${swingCls}${focusCls}"
+        data-game-date="${gameDate}"
+        data-opponent="${g.opponent}"
+        aria-label="${label}">
+        ${rowInner}
+      </button>`;
+    }
+
+    const label = `View matchup on ${formatResultDate(g.date)} vs ${oppShort}`.replace(/"/g, '&quot;');
+    return `
+      <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${swingCls}${focusCls}"
+        data-game-date="${gameDate}"
+        data-opponent="${g.opponent}"
+        aria-label="${label}">
+        ${rowInner}
+      </button>`;
+  }).join('');
+
+  renderGameLogLedger({ games, isSolo });
+  requestAnimationFrame(updateGameLogScroll);
+}
+
+function renderPanels() {
+  renderGameLog();
+  renderTeamList();
+}
+
+async function loadContextOpponent() {
+  state.contextOpponentId = null;
+  state.contextSeries = null;
+  if (!ghostOpponentEnabled()) return;
+
+  const oppId = state.logFocusOpponent || resolveContextOpponent(state.teamGames);
+  if (!oppId || oppId === state.selectedTeamId) return;
+
+  try {
+    const payload = await fetchJson(performanceUrl(oppId, soloRange()));
+    if (payload.error && !payload.series) return;
+    const filtered = buildContextSeries(state.teamGames, oppId, payload.series);
+    const useH2hOnly = state.logFocusOpponent || state.range.preset !== 'today';
+    const contextSeries = useH2hOnly ? filtered : payload.series;
+    if (contextSeries?.points?.length) {
+      state.contextOpponentId = oppId;
+      state.contextSeries = contextSeries;
+    }
+  } catch {
+    state.contextOpponentId = null;
+    state.contextSeries = null;
+  }
+}
+
+async function loadPanelData() {
+  try {
+    const teamId = panelTeamId();
+    const needsMonthLog = gameLogUsesMonthScope();
+    const payload = await fetchJson(performanceUrl(teamId, soloRange()));
+    if (payload.error && !payload.series) throw new Error(payload.error);
+    state.teamSeries = payload.series ?? null;
+    state.teamGames = payload.games || [];
+    if (needsMonthLog) {
+      try {
+        const monthPayload = await fetchJson(performanceUrl(teamId, soloGameLogRange()));
+        const monthGames = monthPayload?.error ? null : (monthPayload?.games || []);
+        state.gameLogGames = monthGames?.length ? monthGames : state.teamGames;
+      } catch {
+        state.gameLogGames = state.teamGames;
+      }
+    } else {
+      state.gameLogGames = state.teamGames;
+    }
+    if (payload.mode) state.meta = { ...state.meta, ...payload };
+    if (state.teamSeries?.error) {
+      state.errors = [`Panel data: ${state.teamSeries.error}`];
+    }
+  } catch (err) {
+    state.errors = [`Panel data: ${err.message}`];
+    state.teamSeries = null;
+    state.teamGames = [];
+    state.gameLogGames = [];
+  }
+}
+
+async function loadMatchupHero() {
+  try {
+    const payload = await fetchJson(matchupUrl(matchupRange()));
+    if (payload.error && !payload.series) throw new Error(payload.error);
+    state.matchup = payload;
+    if (payload.error) {
+      state.errors = [`Matchup data: ${payload.error}`];
+    }
+  } catch (err) {
+    state.errors = [`Matchup data: ${err.message}`];
+    state.matchup = null;
+  }
+}
+
+async function loadData() {
+  const gen = ++loadGeneration;
+  state.errors = [];
+  state.hoverHit = null;
+  state.ghostHover = false;
+
+  if (state.heroMode === 'solo') {
+    state.matchup = null;
+  } else {
+    state.contextOpponentId = null;
+    state.contextSeries = null;
+    state.lastPlayedGame = null;
+    state.matchup = null;
+  }
+
+  setLoading(true);
+  try {
+    await loadPanelData();
+    if (gen !== loadGeneration) return;
+    if (state.heroMode === 'solo') {
+      await loadContextOpponent();
+      if (gen !== loadGeneration) return;
+      if (!soloHasGameActivity()) {
+        await loadLastPlayedGame();
+      } else {
+        state.lastPlayedGame = null;
+      }
+    } else if (state.heroMode === 'matchup') {
+      await loadMatchupHero();
+    }
+  } finally {
+    if (gen !== loadGeneration) return;
+    setLoading(false);
+    renderHeroChart();
+    if (applyLogGameChartFocus()) renderHeroChart();
+    renderPanels();
+    renderHeader();
+    if (state.focusedGameLogKey) {
+      requestAnimationFrame(() => {
+        $('#hero-chart-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+  }
+}
+
+function selectTeam(teamId) {
+  clearLogFocus();
+  state.selectedTeamId = teamId;
+  loadData();
+}
+
+function flipToContextOpponent() {
+  const nextId = state.contextOpponentId;
+  if (!nextId || state.heroMode !== 'solo' || !ghostOpponentEnabled()) return;
+  state.selectedTeamId = nextId;
+  loadData();
+}
+
+function focusGameFromLog(game) {
+  if (!game?.date) return;
+  const gameDate = game.date.slice(0, 10);
+  const opp = String(game.opponent || '').toUpperCase();
+  const teamId = panelTeamId();
+
+  if (!opp || opp === teamId || !findTeam(opp)) return;
+
+  state.homepageFeature = null;
+  state.focusedGameLogKey = `${gameDate}|${opp}`;
+  state.logFocusOpponent = opp;
+  state.logFocusDate = gameDate;
+
+  if (state.heroMode === 'solo') {
+    state.range = createRangeForGameDate(game.date, {
+      mode: 'franchise',
+      metric: 'winPct',
+    });
+    syncRangeUi();
+    loadData();
+    return;
+  }
+
+  state.teamA = teamId;
+  state.teamB = opp;
+  syncTeamPickers();
+  state.range = createRangeForGameDate(game.date, {
+    mode: 'matchup',
+    metric: 'index',
+  });
+  syncRangeUi();
+  loadData();
+}
+
+function enterMatchupFromGame(opponentId) {
+  const opp = String(opponentId || '').toUpperCase();
+  const teamA = state.selectedTeamId;
+  if (!opp || opp === teamA || !findTeam(opp)) return;
+
+  state.homepageFeature = null;
+  state.teamA = teamA;
+  state.teamB = opp;
+  syncTeamPickers();
+  setHeroMode('matchup');
+}
+
+function syncHeroModeUi() {
+  document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
+    const active = btn.dataset.heroMode === state.heroMode;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+function syncRangeUi() {
+  document.querySelectorAll('[data-range]').forEach((btn) => {
+    const active = btn.dataset.range === state.range.preset;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+function applyFeaturedHomepage(featured) {
+  if (!featured?.teamA || !featured?.teamB) return;
+  state.homepageFeature = {
+    headline: featured.headline,
+    subheadline: featured.subheadline,
+    context: featured.context,
+  };
+  state.heroMode = featured.heroMode || 'matchup';
+  state.teamA = featured.teamA;
+  state.teamB = featured.teamB;
+  state.selectedTeamId = featured.selectedTeamId || featured.teamA;
+  state.range = createRange({
+    preset: featured.range || 'today',
+    mode: 'matchup',
+    metric: 'index',
+  });
+  syncHeroModeUi();
+  syncRangeUi();
+}
+
+function setHeroMode(mode) {
+  if (mode !== 'solo' && mode !== 'matchup') return;
+  const wasMatchup = state.heroMode === 'matchup';
+  clearLogFocus();
+  if (mode === 'solo') state.homepageFeature = null;
+  state.heroMode = mode;
+  syncHeroModeUi();
+  state.range = createRange({
+    preset: state.range.preset || 'week',
+    mode: mode === 'solo' ? 'franchise' : 'matchup',
+    metric: mode === 'solo' ? 'winPct' : 'index',
+  });
+  if (mode === 'solo' && wasMatchup) {
+    state.selectedTeamId = state.teamA;
+  }
+  loadData();
+}
+
+function setRange(preset) {
+  clearLogFocus();
+  state.range = createRange({ preset, mode: state.heroMode === 'solo' ? 'franchise' : 'matchup', metric: state.heroMode === 'solo' ? 'winPct' : 'index' });
+  syncRangeUi();
+  loadData();
+}
+
+/* ------------------------------------------------------------- binds */
+
+function bindControls() {
+  document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
+    btn.addEventListener('click', () => setHeroMode(btn.dataset.heroMode));
+  });
+
+  document.querySelectorAll('[data-range]').forEach((btn) => {
+    btn.addEventListener('click', () => setRange(btn.dataset.range));
+  });
+
+  $('#hero-last-played')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-jump-preset]');
+    if (!btn) return;
+    jumpToActivityRange(btn.dataset.jumpPreset);
+  });
+
+  const canvas = $('#hero-chart');
+  const tooltip = $('#hero-tooltip');
+  const wrap = canvas?.closest('.sd-chart-wrap');
+  let hoverRaf = null;
+
+  function chartPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+  }
+
+  function positionTooltip(e) {
+    const wrapRect = wrap.getBoundingClientRect();
+    const tipW = tooltip.offsetWidth;
+    const tipH = tooltip.offsetHeight;
+    let left = e.clientX - wrapRect.left + 14;
+    let top = e.clientY - wrapRect.top - tipH - 10;
+    if (left + tipW > wrapRect.width - 8) left = e.clientX - wrapRect.left - tipW - 14;
+    if (left < 8) left = 8;
+    if (top < 8) top = e.clientY - wrapRect.top + 14;
+    if (top + tipH > wrapRect.height - 8) top = wrapRect.height - tipH - 8;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+
+  function clearChartHover() {
+    tooltip.hidden = true;
+    canvas.style.cursor = 'default';
+    const needsRedraw = state.hoverHit || state.ghostHover;
+    state.hoverHit = null;
+    state.ghostHover = false;
+    if (needsRedraw) {
+      cancelAnimationFrame(hoverRaf);
+      hoverRaf = requestAnimationFrame(() => renderHeroChart());
+    }
+  }
+
+  function updateChartHover(e) {
+    if (!wrap) return;
+
+    const { mx, my } = chartPoint(e);
+    const hit = state.heroHitAreas.length ? findHit(state.heroHitAreas, mx, my) : null;
+    const contextHit = !hit && state.contextOpponentId
+      ? findContextHit(state.heroHitAreas, mx, my)
+      : null;
+
+    if (!hit && !contextHit) {
+      clearChartHover();
+      return;
+    }
+
+    if (hit) {
+      canvas.style.cursor = 'crosshair';
+      tooltip.innerHTML = formatTooltipHtml(hit);
+      tooltip.hidden = false;
+      positionTooltip(e);
+      const changed = state.hoverHit?.point !== hit.point
+        || state.hoverHit?.teamId !== hit.teamId
+        || state.ghostHover;
+      state.hoverHit = { point: hit.point, teamId: hit.teamId, layer: 'primary' };
+      state.ghostHover = false;
+      if (changed) {
+        cancelAnimationFrame(hoverRaf);
+        hoverRaf = requestAnimationFrame(() => renderHeroChart());
+      }
+      return;
+    }
+
+    canvas.style.cursor = 'pointer';
+    tooltip.innerHTML = formatContextTooltipHtml(contextHit.teamName);
+    tooltip.hidden = false;
+    positionTooltip(e);
+    if (!state.ghostHover) {
+      state.ghostHover = true;
+      state.hoverHit = null;
+      cancelAnimationFrame(hoverRaf);
+      hoverRaf = requestAnimationFrame(() => renderHeroChart());
+    }
+  }
+
+  canvas?.addEventListener('pointermove', updateChartHover);
+  canvas?.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    canvas.setPointerCapture(e.pointerId);
+    updateChartHover(e);
+  });
+  canvas?.addEventListener('pointerup', (e) => {
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    if (e.pointerType !== 'mouse') clearChartHover();
+  });
+  canvas?.addEventListener('pointerleave', clearChartHover);
+  canvas?.addEventListener('pointercancel', clearChartHover);
+
+  canvas?.addEventListener('click', (e) => {
+    if (state.heroMode !== 'solo' || !state.contextOpponentId || !ghostOpponentEnabled()) return;
+    const { mx, my } = chartPoint(e);
+    if (findHit(state.heroHitAreas, mx, my)) return;
+    if (findContextHit(state.heroHitAreas, mx, my)) flipToContextOpponent();
+  });
+
+  document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
+    btn.setAttribute('aria-pressed', btn.classList.contains('is-active') ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-range]').forEach((btn) => {
+    btn.setAttribute('aria-pressed', btn.classList.contains('is-active') ? 'true' : 'false');
+  });
+}
+
+/* --------------------------------------------------------------- init */
+
+async function init() {
+  state.errors = [];
+  setLoading(true);
+  try {
+    const [teamsPayload, marqueePayload] = await Promise.all([
+      fetchJson('/api/teams?league=NBA'),
+      fetchJson('/api/marquee?league=NBA'),
+    ]);
+    if (teamsPayload.error) throw new Error(teamsPayload.error);
+    state.teams = teamsPayload.teams || [];
+    state.meta = teamsPayload;
+    if (teamsPayload.referenceDate) {
+      setReferenceDate(teamsPayload.referenceDate);
+    }
+    if (!marqueePayload.error) {
+      applyFeaturedHomepage(marqueePayload);
+    }
+  } catch (err) {
+    state.errors = [`Teams: ${err.message}`];
+    state.teams = [];
+  }
+
+  initTeamPickers();
+  syncTeamPickers();
+  syncHeroModeUi();
+  syncRangeUi();
+  bindTeamExplorerScroll();
+  bindGameLogScroll();
+  bindControls();
+  await loadData();
 }
 
 window.addEventListener('resize', () => {
-  const game = findGame(state.selectedId);
-  renderChart(game);
-  renderComparisonChart(game);
+  renderHeroChart();
 });
 
-bindComparisonControls();
-
-$('#debug-panel').addEventListener('toggle', (e) => {
-  if (e.target.open) loadDebugProviders();
-});
-
-loadDashboard();
-setInterval(loadDashboard, 5 * 60 * 1000);
+init();

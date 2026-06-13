@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "builds": [
+    { "src": "api/teams.py", "use": "@vercel/python" },
+    { "src": "api/performance.py", "use": "@vercel/python" },
+    { "src": "api/matchup.py", "use": "@vercel/python" },
+    { "src": "api/marquee.py", "use": "@vercel/python" },
     { "src": "api/odds.py", "use": "@vercel/python" },
     { "src": "api/games.py", "use": "@vercel/python" },
     { "src": "api/history.py", "use": "@vercel/python" },
@@ -16,6 +20,10 @@
     { "src": "lib/**", "use": "@vercel/static" }
   ],
   "routes": [
+    { "src": "/api/teams", "dest": "/api/teams.py" },
+    { "src": "/api/performance", "dest": "/api/performance.py" },
+    { "src": "/api/matchup", "dest": "/api/matchup.py" },
+    { "src": "/api/marquee", "dest": "/api/marquee.py" },
     { "src": "/api/odds", "dest": "/api/odds.py" },
     { "src": "/api/games", "dest": "/api/games.py" },
     { "src": "/api/history", "dest": "/api/history.py" },

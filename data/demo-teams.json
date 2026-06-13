@@ -1,0 +1,335 @@
+{
+  "source": "demo",
+  "teams": [
+    {
+      "id": "BOS",
+      "league": "NBA",
+      "name": "Celtics",
+      "abbreviation": "BOS",
+      "city": "Boston",
+      "colors": {
+        "primary": "#007A33"
+      },
+      "logo": null
+    },
+    {
+      "id": "NYK",
+      "league": "NBA",
+      "name": "Knicks",
+      "abbreviation": "NYK",
+      "city": "New York",
+      "colors": {
+        "primary": "#F58426"
+      },
+      "logo": null
+    },
+    {
+      "id": "SAS",
+      "league": "NBA",
+      "name": "Spurs",
+      "abbreviation": "SAS",
+      "city": "San Antonio",
+      "colors": {
+        "primary": "#C4CED4"
+      },
+      "logo": null
+    },
+    {
+      "id": "GSW",
+      "league": "NBA",
+      "name": "Warriors",
+      "abbreviation": "GSW",
+      "city": "Golden State",
+      "colors": {
+        "primary": "#FDB927"
+      },
+      "logo": null
+    },
+    {
+      "id": "LAL",
+      "league": "NBA",
+      "name": "Lakers",
+      "abbreviation": "LAL",
+      "city": "Los Angeles",
+      "colors": {
+        "primary": "#552583"
+      },
+      "logo": null
+    },
+    {
+      "id": "MIA",
+      "league": "NBA",
+      "name": "Heat",
+      "abbreviation": "MIA",
+      "city": "Miami",
+      "colors": {
+        "primary": "#98002E"
+      },
+      "logo": null
+    },
+    {
+      "id": "DEN",
+      "league": "NBA",
+      "name": "Nuggets",
+      "abbreviation": "DEN",
+      "city": "Denver",
+      "colors": {
+        "primary": "#0E2240"
+      },
+      "logo": null
+    },
+    {
+      "id": "PHX",
+      "league": "NBA",
+      "name": "Suns",
+      "abbreviation": "PHX",
+      "city": "Phoenix",
+      "colors": {
+        "primary": "#E56020"
+      },
+      "logo": null
+    },
+    {
+      "id": "ATL",
+      "league": "NBA",
+      "name": "Hawks",
+      "abbreviation": "ATL",
+      "city": "Atlanta",
+      "colors": {
+        "primary": "#E03A3E"
+      },
+      "logo": null
+    },
+    {
+      "id": "BKN",
+      "league": "NBA",
+      "name": "Nets",
+      "abbreviation": "BKN",
+      "city": "Brooklyn",
+      "colors": {
+        "primary": "#707271"
+      },
+      "logo": null
+    },
+    {
+      "id": "CHA",
+      "league": "NBA",
+      "name": "Hornets",
+      "abbreviation": "CHA",
+      "city": "Charlotte",
+      "colors": {
+        "primary": "#008CA8"
+      },
+      "logo": null
+    },
+    {
+      "id": "CHI",
+      "league": "NBA",
+      "name": "Bulls",
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "colors": {
+        "primary": "#CE1141"
+      },
+      "logo": null
+    },
+    {
+      "id": "CLE",
+      "league": "NBA",
+      "name": "Cavaliers",
+      "abbreviation": "CLE",
+      "city": "Cleveland",
+      "colors": {
+        "primary": "#860038"
+      },
+      "logo": null
+    },
+    {
+      "id": "DAL",
+      "league": "NBA",
+      "name": "Mavericks",
+      "abbreviation": "DAL",
+      "city": "Dallas",
+      "colors": {
+        "primary": "#00538C"
+      },
+      "logo": null
+    },
+    {
+      "id": "DET",
+      "league": "NBA",
+      "name": "Pistons",
+      "abbreviation": "DET",
+      "city": "Detroit",
+      "colors": {
+        "primary": "#C8102E"
+      },
+      "logo": null
+    },
+    {
+      "id": "HOU",
+      "league": "NBA",
+      "name": "Rockets",
+      "abbreviation": "HOU",
+      "city": "Houston",
+      "colors": {
+        "primary": "#CE1141"
+      },
+      "logo": null
+    },
+    {
+      "id": "IND",
+      "league": "NBA",
+      "name": "Pacers",
+      "abbreviation": "IND",
+      "city": "Indiana",
+      "colors": {
+        "primary": "#FDBB30"
+      },
+      "logo": null
+    },
+    {
+      "id": "LAC",
+      "league": "NBA",
+      "name": "Clippers",
+      "abbreviation": "LAC",
+      "city": "Los Angeles",
+      "colors": {
+        "primary": "#C8102E"
+      },
+      "logo": null
+    },
+    {
+      "id": "MEM",
+      "league": "NBA",
+      "name": "Grizzlies",
+      "abbreviation": "MEM",
+      "city": "Memphis",
+      "colors": {
+        "primary": "#5D76A9"
+      },
+      "logo": null
+    },
+    {
+      "id": "MIL",
+      "league": "NBA",
+      "name": "Bucks",
+      "abbreviation": "MIL",
+      "city": "Milwaukee",
+      "colors": {
+        "primary": "#00471B"
+      },
+      "logo": null
+    },
+    {
+      "id": "MIN",
+      "league": "NBA",
+      "name": "Timberwolves",
+      "abbreviation": "MIN",
+      "city": "Minnesota",
+      "colors": {
+        "primary": "#78BE20"
+      },
+      "logo": null
+    },
+    {
+      "id": "NOP",
+      "league": "NBA",
+      "name": "Pelicans",
+      "abbreviation": "NOP",
+      "city": "New Orleans",
+      "colors": {
+        "primary": "#B4975A"
+      },
+      "logo": null
+    },
+    {
+      "id": "OKC",
+      "league": "NBA",
+      "name": "Thunder",
+      "abbreviation": "OKC",
+      "city": "Oklahoma City",
+      "colors": {
+        "primary": "#007AC1"
+      },
+      "logo": null
+    },
+    {
+      "id": "ORL",
+      "league": "NBA",
+      "name": "Magic",
+      "abbreviation": "ORL",
+      "city": "Orlando",
+      "colors": {
+        "primary": "#0077C0"
+      },
+      "logo": null
+    },
+    {
+      "id": "PHI",
+      "league": "NBA",
+      "name": "76ers",
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "colors": {
+        "primary": "#006BB6"
+      },
+      "logo": null
+    },
+    {
+      "id": "POR",
+      "league": "NBA",
+      "name": "Trail Blazers",
+      "abbreviation": "POR",
+      "city": "Portland",
+      "colors": {
+        "primary": "#E03A3E"
+      },
+      "logo": null
+    },
+    {
+      "id": "SAC",
+      "league": "NBA",
+      "name": "Kings",
+      "abbreviation": "SAC",
+      "city": "Sacramento",
+      "colors": {
+        "primary": "#5A2D81"
+      },
+      "logo": null
+    },
+    {
+      "id": "TOR",
+      "league": "NBA",
+      "name": "Raptors",
+      "abbreviation": "TOR",
+      "city": "Toronto",
+      "colors": {
+        "primary": "#CE1141"
+      },
+      "logo": null
+    },
+    {
+      "id": "UTA",
+      "league": "NBA",
+      "name": "Jazz",
+      "abbreviation": "UTA",
+      "city": "Utah",
+      "colors": {
+        "primary": "#002B5C"
+      },
+      "logo": null
+    },
+    {
+      "id": "WAS",
+      "league": "NBA",
+      "name": "Wizards",
+      "abbreviation": "WAS",
+      "city": "Washington",
+      "colors": {
+        "primary": "#002B5C"
+      },
+      "logo": null
+    }
+  ]
+}
