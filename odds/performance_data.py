@@ -7,6 +7,8 @@ import threading
 import time
 from pathlib import Path
 
+from lib.performance.marquee import resolve_featured_matchup
+from lib.performance.range import reference_date, reference_date_mode
 from lib.performance.resolution import aggregate_points, resolve_profile
 from lib.providers import get_provider
 
@@ -37,12 +39,15 @@ def _meta() -> dict:
         if _meta_cache['payload'] and now - _meta_cache['at'] < 3600:
             return _meta_cache['payload']
         provider = _provider()
+        provider.get_teams('NBA')
         payload = {
             'mode': 'demo',
             'source': provider.meta().get('source', 'demo'),
             'label': provider.meta().get('label', 'Historical performance demo data'),
             'cachedAt': provider.meta().get('cachedAt', int(now)),
             'provider': 'local',
+            'referenceDate': reference_date().isoformat(),
+            'referenceDateMode': reference_date_mode(),
         }
         _meta_cache['payload'] = payload
         _meta_cache['at'] = now
@@ -89,20 +94,21 @@ def _apply_resolution(payload: dict, time_range: str) -> dict:
 
 def get_performance_payload(
     team_id: str,
-    time_range: str = 'week',
+    time_range: str | None = 'week',
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict:
     provider = _provider()
     series = provider.get_performance_series(team_id, time_range, start_date, end_date)
     games = provider.get_games_for_team(team_id, time_range, start_date, end_date)
-    return _apply_resolution({**_meta(), 'series': series, 'games': games}, time_range)
+    resolution_key = time_range or 'week'
+    return _apply_resolution({**_meta(), 'series': series, 'games': games}, resolution_key)
 
 
 def get_matchup_payload(
     team_a: str,
     team_b: str,
-    time_range: str = 'week',
+    time_range: str | None = 'week',
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict:
@@ -110,4 +116,21 @@ def get_matchup_payload(
     matchup = provider.get_matchup_performance_series(
         team_a, team_b, time_range, start_date, end_date,
     )
-    return _apply_resolution({**_meta(), **matchup}, time_range)
+    resolution_key = time_range or 'week'
+    return _apply_resolution({**_meta(), **matchup}, resolution_key)
+
+
+def get_marquee_payload(league: str = 'NBA') -> dict:
+    provider = _provider()
+    teams = provider.get_teams(league)
+    team_ids = {t['id'].upper() for t in teams}
+    from lib.providers.local import _cached_bundle  # noqa: PLC0415
+
+    all_games, _, _ = _cached_bundle()
+    league_upper = league.upper()
+    league_games = [g for g in all_games if g.get('league', 'NBA').upper() == league_upper]
+    featured = resolve_featured_matchup(league_games)
+    if featured['teamA'] not in team_ids or featured['teamB'] not in team_ids:
+        featured['teamA'] = 'BOS'
+        featured['teamB'] = 'NYK'
+    return {**_meta(), **featured}

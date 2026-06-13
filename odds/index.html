@@ -67,11 +67,13 @@
           <div class="sd-hero__chart-head">
             <div class="sd-hero__chart-intro">
               <p class="sd-hero__team-name" id="hero-title">—</p>
+              <p class="sd-hero__featured-headline" id="hero-featured-headline" hidden></p>
               <div class="sd-hero__chart-meta">
                 <p class="sd-hero__range-meta" id="hero-chart-caption">—</p>
                 <span class="sd-hero__meta-sep" aria-hidden="true">·</span>
                 <p class="sd-hero__net-line" id="hero-net-summary" aria-live="polite"></p>
               </div>
+              <p class="sd-hero__last-played" id="hero-last-played" hidden></p>
             </div>
             <div class="sd-hero__stats sd-hero__stats--primary" id="solo-stats">
               <span class="sd-hero__stat"><em>Win %</em><strong id="stat-winpct">—</strong><small id="stat-winpct-move"></small></span>
@@ -88,18 +90,20 @@
           <div class="sd-chart-skeleton" id="hero-chart-skeleton" hidden aria-hidden="true">
             <div class="sd-skeleton sd-skeleton--chart"></div>
           </div>
-          <p class="sd-chart-empty" id="hero-chart-empty">No games in this range — flat performance line</p>
+          <p class="sd-chart-empty" id="hero-chart-empty" hidden></p>
           <div class="sd-chart-tooltip" id="hero-tooltip" hidden role="tooltip"></div>
         </div>
 
         <div class="sd-game-log" id="game-log" aria-labelledby="game-log-heading">
           <h2 class="sd-game-log__heading" id="game-log-heading">Game log</h2>
           <div class="sd-game-log__layout" id="game-log-layout">
-            <div class="sd-game-log__list" id="recent-results" tabindex="0" aria-label="Recent games">
-              <p class="sd-empty">Select a team</p>
+            <div class="sd-game-log__scroll-wrap">
+              <div class="sd-game-log__list" id="recent-results" tabindex="0" aria-label="Recent games">
+                <p class="sd-empty">Select a team</p>
+              </div>
             </div>
             <div class="sd-game-log__ledger" id="game-log-ledger">
-              <span class="sd-game-log__ledger-label">Opponents</span>
+              <span class="sd-game-log__ledger-label">VS RECORD</span>
               <div class="sd-game-log__chips" id="key-opponents"></div>
             </div>
           </div>

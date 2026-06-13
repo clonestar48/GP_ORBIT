@@ -50,7 +50,7 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         resolution='game',
         max_points_per_series=30,
         show_markers=True,
-        show_ghost_opponent=True,
+        show_ghost_opponent=False,
         tooltip_mode='game',
     ),
     'month': ChartResolution(

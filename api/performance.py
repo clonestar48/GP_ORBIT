@@ -16,9 +16,9 @@ class handler(BaseJsonHandler):
     def get_payload(self) -> dict:
         qs = parse_qs(urlparse(self.path).query)
         team_id = (qs.get('teamId') or [''])[0]
-        time_range = (qs.get('range') or ['week'])[0]
         start_date = (qs.get('startDate') or [None])[0]
         end_date = (qs.get('endDate') or [None])[0]
+        time_range = None if start_date and end_date else (qs.get('range') or ['week'])[0]
         if not team_id:
             return {'error': 'teamId required'}
         return get_performance_payload(team_id, time_range, start_date, end_date)

@@ -32,7 +32,7 @@ export const RESOLUTION_BY_PRESET = {
     resolution: 'game',
     maxPointsPerSeries: 30,
     showMarkers: true,
-    showGhostOpponent: true,
+    showGhostOpponent: false,
     tooltipMode: 'game',
   },
   month: {

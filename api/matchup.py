@@ -17,7 +17,7 @@ class handler(BaseJsonHandler):
         qs = parse_qs(urlparse(self.path).query)
         team_a = (qs.get('teamA') or ['SAS'])[0]
         team_b = (qs.get('teamB') or ['NYK'])[0]
-        time_range = (qs.get('range') or ['week'])[0]
         start_date = (qs.get('startDate') or [None])[0]
         end_date = (qs.get('endDate') or [None])[0]
+        time_range = None if start_date and end_date else (qs.get('range') or ['week'])[0]
         return get_matchup_payload(team_a, team_b, time_range, start_date, end_date)

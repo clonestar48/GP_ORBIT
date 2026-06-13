@@ -17,6 +17,7 @@ API_ROUTES = frozenset({
     '/api/teams',
     '/api/performance',
     '/api/matchup',
+    '/api/marquee',
 })
 
 
@@ -43,6 +44,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _serve_api(self, route: str, query: str) -> None:
         from odds.performance_data import (
+            get_marquee_payload,
             get_matchup_payload,
             get_performance_payload,
             get_teams_payload,
@@ -55,9 +57,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 payload = get_teams_payload(league)
             elif route == '/api/performance':
                 team_id = (qs.get('teamId') or [''])[0]
-                time_range = (qs.get('range') or ['week'])[0]
                 start_date = (qs.get('startDate') or [None])[0]
                 end_date = (qs.get('endDate') or [None])[0]
+                time_range = None if start_date and end_date else (qs.get('range') or ['week'])[0]
                 payload = (
                     get_performance_payload(team_id, time_range, start_date, end_date)
                     if team_id else {'error': 'teamId required'}
@@ -65,10 +67,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             elif route == '/api/matchup':
                 team_a = (qs.get('teamA') or ['SAS'])[0]
                 team_b = (qs.get('teamB') or ['NYK'])[0]
-                time_range = (qs.get('range') or ['week'])[0]
                 start_date = (qs.get('startDate') or [None])[0]
                 end_date = (qs.get('endDate') or [None])[0]
+                time_range = None if start_date and end_date else (qs.get('range') or ['week'])[0]
                 payload = get_matchup_payload(team_a, team_b, time_range, start_date, end_date)
+            elif route == '/api/marquee':
+                league = (qs.get('league') or ['NBA'])[0]
+                payload = get_marquee_payload(league)
             else:
                 payload = {'error': 'Not found'}
             body = json.dumps(payload).encode('utf-8')
@@ -85,7 +90,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
+    from lib.ingest.env import load_dotenv
+
     os.chdir(ROOT)
+    load_dotenv(ROOT)
     missing = [path for path in REQUIRED_FILES if not os.path.isfile(path)]
     if missing:
         print('Missing required files (run serve.py from the GP_Orbit project root):')

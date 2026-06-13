@@ -18,6 +18,23 @@ const LANDMARK_PROMINENCE_WIN = 0.9;
 const LANDMARK_PROMINENCE_INDEX = 2;
 const MAX_LANDMARKS_DENSE = 12;
 const MAX_LANDMARKS_DEFAULT = 18;
+const DAY_MS = 86400000;
+const MICRO_Y_SPAN_WIN = 8;
+const MICRO_Y_SPAN_INDEX = 4;
+const MICRO_SERIES_X_OFFSET_PX = 14;
+
+/** Sparse displayed data — keyed on point count, not range preset. */
+export function isMicroChart(allPoints) {
+  if (!allPoints?.length) return false;
+  const normalized = normalizeSeriesPoints(allPoints);
+  const dates = new Set(
+    normalized.map((p) => (p.date || '').slice(0, 10)).filter(Boolean),
+  );
+  const gameCount = normalized.filter((p) => p.gameId && !p.flatline).length;
+  if (dates.size <= 1) return true;
+  if (gameCount <= 2) return true;
+  return false;
+}
 
 /** Preserve game days and flat-run boundaries; cap render cost on long ranges. */
 export function thinPointsForRender(points, maxPoints = MAX_RENDER_POINTS_CEILING) {
@@ -59,6 +76,14 @@ function parseDateMs(dateStr) {
   return Date.parse(`${dateStr.slice(0, 10)}T12:00:00`);
 }
 
+function isoDateFromMs(ms) {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function createDateXFn(points, w, pad) {
   const ms = points
     .map((p) => parseDateMs(p.date))
@@ -73,6 +98,59 @@ function createDateXFn(points, w, pad) {
     if (Number.isNaN(t)) return pad;
     return pad + ((t - t0) / span) * plotW;
   };
+}
+
+/** Pad the time domain so single-day and tiny spans center in the plot. */
+function createMicroDateXFn(allPoints, w, pad) {
+  const ms = allPoints
+    .map((p) => parseDateMs(p.date))
+    .filter((n) => !Number.isNaN(n));
+  let t0 = ms.length ? Math.min(...ms) : 0;
+  let t1 = ms.length ? Math.max(...ms) : t0;
+
+  if (t0 === t1) {
+    t0 -= DAY_MS;
+    t1 += DAY_MS;
+  } else if (t1 - t0 < DAY_MS * 2) {
+    t0 -= DAY_MS * 0.5;
+    t1 += DAY_MS * 0.5;
+  }
+
+  const span = Math.max(t1 - t0, 1);
+  const plotW = Math.max(w - pad * 2, 1);
+
+  return (dateStr) => {
+    const t = parseDateMs(dateStr);
+    if (Number.isNaN(t)) return pad + plotW / 2;
+    return pad + ((t - t0) / span) * plotW;
+  };
+}
+
+function withSeriesXOffset(baseFn, seriesIndex, seriesCount) {
+  if (seriesCount <= 1) return baseFn;
+  const offset = (seriesIndex - (seriesCount - 1) / 2) * MICRO_SERIES_X_OFFSET_PX;
+  return (dateStr) => baseFn(dateStr) + offset;
+}
+
+/** Render-only prior-day point so single-game snapshots draw a short step line. */
+function augmentPointsForMicro(rawPoints) {
+  const normalized = normalizeSeriesPoints(rawPoints);
+  if (normalized.length !== 1) return normalized;
+  const p = normalized[0];
+  if (p.previousValue == null || Number(p.previousValue) === Number(p.value)) {
+    return normalized;
+  }
+  const d = (p.date || '').slice(0, 10);
+  if (!d) return normalized;
+  const prevDate = isoDateFromMs(parseDateMs(d) - DAY_MS);
+  return [{
+    date: prevDate,
+    value: p.previousValue,
+    previousValue: p.previousValue,
+    movementAmount: 0,
+    flatline: true,
+    gameId: null,
+  }, p];
 }
 
 export function downsampleSeriesPoints(points, maxPoints = MAX_RENDER_POINTS_CEILING) {
@@ -454,14 +532,46 @@ function drawGrid(ctx, w, h, pad, yFn, values) {
   }
 }
 
-function yScale(values, h, pad) {
+function drawGridMicro(ctx, w, h, pad) {
+  const plotH = h - pad * 2;
+  const line = 'rgba(61, 139, 130, 0.07)';
+  ctx.lineWidth = 1;
+  for (const frac of [0.35, 0.65]) {
+    const y = pad + frac * plotH;
+    ctx.strokeStyle = line;
+    ctx.beginPath();
+    ctx.moveTo(pad, y);
+    ctx.lineTo(w - pad, y);
+    ctx.stroke();
+  }
+}
+
+function domainFromValues(values, { padFraction = 0.08, minSpan = 0 } = {}) {
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || 1;
-  const padded = span * 0.08;
-  const lo = min - padded;
-  const hi = max + padded;
-  return (v) => pad + (1 - (v - lo) / (hi - lo || 1)) * (h - pad * 2);
+  let span = max - min;
+  if (span < minSpan) {
+    const mid = (min + max) / 2;
+    return { lo: mid - minSpan / 2, hi: mid + minSpan / 2 };
+  }
+  const padded = (span || 1) * padFraction;
+  return { lo: min - padded, hi: max + padded };
+}
+
+function yScaleFromDomain(lo, hi, h, pad) {
+  const span = hi - lo || 1;
+  return (v) => pad + (1 - (v - lo) / span) * (h - pad * 2);
+}
+
+function yScale(values, h, pad) {
+  const { lo, hi } = domainFromValues(values);
+  return yScaleFromDomain(lo, hi, h, pad);
+}
+
+function yScaleMicro(values, metric, h, pad) {
+  const minSpan = metric === 'winPct' ? MICRO_Y_SPAN_WIN : MICRO_Y_SPAN_INDEX;
+  const { lo, hi } = domainFromValues(values, { minSpan, padFraction: 0.06 });
+  return yScaleFromDomain(lo, hi, h, pad);
 }
 
 function enrichGamePoints(gamePoints) {
@@ -474,16 +584,21 @@ function enrichGamePoints(gamePoints) {
 }
 
 function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hoverHit = null) {
-  const rawPoints = normalizeSeriesPoints(points);
+  let rawPoints = normalizeSeriesPoints(points);
   if (!rawPoints.length) return { segments: [] };
 
   const profile = meta.profile ?? resolveProfile(meta.rangePreset);
-  const xFn = createDateXFn(rawPoints, w, pad);
+  const micro = meta.micro === true;
+  if (micro) rawPoints = augmentPointsForMicro(rawPoints);
+
+  const xFn = meta.xFn ?? createDateXFn(rawPoints, w, pad);
   const maxPts = maxRenderPointsForWidth(w, pad, profile);
   const dense = meta.dense === true;
+  const lineBucketPx = micro ? 0.75 : MIN_LINE_BUCKET_PX;
   const renderPoints = aggregatePointsByX(
     downsampleSeriesPoints(rawPoints, maxPts),
     xFn,
+    lineBucketPx,
   );
 
   const isContext = meta.layer === 'context';
@@ -639,10 +754,17 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
   const chartProfile = profile ?? resolveProfile(rangePreset);
   const dense = isDenseProfile(chartProfile);
   const allPoints = valid.flatMap((s) => normalizeSeriesPoints(s.points));
+  const micro = isMicroChart(allPoints);
   const values = allPoints.map((p) => p.value);
-  const yFn = yScale(values, h, pad);
+  const primaryMetric = valid.find((s) => s.layer !== 'context')?.metric
+    || valid[0]?.metric
+    || 'winPct';
+  const yFn = micro
+    ? yScaleMicro(values, primaryMetric, h, pad)
+    : yScale(values, h, pad);
 
-  drawGrid(ctx, w, h, pad, yFn, values);
+  if (micro) drawGridMicro(ctx, w, h, pad);
+  else drawGrid(ctx, w, h, pad, yFn, values);
 
   const ordered = [...valid].sort((a, b) => {
     const aCtx = a.layer === 'context' ? 0 : 1;
@@ -650,7 +772,30 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
     return aCtx - bCtx;
   });
 
+  const primarySeries = ordered.filter((s) => s.layer !== 'context');
+  const gameDates = new Set(
+    allPoints
+      .filter((p) => p.gameId && !p.flatline)
+      .map((p) => (p.date || '').slice(0, 10)),
+  );
+  const sameDayCluster = gameDates.size <= 1 && gameDates.size > 0;
+  const microBaseXFn = micro ? createMicroDateXFn(allPoints, w, pad) : null;
+  let primaryIndex = 0;
+
   ordered.forEach((teamSeries) => {
+    const isContext = teamSeries.layer === 'context';
+    let xFn = null;
+    if (micro && microBaseXFn) {
+      if (isContext) {
+        xFn = microBaseXFn;
+      } else {
+        xFn = sameDayCluster
+          ? withSeriesXOffset(microBaseXFn, primaryIndex, primarySeries.length)
+          : microBaseXFn;
+        primaryIndex += 1;
+      }
+    }
+
     drawOneSeries(ctx, teamSeries.points, teamSeries.color || '#5da396', w, pad, yFn, hitAreas, {
       teamName: teamSeries.teamName,
       teamId: teamSeries.teamId,
@@ -659,6 +804,8 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
       layer: teamSeries.layer || 'primary',
       ghostHover: teamSeries.layer === 'context' && ghostHover,
       dense,
+      micro,
+      xFn,
       profile: chartProfile,
       rangePreset: chartProfile.preset,
       showMarkers: chartProfile.showMarkers,
@@ -784,7 +931,7 @@ function landmarkLabel(kind) {
 export function formatTooltipHtml(hit) {
   const p = hit.point;
   if (!p) return '';
-  const metric = hit.metric || (hit.teamName ? 'index' : 'winPct');
+  const metric = hit.metric || 'winPct';
   const ml = metricLabel(metric);
   const suffix = metric === 'winPct' ? '%' : '';
   const landmark = hit.landmarkKind ? landmarkLabel(hit.landmarkKind) : null;

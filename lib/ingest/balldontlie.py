@@ -10,6 +10,7 @@ from .schema import validate_game
 
 BASE = 'https://api.balldontlie.io/v1'
 PROVIDER = 'balldontlie'
+FINAL_STATUSES = frozenset({'final', 'final/ot', 'final/2ot'})
 
 
 def _team_abbrev(team: dict | None) -> str | None:
@@ -30,7 +31,11 @@ def _row_id(game_id: int, date: str, home: str, away: str, team: str) -> str:
 
 def normalize_balldontlie_game(raw: dict[str, Any]) -> list[dict[str, Any]]:
     """Map one balldontlie game to two perspective rows (home + visitor)."""
-    if raw.get('status') and str(raw['status']).lower() not in ('final', 'final/ot', 'final/2ot'):
+    if raw.get('postseason'):
+        return []
+
+    status = str(raw.get('status') or '').lower()
+    if status and status not in FINAL_STATUSES:
         return []
 
     home = _team_abbrev(raw.get('home_team'))
@@ -86,20 +91,31 @@ def normalize_balldontlie_game(raw: dict[str, Any]) -> list[dict[str, Any]]:
 def fetch_games_page(
     api_key: str,
     *,
-    page: int = 1,
+    cursor: int | None = None,
     per_page: int = 100,
     seasons: list[int] | None = None,
+    postseason: bool | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict[str, Any]:
-    """Fetch one page of raw games. Raises on network or auth failure."""
-    params = [f'per_page={per_page}', f'page={page}']
+    """Fetch one cursor page of raw games. Raises on network or auth failure."""
+    params = [f'per_page={per_page}']
+    if cursor is not None:
+        params.append(f'cursor={cursor}')
     if seasons:
         params.extend(f'seasons[]={season}' for season in seasons)
+    if postseason is not None:
+        params.append(f'postseason={"true" if postseason else "false"}')
+    if start_date:
+        params.append(f'start_date={start_date}')
+    if end_date:
+        params.append(f'end_date={end_date}')
     url = f'{BASE}/games?{"&".join(params)}'
     raw = get_json(url, headers={'Authorization': api_key})
     return {
         'provider': PROVIDER,
         'endpoint': 'games',
-        'page': page,
+        'cursor': cursor,
         'raw': raw,
     }
 
@@ -107,20 +123,28 @@ def fetch_games_page(
 def collect_balldontlie_games(
     api_key: str,
     *,
-    max_pages: int = 1,
+    max_pages: int | None = 1,
     per_page: int = 100,
     seasons: list[int] | None = None,
+    postseason: bool | None = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Paginate balldontlie and return normalized rows plus sync stats."""
+    """Paginate balldontlie (cursor-based) and return normalized rows plus sync stats."""
     rows: list[dict[str, Any]] = []
     stats = {'pages': 0, 'rawGames': 0, 'skipped': 0, 'rows': 0}
+    cursor: int | None = None
+    page_limit = max_pages if max_pages is not None else 10_000
 
-    for page in range(1, max_pages + 1):
+    while stats['pages'] < page_limit:
         payload = fetch_games_page(
             api_key,
-            page=page,
+            cursor=cursor,
             per_page=per_page,
             seasons=seasons,
+            postseason=postseason,
+            start_date=start_date,
+            end_date=end_date,
         )
         stats['pages'] += 1
         body = payload.get('raw') or {}
@@ -137,9 +161,10 @@ def collect_balldontlie_games(
                 stats['skipped'] += 1
 
         meta = body.get('meta') or {}
-        total_pages = int(meta.get('total_pages') or page)
-        if page >= total_pages:
+        next_cursor = meta.get('next_cursor')
+        if next_cursor is None:
             break
+        cursor = int(next_cursor)
 
     stats['rows'] = len(rows)
     return rows, stats
