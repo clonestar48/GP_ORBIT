@@ -107,6 +107,26 @@ def _daily_points(
     return points
 
 
+def _dedupe_points_by_date(points: list[dict]) -> list[dict]:
+    """Keep one point per calendar day; prefer game points over flatlines."""
+    by_date: dict[str, dict] = {}
+    for p in sorted(points, key=lambda x: x.get('date', '')):
+        key = (p.get('date') or '')[:10]
+        if not key:
+            continue
+        prev = by_date.get(key)
+        if not prev:
+            by_date[key] = p
+            continue
+        p_game = p.get('gameId') and not p.get('flatline')
+        prev_game = prev.get('gameId') and not prev.get('flatline')
+        if p_game and not prev_game:
+            by_date[key] = p
+        elif p_game == prev_game:
+            by_date[key] = p
+    return [by_date[k] for k in sorted(by_date.keys())]
+
+
 def _series_meta(range_query: RangeQuery, metric: str, game_count: int, points: list) -> dict[str, Any]:
     meta = range_query.to_dict()
     return {
@@ -163,6 +183,7 @@ def build_win_pct_series(
 
     initial = prior_pct if prior else 50.0
     points = _daily_points(start, end, games_by_date, initial, on_game)
+    points = _dedupe_points_by_date(points)
     meta = _series_meta(rq, 'winPct', len(in_range), points)
     meta['startDate'] = start.isoformat()
     return meta
@@ -199,6 +220,7 @@ def build_index_series(
         }
 
     points = _daily_points(start, end, games_by_date, initial, on_game)
+    points = _dedupe_points_by_date(points)
     meta = _series_meta(rq, 'index', len(in_range), points)
     meta['startDate'] = start.isoformat()
     return meta

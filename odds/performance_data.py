@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 
+from lib.performance.resolution import aggregate_points, resolve_profile
 from lib.providers import get_provider
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -53,6 +54,39 @@ def get_teams_payload(league: str = 'NBA') -> dict:
     return {**_meta(), 'teams': provider.get_teams(league)}
 
 
+def _apply_resolution(payload: dict, time_range: str) -> dict:
+    profile = resolve_profile(time_range)
+    resolution = profile.to_dict()
+
+    series = payload.get('series')
+    if isinstance(series, list):
+        payload = {
+            **payload,
+            'series': [
+                {
+                    **entry,
+                    'points': aggregate_points(entry.get('points') or [], profile),
+                }
+                for entry in series
+            ],
+        }
+    elif isinstance(series, dict) and series.get('points') is not None:
+        payload = {
+            **payload,
+            'series': {
+                **series,
+                'points': aggregate_points(series.get('points') or [], profile),
+            },
+        }
+    elif payload.get('points') is not None and not payload.get('error'):
+        payload = {
+            **payload,
+            'points': aggregate_points(payload.get('points') or [], profile),
+        }
+
+    return {**payload, 'resolution': resolution}
+
+
 def get_performance_payload(
     team_id: str,
     time_range: str = 'week',
@@ -62,7 +96,7 @@ def get_performance_payload(
     provider = _provider()
     series = provider.get_performance_series(team_id, time_range, start_date, end_date)
     games = provider.get_games_for_team(team_id, time_range, start_date, end_date)
-    return {**_meta(), 'series': series, 'games': games}
+    return _apply_resolution({**_meta(), 'series': series, 'games': games}, time_range)
 
 
 def get_matchup_payload(
@@ -76,4 +110,4 @@ def get_matchup_payload(
     matchup = provider.get_matchup_performance_series(
         team_a, team_b, time_range, start_date, end_date,
     )
-    return {**_meta(), **matchup}
+    return _apply_resolution({**_meta(), **matchup}, time_range)

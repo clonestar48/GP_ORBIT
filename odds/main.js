@@ -6,13 +6,22 @@
 import {
   drawMatchupChart,
   drawPerformanceChart,
+  findContextHit,
   findHit,
+  formatContextTooltipHtml,
   formatTooltipHtml,
   setupCanvas,
 } from './performanceChart.js';
 import { createRange, rangeLabel, rangeToQuery } from './range.js';
+import { ghostOpponentEnabled as isGhostOpponentRange, resolveProfile } from './resolution.js';
+import { TeamPicker } from './teamPicker.js';
 
 const $ = (sel) => document.querySelector(sel);
+
+const teamPickers = {};
+
+const GAME_LOG_VISIBLE = 4;
+const GAME_LOG_MAX = 10;
 
 const state = {
   teams: [],
@@ -24,9 +33,12 @@ const state = {
   range: createRange({ preset: 'week', mode: 'franchise', metric: 'winPct' }),
   teamSeries: null,
   teamGames: [],
+  contextOpponentId: null,
+  contextSeries: null,
   matchup: null,
   heroHitAreas: [],
   hoverHit: null,
+  ghostHover: false,
   loading: false,
   errors: [],
 };
@@ -63,21 +75,56 @@ function emptyStateHtml({ title, detail = '' }) {
 function setLoading(loading) {
   state.loading = loading;
   const chartSkeleton = $('#hero-chart-skeleton');
-  const summarySkeleton = $('#market-summary-skeleton');
   const wrap = $('#hero-chart-wrap');
-  const summaryBody = $('#market-summary-body');
+  const netSummary = $('#hero-net-summary');
 
   if (loading) {
     chartSkeleton.hidden = false;
-    summarySkeleton.hidden = false;
     wrap?.classList.add('is-loading');
-    summaryBody?.classList.remove('is-loaded');
-    summaryBody.innerHTML = '';
+    if (netSummary) {
+      netSummary.textContent = '';
+      netSummary.classList.remove('is-loaded');
+    }
   } else {
     chartSkeleton.hidden = true;
-    summarySkeleton.hidden = true;
     wrap?.classList.remove('is-loading');
   }
+}
+
+function ghostOpponentEnabled() {
+  return isGhostOpponentRange(state.range.preset, state.heroMode === 'solo');
+}
+
+/** Pick a single opponent for the ghost layer — today or week only. */
+function resolveContextOpponent(games) {
+  if (!games?.length) return null;
+
+  if (state.range.preset === 'today') {
+    const sorted = [...games].sort((a, b) => b.date.localeCompare(a.date));
+    return sorted[0]?.opponent ?? null;
+  }
+
+  const counts = {};
+  for (const g of games) {
+    if (!g.opponent) continue;
+    counts[g.opponent] = (counts[g.opponent] || 0) + 1;
+  }
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return null;
+  if (ranked.length === 1) return ranked[0][0];
+  const [top, second] = ranked;
+  if (top[1] > second[1]) return top[0];
+  return null;
+}
+
+function seriesWithTeamColor(series, teamId) {
+  const team = findTeam(teamId);
+  return {
+    ...series,
+    teamId,
+    teamName: team ? `${team.city} ${team.name}` : teamId,
+    color: series?.color || team?.colors?.primary || '#5da396',
+  };
 }
 
 function soloRange() {
@@ -111,33 +158,31 @@ function matchupUrl(range) {
 /* ------------------------------------------------------------- chrome */
 
 function renderHeader() {
-  const updated = $('#last-updated');
-  if (state.meta?.cachedAt) {
-    updated.textContent = `Updated ${new Date(state.meta.cachedAt * 1000).toLocaleTimeString()}`;
-  }
   const banner = $('#status-banner');
   if (state.errors.length) {
     banner.hidden = false;
+    banner.classList.remove('is-notice');
     banner.textContent = state.errors.join(' ');
-  } else if (state.meta?.label) {
-    banner.hidden = false;
-    banner.classList.add('is-notice');
-    banner.textContent = state.meta.label;
   } else {
     banner.hidden = true;
+    banner.classList.remove('is-notice');
   }
 }
 
 /* ------------------------------------------------------------- teams */
 
 function teamCardHtml(team) {
+  const color = team.colors?.primary || '#5da396';
   const selected = team.id === state.selectedTeamId;
   return `
-    <button type="button" class="sd-card sd-team-card${selected ? ' is-selected' : ''}"
-      data-team-id="${team.id}">
-      <span class="sd-team-card__swatch" style="background:${team.colors?.primary || '#5da396'}"></span>
-      <span class="sd-team-card__name">${team.city} ${team.name}</span>
-      <span class="sd-team-card__abbr">${team.abbreviation}</span>
+    <button type="button" class="sd-team-chip${selected ? ' is-selected' : ''}"
+      data-team-id="${team.id}" data-league="${team.league || 'NBA'}"
+      style="--team-color: ${color}"
+      title="${team.city} ${team.name}"
+      aria-pressed="${selected ? 'true' : 'false'}"
+      aria-label="${team.city} ${team.name}">
+      <span class="sd-team-chip__swatch" aria-hidden="true"></span>
+      <span class="sd-team-chip__abbr">${team.abbreviation}</span>
     </button>`;
 }
 
@@ -151,41 +196,111 @@ function renderTeamList() {
     return;
   }
   el.innerHTML = state.teams.map(teamCardHtml).join('');
-  el.querySelectorAll('.sd-team-card').forEach((btn) => {
+  el.querySelectorAll('.sd-team-chip').forEach((btn) => {
     btn.addEventListener('click', () => selectTeam(btn.dataset.teamId));
+  });
+  el.querySelector('.sd-team-chip.is-selected')
+    ?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  requestAnimationFrame(updateTeamExplorerScroll);
+}
+
+function initTeamPickers() {
+  teamPickers.matchupA = new TeamPicker('#matchup-team-a', {
+    label: 'Team A',
+    teams: state.teams,
+    value: state.teamA,
+    onChange: (id) => {
+      state.teamA = id;
+      loadData();
+    },
+  });
+  teamPickers.matchupB = new TeamPicker('#matchup-team-b', {
+    label: 'Team B',
+    teams: state.teams,
+    value: state.teamB,
+    onChange: (id) => {
+      state.teamB = id;
+      loadData();
+    },
   });
 }
 
-function populateTeamSelects() {
-  const opts = state.teams.map((t) =>
-    `<option value="${t.id}">${t.city} ${t.name}</option>`,
-  ).join('');
-  $('#solo-team').innerHTML = opts;
-  $('#solo-team').value = state.selectedTeamId;
-  $('#matchup-team-a').innerHTML = opts;
-  $('#matchup-team-b').innerHTML = opts;
-  $('#matchup-team-a').value = state.teamA;
-  $('#matchup-team-b').value = state.teamB;
+function syncTeamPickers() {
+  if (!teamPickers.matchupA) return;
+  teamPickers.matchupA.setTeams(state.teams);
+  teamPickers.matchupB.setTeams(state.teams);
+  teamPickers.matchupA.setValue(state.teamA, { silent: true });
+  teamPickers.matchupB.setValue(state.teamB, { silent: true });
+}
+
+function updateTeamExplorerScroll() {
+  const list = $('#team-list');
+  const wrap = list?.closest('.sd-team-explorer__scroll-wrap');
+  if (!list || !wrap) return;
+
+  const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth);
+  const overflowing = maxScroll > 4;
+  wrap.classList.toggle('is-overflowing', overflowing);
+  wrap.classList.toggle('is-at-start', !overflowing || list.scrollLeft <= 4);
+  wrap.classList.toggle('is-at-end', !overflowing || list.scrollLeft >= maxScroll - 4);
+}
+
+function bindTeamExplorerScroll() {
+  const list = $('#team-list');
+  const wrap = list?.closest('.sd-team-explorer__scroll-wrap');
+  if (!list || !wrap || list.dataset.scrollBound === '1') return;
+  list.dataset.scrollBound = '1';
+
+  list.addEventListener('scroll', updateTeamExplorerScroll, { passive: true });
+  window.addEventListener('resize', updateTeamExplorerScroll);
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => updateTeamExplorerScroll());
+    observer.observe(list);
+  }
+
+  list.addEventListener('wheel', (event) => {
+    if (list.scrollWidth <= list.clientWidth) return;
+    if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    list.scrollLeft += event.deltaY;
+  }, { passive: false });
+
+  requestAnimationFrame(updateTeamExplorerScroll);
+}
+
+function teamDisplayName(id) {
+  const team = findTeam(id);
+  return team ? `${team.city} ${team.name}` : id ?? '—';
+}
+
+function teamAbbrev(id) {
+  const team = findTeam(id);
+  return team?.abbreviation ?? id ?? '—';
+}
+
+function teamMatchupTitle(teamAId, teamBId) {
+  return `${teamAbbrev(teamAId)} vs ${teamAbbrev(teamBId)}`;
 }
 
 function renderHeroContext() {
   const isSolo = state.heroMode === 'solo';
   const isMatchup = state.heroMode === 'matchup';
 
-  $('#solo-context').hidden = !isSolo;
-  $('#matchup-context').hidden = !isMatchup;
+  $('#team-explorer').hidden = !isSolo;
+  $('#solo-stats').hidden = !isSolo;
+  $('#matchup-row').hidden = !isMatchup;
+
+  if (isSolo) requestAnimationFrame(updateTeamExplorerScroll);
 
   if (isSolo) {
-    const team = findTeam(state.selectedTeamId);
-    $('#hero-title').textContent = 'Franchise Trend';
-    $('#hero-meta').textContent = team
-      ? `${team.city} ${team.name} · ${rangeLabel(state.range)}`
-      : 'Select a team';
+    const title = $('#hero-title');
+    title.textContent = teamDisplayName(state.selectedTeamId);
+    title.removeAttribute('title');
   } else if (isMatchup) {
-    const teamA = findTeam(state.teamA);
-    const teamB = findTeam(state.teamB);
-    $('#hero-title').textContent = 'Head-to-Head';
-    $('#hero-meta').textContent = `${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · ${rangeLabel(state.range)}`;
+    const title = $('#hero-title');
+    title.textContent = teamMatchupTitle(state.teamA, state.teamB);
+    title.title = `${teamDisplayName(state.teamA)} vs ${teamDisplayName(state.teamB)}`;
   }
   // Future: heroMode === 'league' → show league context, hide solo + matchup
 }
@@ -223,20 +338,36 @@ function renderSoloStats() {
   }
 }
 
+function gamePointsEnriched() {
+  const raw = (state.teamSeries?.points || [])
+    .filter((p) => p.gameId && !p.flatline)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return raw.map((p, i) => {
+    const prevVal = p.previousValue ?? (i > 0 ? raw[i - 1].value : p.value);
+    const move = p.movementAmount ?? Number((p.value - prevVal).toFixed(2));
+    return { ...p, previousValue: prevVal, movementAmount: move };
+  });
+}
+
+function gamePointLookup() {
+  const byId = new Map();
+  const byDate = new Map();
+  for (const p of gamePointsEnriched()) {
+    byId.set(p.gameId, p);
+    byDate.set(p.date, p);
+  }
+  return { byId, byDate };
+}
+
+function formatMovePct(amount) {
+  if (amount == null || Number.isNaN(Number(amount)) || amount === 0) return null;
+  return `${amount > 0 ? '+' : ''}${Number(amount).toFixed(1)}%`;
+}
+
 function significantPoint(gamePoints) {
   if (!gamePoints.length) return null;
   return [...gamePoints].sort((a, b) =>
     Math.abs(b.movementAmount ?? 0) - Math.abs(a.movementAmount ?? 0))[0];
-}
-
-function formSnippet(games, limit = 4) {
-  const streak = games
-    .slice()
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, limit)
-    .map((g) => g.result);
-  if (!streak.length) return null;
-  return streak.join(' · ');
 }
 
 function netMetricChange(gamePoints, metric) {
@@ -248,151 +379,121 @@ function netMetricChange(gamePoints, metric) {
   return { start: first, end: last, delta };
 }
 
-function renderMarketSummary() {
-  const body = $('#market-summary-body');
-  const skeleton = $('#market-summary-skeleton');
-  if (!body) return;
-
-  if (state.loading) {
-    body.innerHTML = '';
-    body.classList.remove('is-loaded');
-    skeleton.hidden = false;
-    return;
+function aggregateOpponents(games, limit = 5) {
+  const map = new Map();
+  for (const g of games) {
+    if (!g.opponent) continue;
+    let entry = map.get(g.opponent);
+    if (!entry) {
+      entry = { id: g.opponent, wins: 0, losses: 0, lastDate: g.date };
+      map.set(g.opponent, entry);
+    }
+    if (g.result === 'W') entry.wins += 1;
+    else entry.losses += 1;
+    if (g.date > entry.lastDate) entry.lastDate = g.date;
   }
-
-  skeleton.hidden = true;
-
-  if (state.heroMode === 'matchup') {
-    body.innerHTML = buildMatchupSummary();
-  } else {
-    body.innerHTML = buildSoloSummary();
-  }
-
-  requestAnimationFrame(() => body.classList.add('is-loaded'));
+  return [...map.values()]
+    .sort((a, b) => {
+      const diff = (b.wins + b.losses) - (a.wins + a.losses);
+      return diff !== 0 ? diff : b.lastDate.localeCompare(a.lastDate);
+    })
+    .slice(0, limit);
 }
 
-function buildSoloSummary() {
-  const team = findTeam(state.selectedTeamId);
+function buildSoloNetLine() {
   const label = rangeLabel(state.range);
   const series = state.teamSeries;
 
   if (series?.error) {
-    return emptyStateHtml({
-      title: 'Summary unavailable',
-      detail: series.error,
-    });
+    return `<span class="sd-hero__net-line--muted">Summary unavailable — ${series.error}</span>`;
   }
 
   const gamePoints = (series?.points || []).filter((p) => p.gameId && !p.flatline);
-  const stats = latestGameStats(state.teamGames);
-  const metricName = 'Win %';
-  const suffix = '%';
-
   if (!gamePoints.length) {
     const isToday = state.range.preset === 'today';
-    return `
-      <div class="sd-market-summary__content">
-        <div class="sd-market-summary__head">
-          <strong class="sd-market-summary__team">${team ? `${team.city} ${team.name}` : '—'}</strong>
-          <span class="sd-market-summary__range">${label}</span>
-        </div>
-        <p class="sd-market-summary__note">${isToday
-    ? 'No games scheduled today — performance holds at the current level.'
-    : 'No games in this range — the chart shows a flat performance line.'}</p>
-      </div>`;
+    return `<span class="sd-hero__net-line--muted">${isToday
+      ? 'No games scheduled today — performance holds at the current level.'
+      : 'No games in this range — the chart shows a flat performance line.'}</span>`;
   }
 
   const net = netMetricChange(gamePoints, 'winPct');
   const sig = significantPoint(gamePoints);
-  const form = formSnippet(state.teamGames);
-  const deltaCls = movementClass(net?.delta ?? 0);
-  const sigCls = sig?.result === 'W' ? 'is-up' : 'is-down';
-  const sigVerb = sig?.result === 'W' ? 'Win' : 'Loss';
+  const parts = [];
 
-  return `
-    <div class="sd-market-summary__content">
-      <div class="sd-market-summary__head">
-        <strong class="sd-market-summary__team">${team ? `${team.city} ${team.name}` : '—'}</strong>
-        <span class="sd-market-summary__range">${label}</span>
-      </div>
-      <div class="sd-market-summary__stats">
-        <span class="sd-market-summary__stat">Record: <strong>${stats.record ?? '—'}</strong></span>
-        <span class="sd-market-summary__stat">${metricName}: <strong>${net?.end ?? '—'}${suffix}</strong>${net?.delta != null && net.delta !== 0
-    ? ` <em class="${deltaCls}">${net.delta > 0 ? '+' : ''}${net.delta}${suffix}</em>`
-    : ''}</span>
-      </div>
-      ${sig ? `
-        <p class="sd-market-summary__event">
-          <span class="sd-market-summary__event-label">Most significant event</span>
-          <span class="${sigCls}">${sigVerb} vs ${opponentLabel(sig.opponentId)}, ${sig.pointsFor}–${sig.pointsAgainst}</span>
-        </p>` : ''}
-      ${form ? `<p class="sd-market-summary__form">Recent form · ${form}</p>` : ''}
-    </div>`;
+  if (net?.delta != null && net.delta !== 0) {
+    const cls = movementClass(net.delta);
+    parts.push(`Net <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}%</em>`);
+  } else {
+    parts.push('Net unchanged');
+  }
+
+  if (sig && Math.abs(sig.movementAmount ?? 0) > 0) {
+    const opp = sig.opponentId ?? '—';
+    const move = formatMovePct(sig.movementAmount);
+    const cls = movementClass(sig.movementAmount ?? 0);
+    parts.push(`Largest swing vs ${opp} <em class="${cls}">${move}</em>`);
+  }
+
+  if (!parts.length) {
+    return `<span class="sd-hero__net-line--muted">${label} · No net movement in this range.</span>`;
+  }
+
+  return parts.join(' · ');
 }
 
-function buildMatchupSummary() {
+function buildMatchupNetLine() {
   const teamA = findTeam(state.teamA);
   const teamB = findTeam(state.teamB);
   const label = rangeLabel(state.range);
   const matchup = state.matchup;
 
   if (matchup?.error) {
-    return emptyStateHtml({
-      title: 'Matchup summary unavailable',
-      detail: matchup.error,
-    });
+    return `<span class="sd-hero__net-line--muted">Matchup summary unavailable — ${matchup.error}</span>`;
   }
 
   if (!matchup?.series?.length) {
-    return emptyStateHtml({
-      title: 'No matchup data',
-      detail: 'Select two teams and a range with overlapping games.',
-    });
+    return '<span class="sd-hero__net-line--muted">Select two teams and a range with overlapping games.</span>';
   }
 
   const allGamePoints = matchup.series.flatMap((s) =>
-    (s.points || []).filter((p) => p.gameId && !p.flatline).map((p) => ({ ...p, teamName: s.teamName, teamId: s.teamId })),
+    (s.points || []).filter((p) => p.gameId && !p.flatline),
   );
 
   if (!allGamePoints.length) {
-    return `
-      <div class="sd-market-summary__content">
-        <div class="sd-market-summary__head">
-          <strong class="sd-market-summary__team">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB}</strong>
-          <span class="sd-market-summary__range">${label}</span>
-        </div>
-        <p class="sd-market-summary__note">No games for either team in this range.</p>
-      </div>`;
+    return `<span class="sd-hero__net-line--muted">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · No games in this range.</span>`;
   }
 
-  const sig = significantPoint(allGamePoints);
-  const sigCls = sig?.result === 'W' ? 'is-up' : 'is-down';
-  const sigVerb = sig?.result === 'W' ? 'Win' : 'Loss';
-
-  const teamLines = matchup.series.map((s) => {
+  const parts = [];
+  for (const s of matchup.series) {
     const pts = (s.points || []).filter((p) => p.gameId && !p.flatline);
     const net = netMetricChange(pts, 'index');
-    const cls = movementClass(net?.delta ?? 0);
-    return `<span class="sd-market-summary__stat">${s.teamName}: <strong>${net?.end ?? '—'}</strong>${net?.delta != null && net.delta !== 0
-      ? ` <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}</em>`
-      : ''}</span>`;
-  }).join('');
+    const abbr = findTeam(s.teamId)?.abbreviation ?? s.teamId;
+    if (net?.delta != null && net.delta !== 0) {
+      const cls = movementClass(net.delta);
+      parts.push(`${abbr} index <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}</em>`);
+    } else {
+      parts.push(`${abbr} index unchanged`);
+    }
+  }
 
-  return `
-    <div class="sd-market-summary__content">
-      <div class="sd-market-summary__head">
-        <strong class="sd-market-summary__team">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB}</strong>
-        <span class="sd-market-summary__range">${label}</span>
-      </div>
-      <div class="sd-market-summary__stats sd-market-summary__stats--matchup">
-        ${teamLines}
-      </div>
-      ${sig ? `
-        <p class="sd-market-summary__event">
-          <span class="sd-market-summary__event-label">Most significant event</span>
-          <span class="${sigCls}">${sig.teamName} · ${sigVerb} vs ${opponentLabel(sig.opponentId)}, ${sig.pointsFor}–${sig.pointsAgainst}</span>
-        </p>` : ''}
-    </div>`;
+  return parts.join(' · ');
+}
+
+function renderMarketSummary() {
+  const el = $('#hero-net-summary');
+  if (!el) return;
+
+  if (state.loading) {
+    el.textContent = '';
+    el.classList.remove('is-loaded');
+    return;
+  }
+
+  el.innerHTML = state.heroMode === 'matchup'
+    ? buildMatchupNetLine()
+    : buildSoloNetLine();
+
+  requestAnimationFrame(() => el.classList.add('is-loaded'));
 }
 
 function heroEmptyState({ title, detail }) {
@@ -403,17 +504,19 @@ function heroEmptyState({ title, detail }) {
 
 function renderHeroLegend() {
   const legend = $('#hero-legend');
-  if (state.heroMode !== 'matchup' || !state.matchup?.series?.length) {
-    legend.hidden = true;
-    return;
-  }
-  legend.hidden = false;
-  legend.innerHTML = state.matchup.series.map((s) => `
+  if (!legend) return;
+
+  if (state.heroMode === 'matchup' && state.matchup?.series?.length) {
+    legend.innerHTML = state.matchup.series.map((s) => `
     <span class="sd-legend-item">
       <span class="sd-legend-swatch" style="background:${s.color}"></span>
       <span>${s.teamName}</span>
       <span class="sd-legend-meta">Index · ${s.gameCount} game${s.gameCount === 1 ? '' : 's'}</span>
     </span>`).join('');
+    return;
+  }
+
+  legend.innerHTML = '';
 }
 
 function renderHeroChart() {
@@ -422,11 +525,14 @@ function renderHeroChart() {
   const caption = $('#hero-chart-caption');
   const tooltip = $('#hero-tooltip');
   const { ctx, w, h } = setupCanvas(canvas);
+  const chartWrap = canvas.closest('.sd-chart-wrap');
 
   if (!state.hoverHit) tooltip.hidden = true;
   state.heroHitAreas = [];
+  chartWrap?.classList.remove('has-ghost-opponent');
   renderHeroContext();
   renderHeroLegend();
+  renderMarketSummary();
 
   if (state.heroMode === 'solo') {
     renderSoloStats();
@@ -452,9 +558,24 @@ function renderHeroChart() {
     caption.textContent = gamePoints.length
       ? `${rangeLabel(state.range)} · Win % · ${series.gameCount} game${series.gameCount === 1 ? '' : 's'}`
       : 'No games in this range — flat performance line';
-    const colored = { ...series, color: series.color || findTeam(state.selectedTeamId)?.colors?.primary };
-    const result = drawPerformanceChart(ctx, w, h, colored, state.hoverHit);
-    state.heroHitAreas = (result.hitAreas || []).map((hit) => ({ ...hit, metric: 'winPct' }));
+    const colored = seriesWithTeamColor(series, state.selectedTeamId);
+    const contextColored = state.contextSeries && state.contextOpponentId
+      ? seriesWithTeamColor(state.contextSeries, state.contextOpponentId)
+      : null;
+    const wrap = chartWrap;
+    wrap?.classList.toggle('has-ghost-opponent', !!contextColored);
+    const primaryHover = state.hoverHit?.layer === 'context' ? null : state.hoverHit;
+    const chartProfile = resolveProfile(state.range.preset);
+    const result = drawPerformanceChart(ctx, w, h, colored, primaryHover, {
+      contextSeries: contextColored,
+      ghostHover: state.ghostHover,
+      rangePreset: chartProfile.preset,
+      profile: chartProfile,
+    });
+    state.heroHitAreas = (result.hitAreas || []).map((hit) => ({
+      ...hit,
+      metric: hit.metric || 'winPct',
+    }));
     return;
   }
 
@@ -476,71 +597,163 @@ function renderHeroChart() {
     return;
   }
   empty.style.display = 'none';
-  const teamA = findTeam(state.teamA);
-  const teamB = findTeam(state.teamB);
+  const gameCount = Math.max(0, ...matchup.series.map((s) => s.gameCount ?? 0));
   const hasGames = matchup.series.some((s) =>
     (s.points || []).some((p) => p.gameId && !p.flatline));
   caption.textContent = hasGames
-    ? `${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · ${rangeLabel(state.range)} · Performance index`
+    ? `${rangeLabel(state.range)} · Performance index · ${gameCount} game${gameCount === 1 ? '' : 's'}`
     : 'No games in this range for either team';
-  const result = drawMatchupChart(ctx, w, h, matchup, state.hoverHit);
+  const chartProfile = resolveProfile(state.range.preset);
+  const result = drawMatchupChart(ctx, w, h, matchup, state.hoverHit, {
+    rangePreset: chartProfile.preset,
+    profile: chartProfile,
+  });
   state.heroHitAreas = (result.hitAreas || []).map((hit) => ({ ...hit, metric: 'index' }));
 }
 
-function renderRecentResults() {
-  const el = $('#recent-results');
-  const games = [...state.teamGames].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
-  if (!games.length) {
+function formatResultDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function ledgerOpponents(games, recentGames, limit = 5) {
+  const recentIds = new Set(recentGames.map((g) => g.opponent));
+  return aggregateOpponents(games, 12).filter((row) => {
+    const gp = row.wins + row.losses;
+    if (gp > 1) return true;
+    return !recentIds.has(row.id);
+  }).slice(0, limit);
+}
+
+function opponentSwatchHtml(opponentId) {
+  const team = findTeam(opponentId);
+  const color = team?.colors?.primary || '#5da396';
+  return `<span class="sd-log-swatch" style="--team-color: ${color}" aria-hidden="true"></span>`;
+}
+
+function opponentChipHtml(row, { isContext = false } = {}) {
+  const team = findTeam(row.id);
+  const fullName = team ? `${team.city} ${team.name}` : row.id;
+  const label = team?.abbreviation ?? row.id;
+  const color = team?.colors?.primary || '#5da396';
+  const gp = row.wins + row.losses;
+  const recordCls = row.wins > row.losses ? 'is-up' : row.wins < row.losses ? 'is-down' : '';
+  const tip = `${fullName} · ${row.wins}–${row.losses} (${gp} gp) · last ${formatResultDate(row.lastDate)}`;
+  const safeTip = tip.replace(/"/g, '&quot;');
+  return `
+    <div class="sd-opp-chip${isContext ? ' sd-opp-chip--context' : ''}" style="--team-color: ${color}" title="${safeTip}">
+      <span class="sd-log-swatch" style="--team-color: ${color}" aria-hidden="true"></span>
+      <span class="sd-opp-chip__abbr">${label}</span>
+      <span class="sd-opp-chip__record ${recordCls}">${row.wins}–${row.losses}</span>
+      ${isContext ? '<span class="sd-opp-chip__tag">Chart</span>' : ''}
+    </div>`;
+}
+
+const GAME_LOG_LEDGER_NOTE = 'Single-game opponents appear above.';
+
+function renderGameLogLedger({ games, recent, isSolo }) {
+  const oppEl = $('#key-opponents');
+  const ledgerEl = $('#game-log-ledger');
+  if (!oppEl || !ledgerEl) return;
+
+  if (!isSolo) {
+    oppEl.innerHTML = `<p class="sd-game-log__note">${GAME_LOG_LEDGER_NOTE}</p>`;
+    return;
+  }
+
+  const ledger = ledgerOpponents(games, recent);
+  if (!ledger.length) {
+    oppEl.innerHTML = `<p class="sd-game-log__note">${GAME_LOG_LEDGER_NOTE}</p>`;
+    return;
+  }
+
+  oppEl.innerHTML = ledger.map((row) => {
+    const isContext = ghostOpponentEnabled() && state.contextOpponentId === row.id;
+    return opponentChipHtml(row, { isContext });
+  }).join('');
+}
+
+function renderGameLog() {
+  const recentEl = $('#recent-results');
+  const isSolo = state.heroMode === 'solo';
+
+  const games = [...state.teamGames].sort((a, b) => b.date.localeCompare(a.date));
+  const recent = games.slice(0, GAME_LOG_MAX);
+
+  if (!recent.length) {
     const isToday = state.range.preset === 'today';
-    el.innerHTML = emptyStateHtml({
+    recentEl.innerHTML = emptyStateHtml({
       title: isToday ? 'No games today' : 'No results in this range',
       detail: isToday
         ? 'Check back when the schedule has final scores.'
         : 'Widen the timeline or pick another team.',
     });
+    renderGameLogLedger({ games, recent, isSolo });
     return;
   }
-  el.innerHTML = games.map((g) => {
+
+  const { byId, byDate } = gamePointLookup();
+  const gamePoints = [...byId.values()];
+  const sigPoint = significantPoint(gamePoints);
+
+  recentEl.innerHTML = recent.map((g) => {
+    const pt = byId.get(g.id) || byDate.get(g.date);
     const cls = g.result === 'W' ? 'is-up' : 'is-down';
+    const move = pt?.movementAmount;
+    const moveText = formatMovePct(move);
+    const moveCls = movementClass(move ?? 0);
+    const isSwing = sigPoint && pt && sigPoint.gameId === pt.gameId
+      && Math.abs(move ?? 0) > 0;
+    const score = g.teamScore != null ? `${g.teamScore} – ${g.opponentScore}` : `${pt?.pointsFor ?? '—'} – ${pt?.pointsAgainst ?? '—'}`;
+    const opp = findTeam(g.opponent);
+    const oppShort = opp ? `${opp.city} ${opp.name}` : g.opponent;
+
     return `
-      <div class="sd-card sd-form-card">
-        <div class="sd-card__top">
-          <span class="sd-card__matchup ${cls}">${g.result === 'W' ? 'W' : 'L'} vs ${g.opponent}</span>
-          <span class="sd-card__time">${g.date}</span>
+      <div class="sd-log-row sd-log-row--game${isSwing ? ' sd-log-row--swing' : ''}">
+        ${opponentSwatchHtml(g.opponent)}
+        <span class="sd-log-row__badge ${cls}">${g.result === 'W' ? 'W' : 'L'}</span>
+        <div class="sd-log-row__main">
+          <span class="sd-log-row__title">${oppShort}</span>
+          <span class="sd-log-row__sub ${cls}">${score}</span>
+          ${isSwing ? '<span class="sd-log-row__tag">Largest swing</span>' : ''}
         </div>
-        <div class="sd-card__row">
-          <span class="sd-card__score ${cls}">${g.teamScore} – ${g.opponentScore}</span>
-          <span class="sd-card__status is-final">Final</span>
+        <div class="sd-log-row__stat">
+          <span class="sd-log-row__value ${moveText ? moveCls : 'is-flat'}">${moveText ?? '—'}</span>
+          <span class="sd-log-row__stat-label">move</span>
         </div>
+        <time class="sd-log-row__date" datetime="${g.date}">${formatResultDate(g.date)}</time>
       </div>`;
   }).join('');
-}
 
-function renderHistoricalMovement() {
-  const el = $('#historical-movement');
-  const gamePoints = (state.teamSeries?.points || []).filter((p) => p.gameId && !p.flatline);
-  if (!gamePoints.length) {
-    el.innerHTML = emptyStateHtml({
-      title: 'No movement in this range',
-      detail: 'Game-day swings appear here when results shift the trend.',
-    });
-    return;
-  }
-  const swings = [...gamePoints]
-    .sort((a, b) => Math.abs(b.movementAmount ?? 0) - Math.abs(a.movementAmount ?? 0))
-    .slice(0, 5);
-
-  el.innerHTML = swings.map((p) => `
-    <div class="sd-move-row">
-      <span class="sd-move-row__matchup">${p.date} vs ${p.opponentId}</span>
-      <span class="sd-move-row__delta ${movementClass(p.movementAmount)}">${(p.movementAmount ?? 0) > 0 ? '+' : ''}${(p.movementAmount ?? 0).toFixed(1)}%</span>
-    </div>`).join('');
+  renderGameLogLedger({ games, recent, isSolo });
 }
 
 function renderPanels() {
-  renderRecentResults();
-  renderHistoricalMovement();
+  renderGameLog();
   renderTeamList();
+}
+
+async function loadContextOpponent() {
+  state.contextOpponentId = null;
+  state.contextSeries = null;
+  if (!ghostOpponentEnabled()) return;
+
+  const oppId = resolveContextOpponent(state.teamGames);
+  if (!oppId || oppId === state.selectedTeamId) return;
+
+  try {
+    const payload = await fetchJson(performanceUrl(oppId, soloRange()));
+    if (payload.error && !payload.series) return;
+    if (payload.series?.points?.length) {
+      state.contextOpponentId = oppId;
+      state.contextSeries = payload.series;
+    }
+  } catch {
+    state.contextOpponentId = null;
+    state.contextSeries = null;
+  }
 }
 
 async function loadPanelData() {
@@ -577,18 +790,25 @@ async function loadMatchupHero() {
 async function loadData() {
   state.errors = [];
   state.hoverHit = null;
+  state.ghostHover = false;
   setLoading(true);
   try {
     await loadPanelData();
-    if (state.heroMode === 'matchup') {
+    if (state.heroMode === 'solo') {
+      await loadContextOpponent();
+      state.matchup = null;
+    } else if (state.heroMode === 'matchup') {
+      state.contextOpponentId = null;
+      state.contextSeries = null;
       await loadMatchupHero();
     } else {
       state.matchup = null;
+      state.contextOpponentId = null;
+      state.contextSeries = null;
     }
   } finally {
     setLoading(false);
     renderHeroChart();
-    renderMarketSummary();
     renderPanels();
     renderHeader();
   }
@@ -596,9 +816,13 @@ async function loadData() {
 
 function selectTeam(teamId) {
   state.selectedTeamId = teamId;
-  if (state.heroMode === 'solo') {
-    $('#solo-team').value = teamId;
-  }
+  loadData();
+}
+
+function flipToContextOpponent() {
+  const nextId = state.contextOpponentId;
+  if (!nextId || state.heroMode !== 'solo') return;
+  state.selectedTeamId = nextId;
   loadData();
 }
 
@@ -606,7 +830,9 @@ function setHeroMode(mode) {
   if (mode !== 'solo' && mode !== 'matchup') return;
   state.heroMode = mode;
   document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.heroMode === mode);
+    const active = btn.dataset.heroMode === mode;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
   loadData();
 }
@@ -614,7 +840,9 @@ function setHeroMode(mode) {
 function setRange(preset) {
   state.range = createRange({ preset, mode: state.heroMode === 'solo' ? 'franchise' : 'matchup', metric: state.heroMode === 'solo' ? 'winPct' : 'index' });
   document.querySelectorAll('[data-range]').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.range === preset);
+    const active = btn.dataset.range === preset;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
   loadData();
 }
@@ -630,75 +858,110 @@ function bindControls() {
     btn.addEventListener('click', () => setRange(btn.dataset.range));
   });
 
-  $('#solo-team').addEventListener('change', (e) => {
-    state.selectedTeamId = e.target.value;
-    loadData();
-  });
-
-  $('#matchup-team-a').addEventListener('change', (e) => {
-    state.teamA = e.target.value;
-    loadData();
-  });
-
-  $('#matchup-team-b').addEventListener('change', (e) => {
-    state.teamB = e.target.value;
-    loadData();
-  });
-
   const canvas = $('#hero-chart');
   const tooltip = $('#hero-tooltip');
   const wrap = canvas?.closest('.sd-chart-wrap');
   let hoverRaf = null;
 
-  canvas?.addEventListener('mousemove', (e) => {
-    if (!state.heroHitAreas.length || !wrap) {
-      tooltip.hidden = true;
-      if (state.hoverHit) {
-        state.hoverHit = null;
-        renderHeroChart();
-      }
-      canvas.style.cursor = 'default';
-      return;
-    }
+  function chartPoint(e) {
     const rect = canvas.getBoundingClientRect();
-    const hit = findHit(state.heroHitAreas, e.clientX - rect.left, e.clientY - rect.top);
-    if (!hit) {
-      tooltip.hidden = true;
-      canvas.style.cursor = 'default';
-      if (state.hoverHit) {
-        state.hoverHit = null;
-        cancelAnimationFrame(hoverRaf);
-        hoverRaf = requestAnimationFrame(() => renderHeroChart());
-      }
-      return;
-    }
-    canvas.style.cursor = 'crosshair';
-    tooltip.innerHTML = formatTooltipHtml(hit);
-    tooltip.hidden = false;
+    return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+  }
+
+  function positionTooltip(e) {
     const wrapRect = wrap.getBoundingClientRect();
     const tipW = tooltip.offsetWidth;
     const tipH = tooltip.offsetHeight;
     let left = e.clientX - wrapRect.left + 14;
     let top = e.clientY - wrapRect.top - tipH - 10;
     if (left + tipW > wrapRect.width - 8) left = e.clientX - wrapRect.left - tipW - 14;
+    if (left < 8) left = 8;
     if (top < 8) top = e.clientY - wrapRect.top + 14;
+    if (top + tipH > wrapRect.height - 8) top = wrapRect.height - tipH - 8;
     tooltip.style.left = `${left}px`;
     tooltip.style.top = `${top}px`;
+  }
 
-    const changed = state.hoverHit?.point !== hit.point || state.hoverHit?.teamId !== hit.teamId;
-    if (changed) {
-      state.hoverHit = { point: hit.point, teamId: hit.teamId };
+  function clearChartHover() {
+    tooltip.hidden = true;
+    canvas.style.cursor = 'default';
+    const needsRedraw = state.hoverHit || state.ghostHover;
+    state.hoverHit = null;
+    state.ghostHover = false;
+    if (needsRedraw) {
       cancelAnimationFrame(hoverRaf);
       hoverRaf = requestAnimationFrame(() => renderHeroChart());
     }
-  });
-  canvas?.addEventListener('mouseleave', () => {
-    tooltip.hidden = true;
-    canvas.style.cursor = 'default';
-    if (state.hoverHit) {
-      state.hoverHit = null;
-      renderHeroChart();
+  }
+
+  function updateChartHover(e) {
+    if (!wrap) return;
+
+    const { mx, my } = chartPoint(e);
+    const hit = state.heroHitAreas.length ? findHit(state.heroHitAreas, mx, my) : null;
+    const contextHit = !hit && state.contextOpponentId
+      ? findContextHit(state.heroHitAreas, mx, my)
+      : null;
+
+    if (!hit && !contextHit) {
+      clearChartHover();
+      return;
     }
+
+    if (hit) {
+      canvas.style.cursor = 'crosshair';
+      tooltip.innerHTML = formatTooltipHtml(hit);
+      tooltip.hidden = false;
+      positionTooltip(e);
+      const changed = state.hoverHit?.point !== hit.point
+        || state.hoverHit?.teamId !== hit.teamId
+        || state.ghostHover;
+      state.hoverHit = { point: hit.point, teamId: hit.teamId, layer: 'primary' };
+      state.ghostHover = false;
+      if (changed) {
+        cancelAnimationFrame(hoverRaf);
+        hoverRaf = requestAnimationFrame(() => renderHeroChart());
+      }
+      return;
+    }
+
+    canvas.style.cursor = 'pointer';
+    tooltip.innerHTML = formatContextTooltipHtml(contextHit.teamName);
+    tooltip.hidden = false;
+    positionTooltip(e);
+    if (!state.ghostHover) {
+      state.ghostHover = true;
+      state.hoverHit = null;
+      cancelAnimationFrame(hoverRaf);
+      hoverRaf = requestAnimationFrame(() => renderHeroChart());
+    }
+  }
+
+  canvas?.addEventListener('pointermove', updateChartHover);
+  canvas?.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    canvas.setPointerCapture(e.pointerId);
+    updateChartHover(e);
+  });
+  canvas?.addEventListener('pointerup', (e) => {
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    if (e.pointerType !== 'mouse') clearChartHover();
+  });
+  canvas?.addEventListener('pointerleave', clearChartHover);
+  canvas?.addEventListener('pointercancel', clearChartHover);
+
+  canvas?.addEventListener('click', (e) => {
+    if (state.heroMode !== 'solo' || !state.contextOpponentId) return;
+    const { mx, my } = chartPoint(e);
+    if (findHit(state.heroHitAreas, mx, my)) return;
+    if (findContextHit(state.heroHitAreas, mx, my)) flipToContextOpponent();
+  });
+
+  document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
+    btn.setAttribute('aria-pressed', btn.classList.contains('is-active') ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-range]').forEach((btn) => {
+    btn.setAttribute('aria-pressed', btn.classList.contains('is-active') ? 'true' : 'false');
   });
 }
 
@@ -717,7 +980,9 @@ async function init() {
     state.teams = [];
   }
 
-  populateTeamSelects();
+  initTeamPickers();
+  syncTeamPickers();
+  bindTeamExplorerScroll();
   bindControls();
   await loadData();
 }

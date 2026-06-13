@@ -4,86 +4,84 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#080a0e">
-  <title>Performance Market — GP Orbit</title>
+  <title>Orbit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/fonts.css">
   <link rel="stylesheet" href="/odds/style.css">
 </head>
 <body>
   <div class="sd-app">
-    <header class="sd-header sd-header--compact">
-      <div class="sd-header__left">
-        <a class="sd-back" href="/">← Orbit</a>
-        <div class="sd-brand">
-          <span class="sd-brand__tag">Lab</span>
-          <h1 class="sd-brand__title">Performance Market</h1>
-        </div>
-      </div>
-      <div class="sd-header__right">
-        <span class="sd-flag sd-flag--demo" id="mode-badge">DEMO DATA</span>
-        <p class="sd-updated" id="last-updated">Loading…</p>
-      </div>
+    <header class="sd-header sd-header--brand">
+      <a class="sd-orbit-logo" href="/">Orbit</a>
     </header>
 
-    <p class="sd-mission">Historical team performance — franchise trends, head-to-head analytics, and recent results. Research only.</p>
     <div class="sd-status" id="status-banner" hidden></div>
 
     <main class="sd-main">
       <section class="sd-hero sd-hero--primary" aria-label="Performance chart">
-        <div class="sd-hero__controls">
-          <div class="sd-hero__control-row">
+        <div class="sd-hero__stack">
+          <div class="sd-hero__control-row sd-hero__control-row--split">
             <div class="sd-toggle-group sd-mode-group" role="group" aria-label="Chart mode">
               <button type="button" class="sd-toggle is-active" data-hero-mode="solo">Solo</button>
               <button type="button" class="sd-toggle" data-hero-mode="matchup">Matchup</button>
               <button type="button" class="sd-toggle sd-toggle--soon" data-hero-mode="league" disabled title="Coming soon">League</button>
             </div>
-          </div>
-
-          <div class="sd-hero__control-row sd-hero__control-row--context">
-            <div class="sd-hero__context" id="solo-context">
-              <label class="sd-pick sd-pick--inline">
-                <span class="sd-pick__label">Team</span>
-                <select id="solo-team" class="sd-select" aria-label="Selected team"></select>
-              </label>
-              <div class="sd-hero__stats" id="solo-stats">
-                <span class="sd-hero__stat"><em>Win %</em><strong id="stat-winpct">—</strong><small id="stat-winpct-move"></small></span>
-                <span class="sd-hero__stat"><em>Record</em><strong id="stat-record">—</strong></span>
-                <span class="sd-hero__stat"><em>Games</em><strong id="stat-games">—</strong></span>
-              </div>
-            </div>
-
-            <div class="sd-hero__context" id="matchup-context" hidden>
-              <div class="sd-matchup-picks sd-matchup-picks--compact">
-                <label class="sd-pick sd-pick--inline">
-                  <span class="sd-pick__label">Team A</span>
-                  <select id="matchup-team-a" class="sd-select" aria-label="Team A"></select>
-                </label>
-                <span class="sd-matchup-vs">vs</span>
-                <label class="sd-pick sd-pick--inline">
-                  <span class="sd-pick__label">Team B</span>
-                  <select id="matchup-team-b" class="sd-select" aria-label="Team B"></select>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="sd-hero__control-row">
             <div class="sd-toggle-group sd-range-group" role="group" aria-label="Timeline">
               <button type="button" class="sd-toggle" data-range="today">Today</button>
               <button type="button" class="sd-toggle is-active" data-range="week">Week</button>
               <button type="button" class="sd-toggle" data-range="month">Month</button>
-              <button type="button" class="sd-toggle" data-range="10y">10Y</button>
+              <button type="button" class="sd-toggle" data-range="season">Season</button>
               <button type="button" class="sd-toggle" data-range="all">All</button>
+            </div>
+          </div>
+
+          <div class="sd-hero__mode-slot">
+            <nav class="sd-team-explorer sd-hero__mode-panel" id="team-explorer" aria-label="Team explorer" data-explorer-scope="franchise">
+              <div class="sd-team-explorer__scroll-wrap">
+                <button type="button" class="sd-team-explorer__arrow sd-team-explorer__arrow--prev" aria-label="Scroll teams left" hidden></button>
+                <div class="sd-team-explorer__rows" id="team-list">
+                  <p class="sd-empty">Loading…</p>
+                </div>
+                <button type="button" class="sd-team-explorer__arrow sd-team-explorer__arrow--next" aria-label="Scroll teams right" hidden></button>
+              </div>
+            </nav>
+
+            <div class="sd-hero__mode-panel sd-hero__mode-panel--matchup" id="matchup-row" hidden>
+              <div class="sd-hero__matchup-bar">
+                <div class="sd-hero__matchup-pick">
+                  <span class="sd-pick__label sd-sr-only">Team A</span>
+                  <div id="matchup-team-a" class="sd-team-picker-host"></div>
+                </div>
+                <span class="sd-matchup-vs" aria-hidden="true">vs</span>
+                <div class="sd-hero__matchup-pick">
+                  <span class="sd-pick__label sd-sr-only">Team B</span>
+                  <div id="matchup-team-b" class="sd-team-picker-host"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sd-hero__chart-head">
+            <div class="sd-hero__chart-intro">
+              <p class="sd-hero__team-name" id="hero-title">—</p>
+              <div class="sd-hero__chart-meta">
+                <p class="sd-hero__range-meta" id="hero-chart-caption">—</p>
+                <span class="sd-hero__meta-sep" aria-hidden="true">·</span>
+                <p class="sd-hero__net-line" id="hero-net-summary" aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="sd-hero__stats sd-hero__stats--primary" id="solo-stats">
+              <span class="sd-hero__stat"><em>Win %</em><strong id="stat-winpct">—</strong><small id="stat-winpct-move"></small></span>
+              <span class="sd-hero__stat"><em>Record</em><strong id="stat-record">—</strong></span>
+              <span class="sd-hero__stat"><em>Games</em><strong id="stat-games">—</strong></span>
             </div>
           </div>
         </div>
 
-        <div class="sd-hero__chart-head">
-          <h2 class="sd-hero__title" id="hero-title">Franchise Trend</h2>
-          <p class="sd-hero__meta" id="hero-meta">—</p>
-        </div>
-
-        <div class="sd-compare__legend" id="hero-legend" hidden></div>
+        <div class="sd-compare__legend" id="hero-legend"></div>
 
         <div class="sd-chart-wrap sd-chart-wrap--primary" id="hero-chart-wrap">
           <canvas id="hero-chart" aria-label="Performance chart"></canvas>
@@ -93,42 +91,20 @@
           <p class="sd-chart-empty" id="hero-chart-empty">No games in this range — flat performance line</p>
           <div class="sd-chart-tooltip" id="hero-tooltip" hidden role="tooltip"></div>
         </div>
-        <p class="sd-chart-caption" id="hero-chart-caption">Cumulative win percentage — movement only on game days</p>
 
-        <aside class="sd-market-summary" id="market-summary" aria-live="polite">
-          <div class="sd-market-summary__skeleton sd-skeleton-block" id="market-summary-skeleton" hidden>
-            <div class="sd-skeleton sd-skeleton--line sd-skeleton--lg"></div>
-            <div class="sd-skeleton sd-skeleton--line"></div>
-            <div class="sd-skeleton sd-skeleton--line sd-skeleton--sm"></div>
+        <div class="sd-game-log" id="game-log" aria-labelledby="game-log-heading">
+          <h2 class="sd-game-log__heading" id="game-log-heading">Game log</h2>
+          <div class="sd-game-log__layout" id="game-log-layout">
+            <div class="sd-game-log__list" id="recent-results" tabindex="0" aria-label="Recent games">
+              <p class="sd-empty">Select a team</p>
+            </div>
+            <div class="sd-game-log__ledger" id="game-log-ledger">
+              <span class="sd-game-log__ledger-label">Opponents</span>
+              <div class="sd-game-log__chips" id="key-opponents"></div>
+            </div>
           </div>
-          <div class="sd-market-summary__body" id="market-summary-body"></div>
-        </aside>
+        </div>
       </section>
-
-      <div class="sd-panels">
-        <div class="sd-panels__row sd-panels__row--primary">
-          <section class="sd-panel sd-panel--emphasis sd-panel--wide" aria-label="Recent results">
-            <h2 class="sd-section-label">Recent results</h2>
-            <div class="sd-panel__body" id="recent-results">
-              <p class="sd-empty">Select a team</p>
-            </div>
-          </section>
-        </div>
-        <div class="sd-panels__row sd-panels__row--secondary">
-          <section class="sd-panel sd-panel--muted" aria-label="Teams">
-            <h2 class="sd-section-label">Teams</h2>
-            <div class="sd-panel__body sd-team-list" id="team-list">
-              <p class="sd-empty">Loading…</p>
-            </div>
-          </section>
-          <section class="sd-panel sd-panel--muted" aria-label="Historical movement">
-            <h2 class="sd-section-label">Historical movement</h2>
-            <div class="sd-panel__body" id="historical-movement">
-              <p class="sd-empty">Select a team</p>
-            </div>
-          </section>
-        </div>
-      </div>
     </main>
   </div>
   <script type="module" src="/odds/main.js"></script>

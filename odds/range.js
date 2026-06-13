@@ -4,7 +4,7 @@ export const RANGE_LABELS = {
   today: 'Today',
   week: 'Past Week',
   month: 'Past Month',
-  '10y': 'Past 10 Years',
+  season: 'Current Season',
   all: 'All Time',
 };
 
@@ -24,9 +24,10 @@ function presetDates(preset, ref = new Date()) {
     start.setDate(start.getDate() - 29);
     return { startDate: isoDate(start), endDate: isoDate(end) };
   }
-  if (preset === '10y') {
-    start.setFullYear(start.getFullYear() - 10);
-    return { startDate: isoDate(start), endDate: isoDate(end) };
+  if (preset === 'season') {
+    const startYear = end.getMonth() >= 9 ? end.getFullYear() : end.getFullYear() - 1;
+    const seasonStart = new Date(startYear, 9, 1);
+    return { startDate: isoDate(seasonStart), endDate: isoDate(end) };
   }
   if (preset === 'all') {
     return { startDate: '1900-01-01', endDate: isoDate(end) };

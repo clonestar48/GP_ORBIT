@@ -10,7 +10,7 @@ RANGE_LABELS = {
     'today': 'Today',
     'week': 'Past Week',
     'month': 'Past Month',
-    '10y': 'Past 10 Years',
+    'season': 'Current Season',
     'all': 'All Time',
 }
 
@@ -48,8 +48,9 @@ def preset_dates(preset: str, reference: date | None = None) -> tuple[date, date
         return ref - timedelta(days=6), ref
     if preset == 'month':
         return ref - timedelta(days=29), ref
-    if preset == '10y':
-        return ref.replace(year=ref.year - 10), ref
+    if preset == 'season':
+        start_year = ref.year if ref.month >= 10 else ref.year - 1
+        return date(start_year, 10, 1), ref
     if preset == 'all':
         return date(1900, 1, 1), ref
     raise ValueError(f'Unknown preset: {preset}')
