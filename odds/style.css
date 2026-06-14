@@ -19,7 +19,7 @@
   --sd-app-pad-y: max(var(--sd-panel-pad), env(safe-area-inset-top, 0px));
   --sd-grid-gap-inline: var(--orbit-grid-gap);
   --sd-grid-gap-stack: var(--orbit-grid-gap);
-  --sd-stack-gap: var(--orbit-grid-gap);
+  --sd-stack-gap: var(--orbit-zone-gap);
   --sd-toggle-h: 2.35rem;
   --sd-toggle-radius-group: 8px;
   --sd-toggle-radius-btn: 6px;
@@ -43,7 +43,7 @@
   --sd-hero-title-lh: 1.25;
   --sd-hero-meta-fs: 0.68rem;
   --sd-hero-meta-lh: 1.35;
-  --sd-hero-intro-gap: var(--sd-line);
+  --sd-hero-intro-gap: var(--orbit-zone-gap-tight);
   --sd-stats-block-h: calc(var(--sd-rule) * 3 + var(--sd-inset-gap) * 2 + var(--sd-line));
   --sd-ledger-row-h: calc(var(--sd-rule) * 2 + var(--sd-inset-gap));
   --sd-game-log-visible: 5;
@@ -69,6 +69,12 @@
   --orbit-stat-label-fs: 0.64rem;
   --orbit-stat-value-fs: var(--sd-hero-title-fs);
   --orbit-stat-date-fs: 0.92rem;
+
+  /* Layout zones — laptop baseline; stable workspace grid */
+  --orbit-zone-gap: var(--space-md);
+  --orbit-zone-gap-tight: var(--space-sm);
+  --orbit-mode-slot-h: calc(var(--sd-control-h) + var(--space-xs));
+  --orbit-legend-h: var(--space-lg);
 }
 
 *,
@@ -131,7 +137,7 @@ body {
 
 .sd-header--brand {
   padding: 0;
-  margin-bottom: var(--sd-line);
+  margin-bottom: var(--orbit-zone-gap);
 }
 
 .sd-orbit-logo {
@@ -687,30 +693,33 @@ button.sd-log-row--action:focus-visible {
   width: min(100%, var(--team-explorer-cap-width));
 }
 
-/* Solo / Matchup context — stacked panels keep a stable slot height */
+/* Solo / Matchup context — one visible panel; stable slot height across modes */
 .sd-hero__mode-slot {
   position: relative;
-  z-index: 2;
+  z-index: 0;
   width: 100%;
   min-width: 0;
   display: grid;
-  grid-template-areas: 'mode-panel';
-  min-height: calc(var(--sd-control-h) + var(--sd-inset-gap) + 1.2rem);
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  align-items: center;
+  min-height: var(--orbit-mode-slot-h);
+  overflow: visible;
 }
 
 .sd-hero__mode-panel {
-  grid-area: mode-panel;
+  grid-column: 1;
+  grid-row: 1;
   width: 100%;
+  min-width: 0;
 }
 
 .sd-hero__mode-panel[hidden] {
-  display: block !important;
-  visibility: hidden;
-  pointer-events: none;
-  z-index: 0;
+  display: none !important;
 }
 
 .sd-hero__mode-panel:not([hidden]) {
+  position: relative;
   z-index: 1;
 }
 
@@ -775,10 +784,11 @@ button.sd-log-row--action:focus-visible {
   grid-template-rows: auto auto auto;
   grid-auto-flow: column;
   column-gap: calc(var(--sd-rule) * 4);
-  row-gap: var(--sd-inset-gap);
+  row-gap: var(--orbit-zone-gap-tight);
   justify-items: end;
   align-items: end;
-  min-height: var(--sd-stats-block-h);
+  align-self: flex-end;
+  min-height: 0;
 }
 
 .sd-hero__stats.sd-hero__stats--primary .sd-hero__stat {
@@ -882,12 +892,6 @@ button.sd-log-row--action:focus-visible {
   text-overflow: ellipsis;
 }
 
-@media (min-width: 761px) {
-  .sd-hero__team-name {
-    padding-top: calc(var(--sd-rule) + var(--sd-inset-gap));
-  }
-}
-
 .sd-hero__featured-headline {
   display: flex;
   flex-wrap: wrap;
@@ -900,8 +904,7 @@ button.sd-log-row--action:focus-visible {
 }
 
 .sd-hero__featured-headline[hidden] {
-  display: flex !important;
-  visibility: hidden;
+  display: none !important;
 }
 
 .sd-hero__featured-label {
@@ -975,9 +978,13 @@ button.sd-log-row--action:focus-visible {
   position: relative;
   width: 100%;
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
   --team-explorer-fade: 0.85rem;
-  padding-top: var(--space-xs);
+  padding-top: 0;
+}
+
+.sd-hero__stack .sd-team-explorer__scroll-wrap {
+  overflow: visible;
 }
 
 .sd-team-explorer__scroll-wrap.is-overflowing.is-at-end:not(.is-at-start)::before,
@@ -1141,7 +1148,6 @@ button.sd-log-row--action:focus-visible {
 @media (hover: hover) {
   .sd-team-chip:hover {
     z-index: 2;
-    transform: translateY(-1px);
   }
 }
 
@@ -1173,8 +1179,16 @@ button.sd-log-row--action:focus-visible {
 }
 
 @media (min-width: 900px) {
+  :root {
+    --orbit-zone-gap: var(--space-lg);
+  }
+
   .sd-team-explorer {
     padding: 1rem 0 0.75rem;
+  }
+
+  .sd-hero__stack .sd-team-explorer {
+    padding: 0;
   }
 
   .sd-hero__stats.sd-hero__stats--primary {
@@ -1289,6 +1303,9 @@ button.sd-log-row--action:focus-visible {
     grid-template-columns: repeat(3, 1fr);
     column-gap: var(--sd-line);
     justify-items: start;
+    align-self: stretch;
+    padding-top: 0;
+    border-top: none;
   }
 
   .sd-hero__stats.sd-hero__stats--primary .sd-hero__stat em,
@@ -1335,7 +1352,15 @@ button.sd-log-row--action:focus-visible {
   }
 }
 
-/* ── Hero (primary) ─────────────────────────────────────────── */
+/* ── Hero (primary) — fixed vertical zones ─────────────────────
+   1. Logo row (.sd-header--brand)
+   2. Controls row (.sd-hero__control-row--split)
+   3. Selector row (.sd-hero__mode-slot — team chips or matchup pickers)
+   4. Hero + metadata (.sd-hero__chart-head)
+   5. Chart legend (.sd-compare__legend)
+   6. Chart (.sd-chart-wrap--primary)
+   7. Game log (.sd-game-log)
+   Zone spacing: --orbit-zone-gap (12px laptop · 16px ≥900px) ── */
 
 .sd-hero--primary {
   background: transparent;
@@ -1345,13 +1370,13 @@ button.sd-log-row--action:focus-visible {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: var(--sd-stack-gap);
+  gap: var(--orbit-zone-gap);
 }
 
 .sd-hero__stack {
   display: flex;
   flex-direction: column;
-  gap: var(--sd-stack-gap);
+  gap: var(--orbit-zone-gap);
 }
 
 .sd-hero__stack > .sd-hero__control-row--split:first-of-type,
@@ -1382,7 +1407,8 @@ button.sd-log-row--action:focus-visible {
 
 .sd-hero__control-row--split {
   position: relative;
-  z-index: 0;
+  z-index: 1;
+  isolation: isolate;
   justify-content: space-between;
   align-items: center;
   gap: var(--sd-rule) var(--sd-line);
@@ -1486,10 +1512,10 @@ button.sd-log-row--action:focus-visible {
 
 .sd-hero__chart-head {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--sd-grid-gap-inline);
-  padding: var(--sd-inset-gap) 0 0;
+  gap: var(--space-md);
+  padding: 0;
   margin: 0;
   overflow: visible;
 }
@@ -1608,12 +1634,6 @@ button.sd-log-row--action:focus-visible {
 
 .sd-hero__stats[hidden] {
   display: none !important;
-}
-
-.sd-hero__chart-head .sd-hero__stats.sd-hero__stats--primary[hidden] {
-  display: grid !important;
-  visibility: hidden;
-  pointer-events: none;
 }
 
 .sd-hero__stat {
@@ -1983,10 +2003,14 @@ button.sd-log-row--action:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--sd-inset-gap) var(--sd-line);
-  min-height: var(--sd-legend-row-h);
+  gap: var(--orbit-zone-gap-tight) var(--space-md);
+  min-height: var(--orbit-legend-h);
   margin: 0;
   font-size: 0.75rem;
+}
+
+.sd-compare__legend:empty {
+  min-height: var(--orbit-legend-h);
 }
 
 /* ── Supporting panels (tiered) ───────────────────────────── */
@@ -3295,8 +3319,8 @@ button.sd-log-row--action:focus-visible {
   }
 
   .sd-hero__stats.sd-hero__stats--primary {
-    padding-top: 0.12rem;
-    border-top: 1px solid rgba(var(--teal-rgb), 0.08);
+    padding-top: 0;
+    border-top: none;
   }
 
   .sd-compare__legend {
@@ -3406,8 +3430,8 @@ button.sd-log-row--action:focus-visible {
   .sd-hero__chart-head {
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: flex-start;
-    gap: var(--sd-line);
+    align-items: flex-end;
+    gap: var(--space-md);
   }
 
   .sd-hero__chart-intro {
@@ -3462,7 +3486,8 @@ button.sd-log-row--action:focus-visible {
 @media (min-width: 768px) and (max-width: 1024px) {
   .sd-hero__chart-head {
     flex-wrap: wrap;
-    row-gap: var(--sd-line);
+    align-items: flex-end;
+    row-gap: var(--orbit-zone-gap);
   }
 
   .sd-hero__chart-intro {
@@ -3575,7 +3600,7 @@ button.sd-log-row--action:focus-visible {
   .sd-hero--primary {
     display: flex;
     flex-direction: column;
-    gap: var(--sd-section-gap, 18px);
+    gap: var(--orbit-zone-gap);
   }
 
   .sd-hero__control-row--split {
