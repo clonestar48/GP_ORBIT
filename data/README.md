@@ -22,39 +22,47 @@ lib/performance/series.py  ← win % / index series
 
 ## Multi-season archive (recommended)
 
-Five NBA regular seasons for Orbit testing (2021-22 through 2025-26):
+Five NBA seasons for Orbit testing (2021-22 through 2025-26), **regular season and playoffs**:
 
-| `--season-year` | Season label | Output file |
-|-----------------|--------------|-------------|
-| 2021 | 2021-22 | `data/games-2022.json` |
-| 2022 | 2022-23 | `data/games-2023.json` |
-| 2023 | 2023-24 | `data/games-2024.json` |
-| 2024 | 2024-25 | `data/games-2025.json` |
-| 2025 | 2025-26 | `data/games-2026.json` |
+| `--season-year` | Season label | Regular season file | Playoffs file |
+|-----------------|--------------|---------------------|---------------|
+| 2021 | 2021-22 | `data/games-2022.json` | `data/games-2022-playoffs.json` |
+| 2022 | 2022-23 | `data/games-2023.json` | `data/games-2023-playoffs.json` |
+| 2023 | 2023-24 | `data/games-2024.json` | `data/games-2024-playoffs.json` |
+| 2024 | 2024-25 | `data/games-2025.json` | `data/games-2025-playoffs.json` |
+| 2025 | 2025-26 | `data/games-2026.json` | `data/games-2026-playoffs.json` |
 
-`season-year` is the **starting year** of the NBA season. The filename uses the ending calendar year.
+`season-year` is the **starting year** of the NBA season. Filenames use the ending calendar year.
+
+Regular-season and playoff archives are **separate files**. The combined archive merges both with a clear `seasonType` on every row.
 
 ```bash
 pip install nba_api   # one-time, sync scripts only
 
-# Dry-run all five seasons + merge validation
+# Dry-run all five seasons + playoffs + merge validation
 python3 scripts/sync_archive.py --dry-run --season-years 2021 2022 2023 2024 2025
 
-# Fetch each season → individual JSON files + combined archive
+# Fetch regular + playoff files + combined archive (re-fetches everything)
 python3 scripts/sync_archive.py --provider nba_api --season-years 2021 2022 2023 2024 2025
 
-# Re-use already-synced season files (skip network for those)
-python3 scripts/sync_archive.py --skip-existing --season-years 2021 2022 2023 2024 2025
+# Keep existing regular-season files; fetch playoffs only + rebuild archive
+python3 scripts/sync_archive.py --skip-existing --include-playoffs --season-years 2021 2022 2023 2024 2025
+
+# Playoffs only (never touches regular-season files)
+python3 scripts/sync_archive.py --playoffs-only --season-years 2021 2022 2023 2024 2025
 ```
 
-Combined output: `data/games-archive.json` (deduped, chronological, season metadata).
+Combined output: `data/games-archive.json` (regular + playoffs, deduped, chronological, per-season metadata).
 
-Single season (same as before):
+Single season:
 
 ```bash
 python3 scripts/sync_games.py --dry-run --provider nba_api --season-year 2024
 python3 scripts/sync_games.py --provider nba_api --season-year 2024
 # writes data/games-2025.json by default
+
+python3 scripts/sync_games.py --provider nba_api --season-year 2024 --season-type playoffs
+# writes data/games-2025-playoffs.json
 ```
 
 Incomplete seasons (e.g. in-progress 2025-26) are written as-is with a console warning — missing games are never fabricated.
@@ -87,7 +95,9 @@ Each API game becomes **two rows** (home + visitor perspective), matching `demo-
 | `date` | string (ISO date) | `2015-10-23` |
 | `season` | int | `2015` | Season start year |
 | `seasonLabel` | string | `2024-25` | Human-readable season |
-| `seasonType` | string | `Regular Season` | Regular season vs playoffs |
+| `seasonType` | string | `Regular Season` \| `Playoffs` | Segment within the season |
+| `seriesId` | string | `004230040` | Playoffs only — NBA series id from source |
+| `seriesGameNumber` | int | `5` | Playoffs only — game number within the series |
 | `league` | string | `NBA` |
 | `team` | string | `BOS` |
 | `opponent` | string | `MIA` |

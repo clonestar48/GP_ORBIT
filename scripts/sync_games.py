@@ -27,7 +27,8 @@ if str(ROOT) not in sys.path:
 from lib.ingest.balldontlie import collect_balldontlie_games  # noqa: E402
 from lib.ingest.env import balldontlie_api_key, load_dotenv  # noqa: E402
 from lib.ingest.schema import build_games_document  # noqa: E402
-from lib.ingest.seasons import season_output_path  # noqa: E402
+from lib.ingest.nba_api import SEASON_TYPE_PLAYOFFS, SEASON_TYPE_REGULAR  # noqa: E402
+from lib.ingest.seasons import playoffs_output_path, season_output_path  # noqa: E402
 from lib.ingest.sync_season import sync_nba_api_season  # noqa: E402
 from lib.ingest.validate import summarize_games, validate_games_batch  # noqa: E402
 
@@ -163,24 +164,39 @@ def main() -> None:
         default=None,
         help='balldontlie: games on or before YYYY-MM-DD',
     )
+    parser.add_argument(
+        '--season-type',
+        choices=('regular', 'playoffs'),
+        default='regular',
+        help='Season segment to sync (default: regular → Regular Season; playoffs → Playoffs)',
+    )
     args = parser.parse_args()
 
     load_dotenv(ROOT)
 
+    season_type = SEASON_TYPE_PLAYOFFS if args.season_type == 'playoffs' else SEASON_TYPE_REGULAR
     season_years = [int(s) for s in args.season_year] if args.season_year else [2024]
     if args.provider == 'nba_api' and len(season_years) != 1:
         raise SystemExit('nba_api provider supports one --season-year at a time. Use scripts/sync_archive.py for multiple seasons.')
 
     season_year = season_years[0]
-    output = args.output or season_output_path(season_year, ROOT)
+    if args.output:
+        output = args.output
+    elif season_type == SEASON_TYPE_PLAYOFFS:
+        output = playoffs_output_path(season_year, ROOT)
+    else:
+        output = season_output_path(season_year, ROOT)
 
     if args.provider == 'balldontlie':
         document = sync_balldontlie(args)
         stats = document.pop('_syncStats', {})
         season_report = None
     else:
-        document, season_report, validation_errors = sync_nba_api_season(season_year)
-        stats = {}
+        document, season_report, validation_errors, sync_stats = sync_nba_api_season(
+            season_year,
+            season_type=season_type,
+        )
+        stats = sync_stats
         games = document.get('games', [])
         summary = summarize_games(games)
         _print_report(document, stats, summary, validation_errors, season_report)

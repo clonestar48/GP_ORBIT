@@ -12,7 +12,7 @@ import {
   formatTooltipHtml,
   setupCanvas,
 } from './performanceChart.js';
-import { createRange, createRangeForGameDate, jumpPresetForLastPlayed, presetContainsDate, rangeLabel, rangeToQuery, setReferenceDate } from './range.js';
+import { createRange, createRangeForGameDate, jumpPresetForLastPlayed, MATCHUP_DEFAULT_PRESET, MATCHUP_RANGE_PRESETS, FRANCHISE_RANGE_PRESETS, presetContainsDate, rangeLabel, rangeToQuery, setReferenceDate } from './range.js';
 import { ghostModeForPreset, resolveProfile } from './resolution.js';
 import { TeamPicker } from './teamPicker.js';
 import { applyArchiveLogPayload, applyChartPayload, gameLogRowsFromSet } from './gameSet.js';
@@ -25,6 +25,7 @@ const GAME_LOG_VISIBLE = 5;
 const TEAM_EXPLORER_VISIBLE = 8;
 
 const HOME_DEFAULT_RANGE = 'season';
+const MATCHUP_DEFAULT_RANGE = MATCHUP_DEFAULT_PRESET;
 
 const state = {
   teams: [],
@@ -89,8 +90,23 @@ function clearLogFocus() {
   state.logFocusDate = null;
 }
 
+function normalizePresetForMode(preset, mode) {
+  const key = preset || HOME_DEFAULT_RANGE;
+  if (mode === 'matchup') {
+    return MATCHUP_RANGE_PRESETS.includes(key) ? key : MATCHUP_DEFAULT_RANGE;
+  }
+  if (FRANCHISE_RANGE_PRESETS.includes(key)) return key;
+  if (key === 'series') return HOME_DEFAULT_RANGE;
+  return HOME_DEFAULT_RANGE;
+}
+
+function rangeControlSet() {
+  if (state.orbitOverview) return 'franchise';
+  return state.heroMode === 'matchup' ? 'matchup' : 'franchise';
+}
+
 function ensureActiveRange(mode = state.heroMode) {
-  const preset = state.range?.preset || HOME_DEFAULT_RANGE;
+  const preset = normalizePresetForMode(state.range?.preset, mode === 'matchup' ? 'matchup' : 'solo');
   state.range = createRange({
     preset,
     mode: mode === 'matchup' ? 'matchup' : 'franchise',
@@ -523,7 +539,7 @@ function overviewIntro() {
   return state.homePayload?.intro ?? {
     kicker: 'NBA performance index',
     title: 'Orbit Overview',
-    detail: 'League-wide results, streaks, and matchups from the game archive.',
+    detail: 'League-wide results, movers, and streaks from the game archive.',
   };
 }
 
@@ -540,15 +556,25 @@ function updateGameLogHeading() {
     return;
   }
   if (state.heroMode === 'matchup') {
+    const preset = state.range?.preset;
     const count = state.archiveLog?.honestCount
       ?? state.archiveLog?.count
       ?? state.matchupGames?.length
       ?? 0;
-    if (count > 0) {
-      heading.textContent = `Head-to-head · ${eraLabel} · ${count} meeting${count === 1 ? '' : 's'}`;
+    if (preset === 'series') {
+      if (count > 0) {
+        heading.textContent = `Series · ${count} head-to-head meeting${count === 1 ? '' : 's'}`;
+        return;
+      }
+      heading.textContent = 'Series · Head-to-head';
       return;
     }
-    heading.textContent = `Head-to-head · ${eraLabel}`;
+    const lensLabel = preset === 'all' ? 'Archive comparison' : 'Season comparison';
+    if (count > 0) {
+      heading.textContent = `${lensLabel} · ${count} head-to-head meeting${count === 1 ? '' : 's'}`;
+      return;
+    }
+    heading.textContent = `${lensLabel} · Head-to-head`;
     return;
   }
   if (state.heroMode === 'solo' && state.selectedTeamId) {
@@ -597,28 +623,6 @@ function renderHomeStats() {
   moveEl.className = '';
 }
 
-function homeMatchupChipHtml(pair) {
-  const teamA = pair.teamA;
-  const teamB = pair.teamB;
-  const tA = findTeam(teamA);
-  const tB = findTeam(teamB);
-  const abbrA = tA?.abbreviation ?? teamA;
-  const abbrB = tB?.abbreviation ?? teamB;
-  const colorA = tA?.colors?.primary || '#5da396';
-  const label = pair.headline
-    ? `${pair.headline} · ${abbrA} vs ${abbrB}`
-    : `${abbrA} vs ${abbrB}`;
-  const safeLabel = label.replace(/"/g, '&quot;');
-  return `
-    <button type="button" class="sd-opp-chip sd-opp-chip--action"
-      data-home-matchup-a="${teamA}" data-home-matchup-b="${teamB}"
-      style="--team-color: ${colorA}"
-      title="${safeLabel}" aria-label="Open matchup ${abbrA} vs ${abbrB}">
-      <span class="sd-log-swatch" style="--team-color: ${colorA}" aria-hidden="true"></span>
-      <span class="sd-opp-chip__abbr">${abbrA} vs ${abbrB}</span>
-    </button>`;
-}
-
 function homeMoverChipHtml(mover) {
   const team = findTeam(mover.teamId);
   const abbr = team?.abbreviation ?? mover.teamId;
@@ -661,14 +665,13 @@ function renderOverviewLedger() {
   if (!oppEl) return;
 
   const home = state.homePayload;
-  const matchups = home?.recentMatchups ?? [];
   const movers = home?.topMovers ?? [];
   const streaks = home?.activeStreaks ?? [];
 
-  if (!movers.length && !matchups.length && !streaks.length) {
+  if (!movers.length && !streaks.length) {
     oppEl.innerHTML = contextualPanelHtml({
       title: 'League snapshot loading',
-      detail: 'Top movers, streaks, and featured matchups appear once the archive is ready.',
+      detail: 'Top movers and active streaks appear once the archive is ready.',
     });
     return;
   }
@@ -691,21 +694,8 @@ function renderOverviewLedger() {
       </section>`);
   }
 
-  if (matchups.length) {
-    sections.push(`
-      <section class="sd-home-ledger__section">
-        <h3 class="sd-home-ledger__heading">Featured matchups</h3>
-        <div class="sd-game-log__chips">${matchups.map(homeMatchupChipHtml).join('')}</div>
-      </section>`);
-  }
-
   oppEl.innerHTML = `<div class="sd-home-ledger">${sections.join('')}</div>`;
 
-  oppEl.querySelectorAll('[data-home-matchup-a]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      openHomeMatchup(btn.dataset.homeMatchupA, btn.dataset.homeMatchupB);
-    });
-  });
   oppEl.querySelectorAll('[data-home-mover]').forEach((btn) => {
     btn.addEventListener('click', () => openHomeMover(btn.dataset.homeMover));
   });
@@ -733,13 +723,11 @@ function renderHomeGameLog() {
     const gameDate = (g.date || '').slice(0, 10);
     const emphasizeLatest = state.range?.preset === 'today' && index === 0;
     const latestCls = emphasizeLatest ? ' sd-log-row--latest' : '';
-    const team = findTeam(g.team);
-    const opp = findTeam(g.opponent);
-    const teamLabel = team ? `${team.city} ${team.name}` : g.team;
-    const oppShort = opp?.abbreviation ?? g.opponent;
+    const teamAbbr = teamAbbrev(g.team);
+    const oppAbbr = teamAbbrev(g.opponent);
     const cls = g.result === 'W' ? 'is-up' : 'is-down';
     const score = g.teamScore != null ? `${g.teamScore} – ${g.opponentScore}` : '—';
-    const label = `View ${team?.abbreviation ?? g.team} vs ${oppShort} on ${formatResultDate(g.date)}`
+    const label = `View ${teamAbbr} vs ${oppAbbr} on ${formatResultDate(g.date)}`
       .replace(/"/g, '&quot;');
     return `
       <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${latestCls}"
@@ -750,7 +738,7 @@ function renderHomeGameLog() {
         <span class="sd-log-row__badge ${cls}">${g.result === 'W' ? 'W' : 'L'}</span>
         <div class="sd-log-row__main">
           <div class="sd-log-row__title-row">
-            <span class="sd-log-row__title">${teamLabel} vs ${oppShort}</span>
+            <span class="sd-log-row__title">${teamAbbr} vs ${oppAbbr}</span>
           </div>
           <span class="sd-log-row__sub ${cls}">${score}</span>
         </div>
@@ -917,7 +905,7 @@ function openHomeMatchup(teamA, teamB) {
   state.heroMode = 'matchup';
   ensureActiveRange('matchup');
   state.range = createRange({
-    preset: state.featuredMarquee?.range || HOME_DEFAULT_RANGE,
+    preset: MATCHUP_DEFAULT_RANGE,
     mode: 'matchup',
     metric: 'index',
   });
@@ -1411,7 +1399,9 @@ function renderMatchupStats() {
   statsEl?.classList.remove('is-idle-today', 'is-today-event');
   if (labels[0]) labels[0].textContent = teamA?.abbreviation ?? state.teamA;
   if (labels[1]) labels[1].textContent = teamB?.abbreviation ?? state.teamB;
-  if (labels[2]) labels[2].textContent = 'H2H';
+  if (labels[2]) {
+    labels[2].textContent = state.range?.preset === 'series' ? 'Series' : 'Head-to-head';
+  }
 
   winEl.textContent = matchup?.teamARecord ?? '—';
   winEl.className = '';
@@ -1709,7 +1699,11 @@ function matchupH2hSummary(matchup = state.matchup) {
 }
 
 function matchupIndexLabel() {
-  return state.range?.preset === 'season' ? 'season index' : 'index';
+  const preset = state.range?.preset;
+  if (preset === 'series') return 'series index';
+  if (preset === 'season') return 'season index';
+  if (preset === 'all') return 'archive index';
+  return 'index';
 }
 
 function formatMatchupH2hLine(h2h) {
@@ -1718,23 +1712,36 @@ function formatMatchupH2hLine(h2h) {
   const teamB = findTeam(h2h.teamBId || state.teamB);
   const winsA = h2h.teamAWins ?? 0;
   const winsB = h2h.teamBWins ?? 0;
+  const prefix = state.range?.preset === 'series' ? 'Series' : 'Head-to-head';
   if (winsA === winsB) {
-    return `Head-to-head: ${winsA}–${winsB}`;
+    return `${prefix}: ${winsA}–${winsB}`;
   }
   const leader = winsA > winsB ? teamA : teamB;
   const leaderW = Math.max(winsA, winsB);
   const trailerW = Math.min(winsA, winsB);
-  const leaderName = leader?.name ?? (winsA > winsB ? h2h.teamAId : h2h.teamBId);
-  return `Head-to-head: ${leaderName} ${leaderW}–${trailerW}`;
+  const leaderName = leader?.abbreviation ?? leader?.name ?? (winsA > winsB ? h2h.teamAId : h2h.teamBId);
+  return `${prefix}: ${leaderName} ${leaderW}–${trailerW}`;
 }
 
 function matchupChartCaption(matchup) {
-  const gameCount = Math.max(0, ...matchup.series.map((s) => s.gameCount ?? 0));
-  const range = rangeLabel(state.range);
-  if (!matchupHasGames(matchup)) {
-    return `${range} · Full team performance`;
+  const preset = state.range?.preset;
+  const h2hCount = matchup?.h2h?.count ?? matchup?.honestCount ?? 0;
+
+  if (preset === 'series') {
+    if (!h2hCount) return 'Series · Head-to-head';
+    return `Series · Head-to-head · ${h2hCount} meeting${h2hCount === 1 ? '' : 's'}`;
   }
-  return `${range} · Full team performance · ${gameCount} game${gameCount === 1 ? '' : 's'}`;
+
+  const gameCount = Math.max(0, ...(matchup?.series || []).map((s) => s.gameCount ?? 0));
+  if (preset === 'all') {
+    if (!matchupHasGames(matchup)) return 'Archive comparison · Multi-season trajectories';
+    return `Archive comparison · Multi-season trajectories · ${gameCount} games each`;
+  }
+
+  if (!matchupHasGames(matchup)) {
+    return 'Season comparison · Full season trajectories';
+  }
+  return `Season comparison · Full season trajectories · ${gameCount} games each`;
 }
 
 /** Chart points for net/swing — game-level when available, else aggregated period points. */
@@ -1917,7 +1924,7 @@ function buildMatchupNetLine() {
   }
 
   if (!matchupHasGames(matchup)) {
-    return `<span class="sd-hero__net-line--muted">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · widen the timeline for season context</span>`;
+    return `<span class="sd-hero__net-line--muted">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · ${state.range?.preset === 'series' ? 'no series history in archive' : 'try Season or All for full trajectories'}</span>`;
   }
 
   const parts = [];
@@ -2068,13 +2075,20 @@ function renderHeroChart() {
     renderMatchupStats();
     return;
   }
-  if (!matchup?.series?.length) {
+  if (!matchup?.series?.length || !matchupHasGames(matchup)) {
+    const action = state.range?.preset === 'series'
+      ? 'These teams have not met in the archive.'
+      : 'Try Season or All for full trajectories.';
     heroContextualPanel({
       title: `${teamMatchupTitle(state.teamA, state.teamB)}`,
-      detail: 'Widen the timeline to find overlapping games between these franchises.',
-      action: 'Try Season or All time.',
+      detail: state.range?.preset === 'series'
+        ? 'No head-to-head games between these teams in the loaded archive.'
+        : 'No overlapping franchise history in this comparison lens.',
+      action,
     });
-    caption.textContent = 'Matchup index';
+    caption.textContent = state.range?.preset === 'series'
+      ? 'Series · Head-to-head'
+      : 'Season comparison · Full season trajectories';
     renderMatchupStats();
     return;
   }
@@ -2173,12 +2187,21 @@ function renderGameLog() {
 
   if (!recent.length) {
     const isToday = state.range.preset === 'today';
-    recentEl.innerHTML = contextualPanelHtml({
-      title: isToday ? 'No game today' : 'No games in this range',
-      detail: isToday
-        ? 'No completed game on the reference date for this team.'
-        : 'Try a wider timeline to find games in the archive.',
-    });
+    const isMatchup = state.heroMode === 'matchup';
+    const preset = state.range?.preset;
+    let title = isToday ? 'No game today' : 'No games in this range';
+    let detail = isToday
+      ? 'No completed game on the reference date for this team.'
+      : 'Try a wider timeline to find games in the archive.';
+    if (isMatchup) {
+      title = preset === 'series' ? 'No series history' : 'No head-to-head meetings';
+      detail = preset === 'series'
+        ? 'These teams have not played each other in the loaded archive.'
+        : preset === 'all'
+          ? 'No head-to-head games across the full archive for this pairing.'
+          : 'No head-to-head games in the current season between these teams.';
+    }
+    recentEl.innerHTML = contextualPanelHtml({ title, detail });
     renderGameLogLedger({ games: recent, isSolo });
     requestAnimationFrame(updateGameLogScroll);
     return;
@@ -2495,11 +2518,25 @@ function syncHeroModeUi() {
 }
 
 function syncRangeUi() {
+  const activeSet = rangeControlSet();
+  const group = $('#hero-range-group');
+
   document.querySelectorAll('[data-range]').forEach((btn) => {
-    const active = btn.dataset.range === state.range.preset;
+    const btnSet = btn.dataset.rangeSet || 'franchise';
+    const visible = btnSet === 'both' || btnSet === activeSet;
+    btn.hidden = !visible;
+    btn.disabled = !visible;
+    const active = visible && btn.dataset.range === state.range.preset;
     btn.classList.toggle('is-active', active);
     btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
+
+  if (group) {
+    group.setAttribute(
+      'aria-label',
+      activeSet === 'matchup' ? 'Comparison range' : 'Timeline',
+    );
+  }
 }
 
 function applyFeaturedHomepage(featured) {
@@ -2514,7 +2551,7 @@ function applyFeaturedHomepage(featured) {
   state.teamB = featured.teamB;
   state.selectedTeamId = featured.selectedTeamId || featured.teamA;
   state.range = createRange({
-    preset: featured.range || 'today',
+    preset: normalizePresetForMode(featured.range || MATCHUP_DEFAULT_RANGE, 'matchup'),
     mode: 'matchup',
     metric: 'index',
   });
@@ -2558,8 +2595,9 @@ function setHeroMode(mode) {
   }
   state.heroMode = mode;
   syncHeroModeUi();
+  const preset = normalizePresetForMode(state.range?.preset, mode);
   state.range = createRange({
-    preset: state.range.preset || HOME_DEFAULT_RANGE,
+    preset,
     mode: mode === 'solo' ? 'franchise' : 'matchup',
     metric: mode === 'solo' ? 'winPct' : 'index',
   });
@@ -2573,10 +2611,10 @@ function setHeroMode(mode) {
   loadData();
 }
 
-function setRange(preset) {
+function setRange(presetArg) {
   if (state.orbitOverview) {
     state.range = createRange({
-      preset,
+      preset: normalizePresetForMode(presetArg, 'solo'),
       mode: 'franchise',
       metric: 'winPct',
     });
@@ -2585,7 +2623,15 @@ function setRange(preset) {
     return;
   }
   clearLogFocus();
-  state.range = createRange({ preset, mode: state.heroMode === 'solo' ? 'franchise' : 'matchup', metric: state.heroMode === 'solo' ? 'winPct' : 'index' });
+  const preset = normalizePresetForMode(
+    presetArg,
+    state.heroMode === 'matchup' ? 'matchup' : 'solo',
+  );
+  state.range = createRange({
+    preset,
+    mode: state.heroMode === 'solo' ? 'franchise' : 'matchup',
+    metric: state.heroMode === 'solo' ? 'winPct' : 'index',
+  });
   syncRangeUi();
   loadData();
 }

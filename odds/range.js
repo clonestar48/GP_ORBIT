@@ -6,9 +6,15 @@ export const RANGE_LABELS = {
   month: 'Past Month',
   season: 'Current Season',
   all: 'All Time',
+  series: 'Series',
 };
 
-export const RANGE_PRESETS = ['today', 'week', 'month', 'season', 'all'];
+export const FRANCHISE_RANGE_PRESETS = ['today', 'week', 'month', 'season', 'all'];
+export const MATCHUP_RANGE_PRESETS = ['series', 'season', 'all'];
+export const MATCHUP_DEFAULT_PRESET = 'season';
+
+/** @deprecated use FRANCHISE_RANGE_PRESETS */
+export const RANGE_PRESETS = FRANCHISE_RANGE_PRESETS;
 
 let referenceDateOverride = null;
 
@@ -51,6 +57,9 @@ function presetDates(preset, ref = referenceDate()) {
     return { startDate: toIsoDateString(seasonStart), endDate: toIsoDateString(end) };
   }
   if (preset === 'all') {
+    return { startDate: '1900-01-01', endDate: toIsoDateString(end) };
+  }
+  if (preset === 'series') {
     return { startDate: '1900-01-01', endDate: toIsoDateString(end) };
   }
   throw new Error(`Unknown preset: ${preset}`);

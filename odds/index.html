@@ -29,12 +29,13 @@
               <button type="button" class="sd-toggle" data-hero-mode="matchup">Matchup</button>
               <button type="button" class="sd-toggle sd-toggle--soon" data-hero-mode="league" disabled title="Coming soon">League</button>
             </div>
-            <div class="sd-toggle-group sd-range-group" role="group" aria-label="Timeline">
-              <button type="button" class="sd-toggle" data-range="today">Today</button>
-              <button type="button" class="sd-toggle" data-range="week">Week</button>
-              <button type="button" class="sd-toggle" data-range="month">Month</button>
-              <button type="button" class="sd-toggle is-active" data-range="season">Season</button>
-              <button type="button" class="sd-toggle" data-range="all">All</button>
+            <div class="sd-toggle-group sd-range-group" id="hero-range-group" role="group" aria-label="Timeline">
+              <button type="button" class="sd-toggle" data-range="today" data-range-set="franchise">Today</button>
+              <button type="button" class="sd-toggle" data-range="week" data-range-set="franchise">Week</button>
+              <button type="button" class="sd-toggle" data-range="month" data-range-set="franchise">Month</button>
+              <button type="button" class="sd-toggle is-active" data-range="season" data-range-set="both">Season</button>
+              <button type="button" class="sd-toggle" data-range="all" data-range-set="both">All</button>
+              <button type="button" class="sd-toggle" data-range="series" data-range-set="matchup" hidden>Series</button>
             </div>
           </div>
 

@@ -163,12 +163,12 @@ def get_performance_payload(
 def get_matchup_payload(
     team_a: str,
     team_b: str,
-    time_range: str | None = 'week',
+    time_range: str | None = 'season',
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict:
     provider = _provider()
-    preset = time_range or 'week'
+    preset = time_range or 'season'
     team_a_meta = provider._team_meta(team_a)
     team_b_meta = provider._team_meta(team_b)
     if not team_a_meta or not team_b_meta:

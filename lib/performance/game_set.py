@@ -7,6 +7,7 @@ from typing import Any
 from .range import preset_dates, reference_date, resolve_range
 from .series import (
     build_index_series,
+    build_index_series_for_game_set,
     build_win_pct_series_for_game_set,
 )
 
@@ -73,6 +74,9 @@ def _preference_pool(
         return in_window if in_window else sorted_games
 
     if preset == 'all':
+        return sorted_games
+
+    if preset == 'series':
         return sorted_games
 
     return in_window if in_window else sorted_games
@@ -159,6 +163,14 @@ def resolve_franchise_chart_set(
 resolve_franchise_game_set = resolve_franchise_chart_set
 
 
+def _all_matchup_h2h_games(team_games: list[dict], opponent_id: str) -> list[dict]:
+    opp = opponent_id.upper()
+    return sorted(
+        [g for g in team_games if (g.get('opponent') or '').upper() == opp],
+        key=lambda g: g['date'],
+    )
+
+
 def resolve_matchup_archive_log(
     team_a_games: list[dict],
     team_b_id: str,
@@ -167,19 +179,20 @@ def resolve_matchup_archive_log(
     limit: int = GAME_SET_LIMIT,
     ref=None,
 ) -> dict[str, Any]:
-    """Matchup game log — era-scoped H2H; honest count, never padded."""
-    opp = team_b_id.upper()
-    h2h = [
-        g for g in team_a_games
-        if (g.get('opponent') or '').upper() == opp
-    ]
-    pool = _preference_pool(h2h, preset, expand=True, ref=ref)
-    selected = _select_from_pool(pool, limit, preset)
+    """Matchup game log — head-to-head meetings for the active comparison lens."""
+    h2h = _all_matchup_h2h_games(team_a_games, team_b_id)
+
+    if preset == 'series':
+        selected = h2h
+    else:
+        pool = _preference_pool(h2h, preset, expand=True, ref=ref)
+        selected = _select_from_pool(pool, limit, preset)
+
     meta = _game_set_meta(
         mode='matchup',
         preset=preset,
         games=list(reversed(selected)),
-        limit=limit,
+        limit=limit if preset != 'series' else max(limit, len(selected)),
     )
     return {
         **meta,
@@ -243,33 +256,42 @@ def resolve_matchup_chart_set(
     limit: int = GAME_SET_LIMIT,
     ref=None,
 ) -> dict[str, Any]:
-    """Matchup chart lens — each team's full franchise index over the range.
-
-    Head-to-head games are metadata for markers/copy; the game log stays H2H-only.
-    """
+    """Matchup chart lens — Series (H2H only) or Season/All (full trajectories + H2H markers)."""
     ref = ref or reference_date()
-    rq = resolve_range(
-        preset=preset,
-        teams=[team_a_id, team_b_id],
-        mode='matchup',
-        metric='index',
-        reference=ref,
-    )
-    series_a = build_index_series(team_a_games, rq)
-    series_b = build_index_series(team_b_games, rq)
+    span_start, span_end = preset_dates('all' if preset == 'series' else preset, ref)
+
+    if preset == 'series':
+        h2h_a = _all_matchup_h2h_games(team_a_games, team_b_id)
+        h2h_b = _all_matchup_h2h_games(team_b_games, team_a_id)
+        series_a = build_index_series_for_game_set(team_a_games, h2h_a)
+        series_b = build_index_series_for_game_set(team_b_games, h2h_b)
+        chart_kind = 'series'
+    else:
+        rq = resolve_range(
+            preset=preset,
+            teams=[team_a_id, team_b_id],
+            mode='matchup',
+            metric='index',
+            reference=ref,
+        )
+        span_start, span_end = rq.start_date, rq.end_date
+        series_a = build_index_series(team_a_games, rq)
+        series_b = build_index_series(team_b_games, rq)
+        chart_kind = 'trajectory'
+
     h2h = _matchup_h2h_summary(
         team_a_games,
         team_a_id,
         team_b_id,
-        start=rq.start_date,
-        end=rq.end_date,
+        start=span_start,
+        end=span_end,
     )
 
     h2h_games = _matchup_h2h_games(
         team_a_games,
         team_b_id,
-        start=rq.start_date,
-        end=rq.end_date,
+        start=span_start,
+        end=span_end,
     )
     meta = _game_set_meta(
         mode='matchup',
@@ -278,16 +300,23 @@ def resolve_matchup_chart_set(
         limit=limit,
     )
     chart_game_count = max(series_a.get('gameCount', 0), series_b.get('gameCount', 0))
+
+    team_a_record = _record_in_range(team_a_games, span_start, span_end)
+    team_b_record = _record_in_range(team_b_games, span_start, span_end)
+    if preset == 'series' and h2h['count']:
+        team_a_record = f'{h2h["teamAWins"]}–{h2h["count"] - h2h["teamAWins"]}'
+        team_b_record = f'{h2h["teamBWins"]}–{h2h["count"] - h2h["teamBWins"]}'
+
     return {
         **meta,
         'count': chart_game_count,
-        'chartKind': 'trajectory',
+        'chartKind': chart_kind,
         'metric': 'index',
         'series': [series_a, series_b],
         'h2h': h2h,
         'honestCount': h2h['count'],
-        'teamARecord': _record_in_range(team_a_games, rq.start_date, rq.end_date),
-        'teamBRecord': _record_in_range(team_b_games, rq.start_date, rq.end_date),
+        'teamARecord': team_a_record,
+        'teamBRecord': team_b_record,
         'h2hOpponentIds': {
             team_a_id.upper(): team_b_id.upper(),
             team_b_id.upper(): team_a_id.upper(),

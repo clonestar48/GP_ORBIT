@@ -14,7 +14,7 @@ from typing import Any, Callable, Literal
 ResolutionUnit = Literal['game', 'day', 'week', 'month', 'season']
 TooltipMode = Literal['game', 'game-or-day', 'period', 'league-summary']
 GhostMode = Literal['none', 'full', 'segments', 'markers']
-RangePreset = Literal['today', 'week', 'month', 'season', 'all', 'league']
+RangePreset = Literal['today', 'week', 'month', 'season', 'all', 'series', 'league']
 
 
 @dataclass(frozen=True)
@@ -91,6 +91,16 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         ghost_mode='none',
         max_ghost_opponents=0,
         tooltip_mode='period',
+    ),
+    'series': ChartResolution(
+        preset='series',
+        resolution='game',
+        max_points_per_series=30,
+        show_markers=True,
+        show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
+        tooltip_mode='game',
     ),
     'league': ChartResolution(
         preset='league',

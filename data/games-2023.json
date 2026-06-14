@@ -2,7 +2,7 @@
   "source": "nba_api",
   "label": "NBA 2022-23 regular season (nba_api)",
   "provider": "nba_api",
-  "syncedAt": "2026-06-14T20:06:54Z",
+  "syncedAt": "2026-06-14T20:20:33Z",
   "games": [
     {
       "id": "2023-04-09-min-nop-1225-NOP",

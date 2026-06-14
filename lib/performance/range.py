@@ -15,7 +15,11 @@ RANGE_LABELS = {
     'month': 'Past Month',
     'season': 'Current Season',
     'all': 'All Time',
+    'series': 'Series',
 }
+
+FRANCHISE_RANGE_PRESETS = ('today', 'week', 'month', 'season', 'all')
+MATCHUP_RANGE_PRESETS = ('series', 'season', 'all')
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 _reference_lock = threading.Lock()
@@ -107,6 +111,9 @@ def preset_dates(preset: str, reference: date | None = None) -> tuple[date, date
         start_year = ref.year if ref.month >= 10 else ref.year - 1
         return date(start_year, 10, 1), ref
     if preset == 'all':
+        return date(1900, 1, 1), ref
+    if preset == 'series':
+        # Comparison lens — date window resolved by H2H game selection, not calendar math.
         return date(1900, 1, 1), ref
     raise ValueError(f'Unknown preset: {preset}')
 

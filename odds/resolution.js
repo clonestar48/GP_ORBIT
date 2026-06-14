@@ -72,6 +72,16 @@ export const RESOLUTION_BY_PRESET = {
     maxGhostOpponents: 0,
     tooltipMode: 'period',
   },
+  series: {
+    preset: 'series',
+    resolution: 'game',
+    maxPointsPerSeries: 30,
+    showMarkers: true,
+    showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
+    tooltipMode: 'game',
+  },
   league: {
     preset: 'league',
     resolution: 'season',

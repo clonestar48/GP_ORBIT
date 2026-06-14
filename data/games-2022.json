@@ -2,7 +2,7 @@
   "source": "nba_api",
   "label": "NBA 2021-22 regular season (nba_api)",
   "provider": "nba_api",
-  "syncedAt": "2026-06-14T20:06:54Z",
+  "syncedAt": "2026-06-14T20:20:33Z",
   "games": [
     {
       "id": "2022-04-10-phx-sac-1229-PHX",
