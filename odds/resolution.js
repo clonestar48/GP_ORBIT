@@ -7,6 +7,7 @@ export const MAX_RENDER_POINTS_CEILING = 900;
 
 /** @typedef {'game'|'day'|'week'|'month'|'season'} ResolutionUnit */
 /** @typedef {'game'|'game-or-day'|'period'|'league-summary'} TooltipMode */
+/** @typedef {'none'|'full'|'segments'|'markers'} GhostMode */
 
 /** @typedef {{
  *   preset: string,
@@ -14,6 +15,8 @@ export const MAX_RENDER_POINTS_CEILING = 900;
  *   maxPointsPerSeries: number,
  *   showMarkers: boolean,
  *   showGhostOpponent: boolean,
+ *   ghostMode: GhostMode,
+ *   maxGhostOpponents: number,
  *   tooltipMode: TooltipMode,
  * }} ChartProfile */
 
@@ -25,6 +28,8 @@ export const RESOLUTION_BY_PRESET = {
     maxPointsPerSeries: 20,
     showMarkers: true,
     showGhostOpponent: true,
+    ghostMode: 'full',
+    maxGhostOpponents: 1,
     tooltipMode: 'game',
   },
   week: {
@@ -32,7 +37,9 @@ export const RESOLUTION_BY_PRESET = {
     resolution: 'game',
     maxPointsPerSeries: 30,
     showMarkers: true,
-    showGhostOpponent: false,
+    showGhostOpponent: true,
+    ghostMode: 'segments',
+    maxGhostOpponents: 5,
     tooltipMode: 'game',
   },
   month: {
@@ -41,6 +48,8 @@ export const RESOLUTION_BY_PRESET = {
     maxPointsPerSeries: 90,
     showMarkers: true,
     showGhostOpponent: false,
+    ghostMode: 'markers',
+    maxGhostOpponents: 3,
     tooltipMode: 'game-or-day',
   },
   season: {
@@ -49,6 +58,8 @@ export const RESOLUTION_BY_PRESET = {
     maxPointsPerSeries: 40,
     showMarkers: false,
     showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
     tooltipMode: 'period',
   },
   all: {
@@ -57,6 +68,8 @@ export const RESOLUTION_BY_PRESET = {
     maxPointsPerSeries: 120,
     showMarkers: false,
     showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
     tooltipMode: 'period',
   },
   league: {
@@ -65,6 +78,8 @@ export const RESOLUTION_BY_PRESET = {
     maxPointsPerSeries: 10,
     showMarkers: false,
     showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
     tooltipMode: 'league-summary',
   },
 };
@@ -87,7 +102,18 @@ export function showTrendOverlay(profile) {
 }
 
 /** @param {string|null|undefined} preset @param {boolean} isSolo */
+export function ghostModeForPreset(preset, isSolo = true) {
+  if (!isSolo) return 'none';
+  return resolveProfile(preset).ghostMode ?? 'none';
+}
+
+/** @param {string|null|undefined} preset @param {boolean} isSolo */
 export function ghostOpponentEnabled(preset, isSolo = true) {
-  if (!isSolo) return false;
-  return resolveProfile(preset).showGhostOpponent;
+  const mode = ghostModeForPreset(preset, isSolo);
+  return mode !== 'none';
+}
+
+/** @param {ChartProfile} profile */
+export function ghostUsesOverlay(profile) {
+  return profile.ghostMode === 'full' || profile.ghostMode === 'segments';
 }

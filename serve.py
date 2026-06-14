@@ -18,6 +18,8 @@ API_ROUTES = frozenset({
     '/api/performance',
     '/api/matchup',
     '/api/marquee',
+    '/api/home',
+    '/api/context',
 })
 
 
@@ -44,9 +46,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _serve_api(self, route: str, query: str) -> None:
         from odds.performance_data import (
+            get_home_payload,
             get_marquee_payload,
             get_matchup_payload,
             get_performance_payload,
+            get_team_context_payload,
             get_teams_payload,
         )
 
@@ -74,6 +78,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             elif route == '/api/marquee':
                 league = (qs.get('league') or ['NBA'])[0]
                 payload = get_marquee_payload(league)
+            elif route == '/api/home':
+                league = (qs.get('league') or ['NBA'])[0]
+                time_range = (qs.get('range') or ['season'])[0]
+                payload = get_home_payload(league, time_range)
+            elif route == '/api/context':
+                team_id = (qs.get('teamId') or [''])[0]
+                league = (qs.get('league') or ['NBA'])[0]
+                payload = (
+                    get_team_context_payload(team_id, league)
+                    if team_id else {'error': 'teamId required'}
+                )
             else:
                 payload = {'error': 'Not found'}
             body = json.dumps(payload).encode('utf-8')

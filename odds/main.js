@@ -12,9 +12,10 @@ import {
   formatTooltipHtml,
   setupCanvas,
 } from './performanceChart.js';
-import { createRange, createRangeForGameDate, jumpPresetForLastPlayed, rangeLabel, rangeToQuery, setReferenceDate } from './range.js';
-import { ghostOpponentEnabled as isGhostOpponentRange, resolveProfile } from './resolution.js';
+import { createRange, createRangeForGameDate, jumpPresetForLastPlayed, presetContainsDate, rangeLabel, rangeToQuery, setReferenceDate } from './range.js';
+import { ghostModeForPreset, resolveProfile } from './resolution.js';
 import { TeamPicker } from './teamPicker.js';
+import { applyArchiveLogPayload, applyChartPayload, gameLogRowsFromSet } from './gameSet.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -23,22 +24,34 @@ const teamPickers = {};
 const GAME_LOG_VISIBLE = 5;
 const TEAM_EXPLORER_VISIBLE = 8;
 
+const HOME_DEFAULT_RANGE = 'season';
+
 const state = {
   teams: [],
   meta: null,
-  heroMode: 'matchup',
-  selectedTeamId: 'BOS',
+  orbitOverview: true,
+  homePayload: null,
+  heroMode: 'solo',
+  selectedTeamId: null,
   teamA: 'BOS',
   teamB: 'NYK',
-  range: createRange({ preset: 'today', mode: 'matchup', metric: 'index' }),
+  range: createRange({ preset: HOME_DEFAULT_RANGE, mode: 'franchise', metric: 'winPct' }),
   teamSeries: null,
+  chartSet: null,
+  archiveLog: null,
+  gameSet: null,
   teamGames: [],
-  gameLogGames: [],
   lastPlayedGame: null,
-  contextOpponentId: null,
-  contextSeries: null,
+  contextLayers: [],
+  contextHoverId: null,
+  opponentMarkerIds: null,
+  opponentMarkerColors: null,
   matchup: null,
+  matchupGames: [],
   homepageFeature: null,
+  featuredMarquee: null,
+  teamContext: null,
+  chartFallback: null,
   focusedGameLogKey: null,
   logFocusOpponent: null,
   logFocusDate: null,
@@ -46,6 +59,7 @@ const state = {
   hoverHit: null,
   ghostHover: false,
   loading: false,
+  workspaceReady: false,
   errors: [],
 };
 
@@ -75,6 +89,38 @@ function clearLogFocus() {
   state.logFocusDate = null;
 }
 
+function ensureActiveRange(mode = state.heroMode) {
+  const preset = state.range?.preset || HOME_DEFAULT_RANGE;
+  state.range = createRange({
+    preset,
+    mode: mode === 'matchup' ? 'matchup' : 'franchise',
+    metric: mode === 'matchup' ? 'index' : 'winPct',
+  });
+  syncRangeUi();
+}
+
+function clearPanelGameData() {
+  state.chartSet = null;
+  state.archiveLog = null;
+  state.gameSet = null;
+  state.teamSeries = null;
+  state.teamGames = [];
+  state.matchup = null;
+  state.matchupGames = [];
+  state.chartFallback = null;
+  state.contextLayers = [];
+  state.contextHoverId = null;
+  state.opponentMarkerIds = null;
+  state.opponentMarkerColors = null;
+  state.lastPlayedGame = null;
+}
+
+function clearTeamScopedState() {
+  clearPanelGameData();
+  state.teamContext = null;
+  clearLogFocus();
+}
+
 function chartProfileForRange(range = state.range) {
   if (range?.preset) return resolveProfile(range.preset);
   return resolveProfile('week');
@@ -93,51 +139,104 @@ function emptyStateHtml({ title, detail = '' }) {
     </div>`;
 }
 
-function setLoading(loading) {
+function setLoading(loading, { forceOverlay = false } = {}) {
   state.loading = loading;
   const chartSkeleton = $('#hero-chart-skeleton');
   const wrap = $('#hero-chart-wrap');
   const netSummary = $('#hero-net-summary');
+  const showOverlay = loading && (forceOverlay || !state.workspaceReady);
 
-  if (loading) {
+  if (showOverlay) {
     chartSkeleton.hidden = false;
     wrap?.classList.add('is-loading');
     if (netSummary) {
       netSummary.textContent = '';
       netSummary.classList.remove('is-loaded');
     }
-  } else {
+    return;
+  }
+
+  if (!loading) {
     chartSkeleton.hidden = true;
     wrap?.classList.remove('is-loading');
+    state.workspaceReady = true;
   }
+}
+
+function markWorkspaceReady() {
+  state.workspaceReady = true;
+  $('#hero-chart-wrap')?.classList.add('is-workspace-ready');
+  setLoading(false);
+}
+
+function resolveGhostMode() {
+  if (state.heroMode !== 'solo') return 'none';
+  if (state.logFocusOpponent) {
+    if (state.range.preset === 'today') return 'full';
+    if (state.range.preset === 'week') return 'segments';
+    return 'none';
+  }
+  return ghostModeForPreset(state.range.preset, true);
 }
 
 function ghostOpponentEnabled() {
-  if (state.heroMode !== 'solo') return false;
-  if (state.logFocusOpponent) return true;
-  return isGhostOpponentRange(state.range.preset, true);
+  return resolveGhostMode() !== 'none';
 }
 
-/** Pick a single opponent for the ghost layer — today or week only. */
-function resolveContextOpponent(games) {
-  if (!games?.length) return null;
+function ghostOverlayEnabled() {
+  const mode = resolveGhostMode();
+  return mode === 'full' || mode === 'segments';
+}
 
-  if (state.range.preset === 'today') {
-    const sorted = [...games].sort((a, b) => b.date.localeCompare(a.date));
-    return sorted[0]?.opponent ?? null;
+/** Today's single opponent — full ghost franchise line. */
+function resolveContextOpponentSingle(games) {
+  if (!games?.length) return null;
+  const sorted = [...games].sort((a, b) => b.date.localeCompare(a.date));
+  return sorted[0]?.opponent ?? null;
+}
+
+/** Week: all opponents in range (typically 3–5), ranked by recency. */
+function resolveContextOpponents(games) {
+  const mode = resolveGhostMode();
+  const profile = resolveProfile(state.range.preset);
+  const max = profile.maxGhostOpponents ?? 5;
+
+  if (mode === 'full') {
+    const single = state.logFocusOpponent || resolveContextOpponentSingle(games);
+    return single ? [String(single).toUpperCase()] : [];
   }
 
-  const counts = {};
+  if (mode !== 'segments' && mode !== 'markers') return [];
+
+  const byOpp = new Map();
   for (const g of games) {
     if (!g.opponent) continue;
-    counts[g.opponent] = (counts[g.opponent] || 0) + 1;
+    const id = String(g.opponent).toUpperCase();
+    let entry = byOpp.get(id);
+    if (!entry) entry = { id, count: 0, lastDate: g.date };
+    entry.count += 1;
+    if (g.date > entry.lastDate) entry.lastDate = g.date;
+    byOpp.set(id, entry);
   }
-  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (!ranked.length) return null;
-  if (ranked.length === 1) return ranked[0][0];
-  const [top, second] = ranked;
-  if (top[1] > second[1]) return top[0];
-  return null;
+
+  return [...byOpp.values()]
+    .sort((a, b) => b.lastDate.localeCompare(a.lastDate) || b.count - a.count)
+    .slice(0, max)
+    .map((row) => row.id);
+}
+
+function syncOpponentMarkers() {
+  state.opponentMarkerIds = null;
+  state.opponentMarkerColors = null;
+  if (resolveGhostMode() !== 'markers') return;
+  const ids = resolveContextOpponents(state.teamGames);
+  if (!ids.length) return;
+  state.opponentMarkerIds = new Set(ids);
+  const colors = {};
+  for (const id of ids) {
+    colors[id] = findTeam(id)?.colors?.primary || '#5da396';
+  }
+  state.opponentMarkerColors = colors;
 }
 
 /** Ghost layer: opponent win % only on days the selected team played them — not a full franchise week. */
@@ -185,31 +284,6 @@ function soloRange() {
   });
 }
 
-function gameLogUsesMonthScope() {
-  const preset = state.range.preset;
-  return preset === 'today' || preset === 'week';
-}
-
-function gamesForGameLog() {
-  if (gameLogUsesMonthScope()) {
-    const monthGames = state.gameLogGames;
-    if (monthGames?.length) return monthGames;
-  }
-  return state.teamGames;
-}
-
-function soloGameLogRange() {
-  if (gameLogUsesMonthScope()) {
-    return createRange({
-      preset: 'month',
-      teams: [panelTeamId()],
-      mode: 'franchise',
-      metric: 'winPct',
-    });
-  }
-  return soloRange();
-}
-
 function matchupRange() {
   const base = {
     teams: [state.teamA, state.teamB],
@@ -234,6 +308,166 @@ function performanceUrl(teamId, range) {
 function matchupUrl(range) {
   const q = rangeToQuery(range);
   return `/api/matchup?teamA=${encodeURIComponent(state.teamA)}&teamB=${encodeURIComponent(state.teamB)}&${q}`;
+}
+
+function contextUrl(teamId) {
+  return `/api/context?teamId=${encodeURIComponent(teamId)}&league=NBA`;
+}
+
+function contextualPanelHtml({ title, detail = '', action = '' }) {
+  return `
+    <div class="sd-empty-state sd-empty-state--context">
+      <p class="sd-empty-state__title">${title}</p>
+      ${detail ? `<p class="sd-empty-state__detail">${detail}</p>` : ''}
+      ${action ? `<p class="sd-empty-state__action">${action}</p>` : ''}
+    </div>`;
+}
+
+function heroContextualPanel({ title, detail, action = '' }) {
+  const empty = $('#hero-chart-empty');
+  empty.innerHTML = contextualPanelHtml({ title, detail, action });
+  empty.style.display = 'flex';
+}
+
+function soloSeriesEmpty(series) {
+  if (!series?.points?.length) return true;
+  return !rangeHasGames(series) && !series.points.some((p) => p.gameId && !p.flatline);
+}
+
+function effectiveSoloSeries() {
+  if (state.chartFallback?.series?.points?.length) return state.chartFallback.series;
+  return state.teamSeries;
+}
+
+function homeOverviewRange() {
+  return state.range?.preset || HOME_DEFAULT_RANGE;
+}
+
+function gamesInActiveRange(games, preset = state.range?.preset) {
+  if (!Array.isArray(games) || !games.length) return [];
+  const key = preset || HOME_DEFAULT_RANGE;
+  return games.filter((g) => g?.date && presetContainsDate(key, g.date));
+}
+
+function rangeScopedRecord(games) {
+  const scoped = gamesInActiveRange(games);
+  return latestGameStats(scoped.length ? scoped : games);
+}
+
+function applyPanelPayload(payload, mode) {
+  const chart = applyChartPayload(payload, mode);
+  const archive = applyArchiveLogPayload(payload, mode);
+  state.chartSet = chart.chartSet;
+  state.gameSet = chart.chartSet;
+  state.archiveLog = archive.archiveLog;
+  state.teamGames = archive.games;
+  state.teamSeries = chart.series ?? payload?.series ?? null;
+  if (mode === 'matchup') {
+    state.matchupGames = archive.games;
+  } else {
+    state.matchupGames = [];
+  }
+  return { chart, archive };
+}
+
+function getGameLogRows() {
+  if (state.orbitOverview) {
+    const archive = state.homePayload?.archiveLog ?? null;
+    const fallbackGames = state.homePayload?.recentGames ?? [];
+    const resolved = gameLogRowsFromSet(
+      archive ?? (fallbackGames.length
+        ? { games: fallbackGames, metric: 'winPct', mode: 'overview', count: fallbackGames.length }
+        : null),
+      { dedupeFn: dedupeGameLogEntries },
+    );
+    return { ...resolved, mode: 'overview' };
+  }
+  if (state.heroMode === 'league') {
+    return { games: [], metric: 'winPct', mode: 'league' };
+  }
+  if (state.heroMode === 'matchup') {
+    const archive = state.archiveLog
+      ?? state.matchup?.archiveLog
+      ?? (state.matchupGames?.length
+        ? { games: state.matchupGames, metric: 'index', mode: 'matchup', count: state.matchupGames.length }
+        : null);
+    const resolved = gameLogRowsFromSet(archive, { dedupeFn: dedupeGameLogEntries });
+    return { ...resolved, metric: resolved.metric || 'index', mode: 'matchup' };
+  }
+  if (!state.selectedTeamId) {
+    return { games: [], metric: 'winPct', mode: 'solo' };
+  }
+  const archive = state.archiveLog
+    ?? (state.teamGames?.length
+      ? { games: state.teamGames, metric: 'winPct', mode: 'solo', count: state.teamGames.length }
+      : null);
+  const resolved = gameLogRowsFromSet(archive, { dedupeFn: dedupeGameLogEntries });
+  return { ...resolved, metric: resolved.metric || 'winPct', mode: 'solo' };
+}
+
+function chartFallbackCaption() {
+  const fb = state.chartFallback;
+  if (!fb?.preset) return '';
+  return rangeLabel(createRange({ preset: fb.preset, mode: 'franchise', metric: 'winPct' }));
+}
+
+function applyTeamContextHeadline() {
+  const featuredEl = $('#hero-featured-headline');
+  const ctx = state.teamContext;
+  if (!featuredEl || state.heroMode !== 'solo') return;
+  if (state.homepageFeature?.headline) return;
+  if (!ctx?.headline) {
+    featuredEl.hidden = true;
+    featuredEl.innerHTML = '';
+    return;
+  }
+  featuredEl.hidden = false;
+  featuredEl.innerHTML = ctx.subheadline
+    ? `<span class="sd-hero__featured-label">${ctx.headline}</span><span class="sd-hero__featured-sub">${ctx.subheadline}</span>`
+    : `<span class="sd-hero__featured-label">${ctx.headline}</span>`;
+}
+
+async function ensureTeamContext(teamId, gen = null) {
+  if (!teamId) return null;
+  try {
+    const payload = await fetchJson(contextUrl(teamId));
+    if (gen != null && gen !== loadGeneration) return null;
+    if (payload.context) state.teamContext = payload.context;
+    if (payload.referenceDate) state.meta = { ...state.meta, referenceDate: payload.referenceDate };
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function loadSoloFallbacks(gen) {
+  state.chartFallback = null;
+  const teamId = state.selectedTeamId;
+  if (!teamId) return;
+
+  const seriesEmpty = soloSeriesEmpty(state.teamSeries);
+  if (!seriesEmpty && state.teamContext) return;
+
+  const payload = await ensureTeamContext(teamId, gen);
+  if (gen !== loadGeneration || !payload) return;
+
+  const ctx = payload.context;
+  const suggested = payload.suggestedPreset || ctx?.suggestedPreset || 'season';
+
+  if (seriesEmpty && payload.series?.points?.length) {
+    state.chartFallback = {
+      series: payload.series,
+      preset: suggested,
+      note: ctx?.headline,
+    };
+  }
+
+  if (soloTodayIdle() && ctx?.lastGame && !state.lastPlayedGame) {
+    state.lastPlayedGame = {
+      ...ctx.lastGame,
+      opponent: ctx.lastGame.opponent,
+    };
+  }
 }
 
 /* ------------------------------------------------------------- chrome */
@@ -267,8 +501,506 @@ function teamCardHtml(team) {
     </button>`;
 }
 
+function isOrbitOverview() {
+  return state.orbitOverview;
+}
+
+/* ------------------------------------------------------------- Orbit Overview (default workspace) */
+
+function formatAsOfDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const month = d.toLocaleDateString(undefined, { month: 'short' });
+  const day = d.getDate();
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${month} ${day} '${yy}`;
+}
+
+function overviewIntro() {
+  return state.homePayload?.intro ?? {
+    kicker: 'NBA performance index',
+    title: 'Orbit Overview',
+    detail: 'League-wide results, streaks, and matchups from the game archive.',
+  };
+}
+
+function homeIntro() {
+  return overviewIntro();
+}
+
+function updateGameLogHeading() {
+  const heading = $('#game-log-heading');
+  if (!heading) return;
+  const eraLabel = rangeLabel(state.range);
+  if (state.orbitOverview) {
+    heading.textContent = `Recent results · ${eraLabel}`;
+    return;
+  }
+  if (state.heroMode === 'matchup') {
+    const count = state.archiveLog?.honestCount
+      ?? state.archiveLog?.count
+      ?? state.matchupGames?.length
+      ?? 0;
+    const limit = state.archiveLog?.limit ?? 10;
+    if (count > 0 && count < limit) {
+      heading.textContent = `Game log · ${eraLabel} · ${count} head-to-head`;
+      return;
+    }
+    heading.textContent = `Game log · ${eraLabel}`;
+    return;
+  }
+  if (state.heroMode === 'solo' && state.selectedTeamId) {
+    const team = findTeam(state.selectedTeamId);
+    const abbr = team?.abbreviation ?? state.selectedTeamId;
+    heading.textContent = `Game log · ${abbr} · ${eraLabel}`;
+    return;
+  }
+  heading.textContent = `Game log · ${eraLabel}`;
+}
+
+function updateLedgerLabel() {
+  const label = $('#game-log-ledger-label');
+  const ledger = $('#game-log-ledger');
+  if (!label || !ledger) return;
+  ledger.classList.toggle('is-orbit-overview-ledger', state.orbitOverview);
+  if (state.orbitOverview) {
+    label.hidden = true;
+    return;
+  }
+  label.hidden = false;
+  label.textContent = 'VS RECORD';
+}
+
+function renderHomeStats() {
+  const statsEl = $('#solo-stats');
+  const moveEl = $('#stat-winpct-move');
+  const winEl = $('#stat-winpct');
+  const recordEl = $('#stat-record');
+  const gamesEl = $('#stat-games');
+  const labels = soloStatLabels();
+  const home = state.homePayload;
+
+  statsEl?.classList.remove('is-idle-today', 'is-today-event');
+  if (labels[0]) labels[0].textContent = 'Teams';
+  if (labels[1]) labels[1].textContent = 'Games logged';
+  if (labels[2]) labels[2].textContent = 'As of';
+
+  winEl.textContent = home?.teamCount ?? state.teams.length ?? '—';
+  winEl.className = '';
+  recordEl.textContent = home?.gameCount ?? state.meta?.gameCount ?? '—';
+  recordEl.className = '';
+  gamesEl.textContent = formatAsOfDate(home?.asOf ?? state.meta?.referenceDate);
+  gamesEl.className = 'is-context';
+  moveEl.textContent = '';
+  moveEl.className = '';
+}
+
+function homeMatchupChipHtml(pair) {
+  const teamA = pair.teamA;
+  const teamB = pair.teamB;
+  const tA = findTeam(teamA);
+  const tB = findTeam(teamB);
+  const abbrA = tA?.abbreviation ?? teamA;
+  const abbrB = tB?.abbreviation ?? teamB;
+  const colorA = tA?.colors?.primary || '#5da396';
+  const label = pair.headline
+    ? `${pair.headline} · ${abbrA} vs ${abbrB}`
+    : `${abbrA} vs ${abbrB}`;
+  const safeLabel = label.replace(/"/g, '&quot;');
+  return `
+    <button type="button" class="sd-opp-chip sd-opp-chip--action"
+      data-home-matchup-a="${teamA}" data-home-matchup-b="${teamB}"
+      style="--team-color: ${colorA}"
+      title="${safeLabel}" aria-label="Open matchup ${abbrA} vs ${abbrB}">
+      <span class="sd-log-swatch" style="--team-color: ${colorA}" aria-hidden="true"></span>
+      <span class="sd-opp-chip__abbr">${abbrA} vs ${abbrB}</span>
+    </button>`;
+}
+
+function homeMoverChipHtml(mover) {
+  const team = findTeam(mover.teamId);
+  const abbr = team?.abbreviation ?? mover.teamId;
+  const color = team?.colors?.primary || '#5da396';
+  const delta = mover.delta ?? 0;
+  const deltaCls = movementClass(delta);
+  const deltaText = `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
+  const tip = `${abbr} · ${deltaText} this week`.replace(/"/g, '&quot;');
+  return `
+    <button type="button" class="sd-opp-chip sd-opp-chip--action"
+      data-home-mover="${mover.teamId}"
+      style="--team-color: ${color}"
+      title="${tip}" aria-label="${abbr} ${deltaText} this week">
+      <span class="sd-log-swatch" style="--team-color: ${color}" aria-hidden="true"></span>
+      <span class="sd-opp-chip__abbr">${abbr}</span>
+      <span class="sd-opp-chip__record ${deltaCls}">${deltaText}</span>
+    </button>`;
+}
+
+function homeStreakChipHtml(streak) {
+  const team = findTeam(streak.teamId);
+  const abbr = team?.abbreviation ?? streak.teamId;
+  const color = team?.colors?.primary || '#5da396';
+  const cls = streak.result === 'W' ? 'is-up' : 'is-down';
+  const label = `${streak.result}${streak.length}`;
+  const tip = `${abbr} · ${label} this week`.replace(/"/g, '&quot;');
+  return `
+    <button type="button" class="sd-opp-chip sd-opp-chip--action"
+      data-home-mover="${streak.teamId}"
+      style="--team-color: ${color}"
+      title="${tip}" aria-label="${abbr} on a ${label} run">
+      <span class="sd-log-swatch" style="--team-color: ${color}" aria-hidden="true"></span>
+      <span class="sd-opp-chip__abbr">${abbr}</span>
+      <span class="sd-opp-chip__record ${cls}">${label}</span>
+    </button>`;
+}
+
+function renderOverviewLedger() {
+  const oppEl = $('#key-opponents');
+  if (!oppEl) return;
+
+  const home = state.homePayload;
+  const matchups = home?.recentMatchups ?? [];
+  const movers = home?.topMovers ?? [];
+  const streaks = home?.activeStreaks ?? [];
+
+  if (!movers.length && !matchups.length && !streaks.length) {
+    oppEl.innerHTML = contextualPanelHtml({
+      title: 'League snapshot loading',
+      detail: 'Top movers, streaks, and featured matchups appear once the archive is ready.',
+    });
+    return;
+  }
+
+  const sections = [];
+
+  if (movers.length) {
+    sections.push(`
+      <section class="sd-home-ledger__section">
+        <h3 class="sd-home-ledger__heading">Top movers</h3>
+        <div class="sd-game-log__chips">${movers.map(homeMoverChipHtml).join('')}</div>
+      </section>`);
+  }
+
+  if (streaks.length) {
+    sections.push(`
+      <section class="sd-home-ledger__section">
+        <h3 class="sd-home-ledger__heading">Active streaks</h3>
+        <div class="sd-game-log__chips">${streaks.map(homeStreakChipHtml).join('')}</div>
+      </section>`);
+  }
+
+  if (matchups.length) {
+    sections.push(`
+      <section class="sd-home-ledger__section">
+        <h3 class="sd-home-ledger__heading">Featured matchups</h3>
+        <div class="sd-game-log__chips">${matchups.map(homeMatchupChipHtml).join('')}</div>
+      </section>`);
+  }
+
+  oppEl.innerHTML = `<div class="sd-home-ledger">${sections.join('')}</div>`;
+
+  oppEl.querySelectorAll('[data-home-matchup-a]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      openHomeMatchup(btn.dataset.homeMatchupA, btn.dataset.homeMatchupB);
+    });
+  });
+  oppEl.querySelectorAll('[data-home-mover]').forEach((btn) => {
+    btn.addEventListener('click', () => openHomeMover(btn.dataset.homeMover));
+  });
+}
+
+function renderHomeLedger() {
+  renderOverviewLedger();
+}
+
+function renderHomeGameLog() {
+  const recentEl = $('#recent-results');
+  const { games } = getGameLogRows();
+
+  if (!games.length) {
+    recentEl.innerHTML = contextualPanelHtml({
+      title: 'Archive syncing',
+      detail: 'League-wide results will populate here from the historical game archive.',
+    });
+    renderHomeLedger();
+    requestAnimationFrame(updateGameLogScroll);
+    return;
+  }
+
+  recentEl.innerHTML = games.map((g, index) => {
+    const gameDate = (g.date || '').slice(0, 10);
+    const emphasizeLatest = state.range?.preset === 'today' && index === 0;
+    const latestCls = emphasizeLatest ? ' sd-log-row--latest' : '';
+    const team = findTeam(g.team);
+    const opp = findTeam(g.opponent);
+    const teamLabel = team ? `${team.city} ${team.name}` : g.team;
+    const oppShort = opp?.abbreviation ?? g.opponent;
+    const cls = g.result === 'W' ? 'is-up' : 'is-down';
+    const score = g.teamScore != null ? `${g.teamScore} – ${g.opponentScore}` : '—';
+    const label = `View ${team?.abbreviation ?? g.team} vs ${oppShort} on ${formatResultDate(g.date)}`
+      .replace(/"/g, '&quot;');
+    return `
+      <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${latestCls}"
+        data-home-team="${g.team}"
+        data-game-date="${gameDate}"
+        data-opponent="${g.opponent}"
+        aria-label="${label}">
+        <span class="sd-log-row__badge ${cls}">${g.result === 'W' ? 'W' : 'L'}</span>
+        <div class="sd-log-row__main">
+          <div class="sd-log-row__title-row">
+            <span class="sd-log-row__title">${teamLabel} vs ${oppShort}</span>
+          </div>
+          <span class="sd-log-row__sub ${cls}">${score}</span>
+        </div>
+        <time class="sd-log-row__date" datetime="${g.date}">${formatResultDate(g.date)}</time>
+      </button>`;
+  }).join('');
+
+  renderHomeLedger();
+  requestAnimationFrame(updateGameLogScroll);
+}
+
+function renderOverviewHeroContext() {
+  const intro = overviewIntro();
+  const title = $('#hero-title');
+  title.textContent = intro.title || 'Orbit Overview';
+  title.removeAttribute('title');
+
+  const featuredEl = $('#hero-featured-headline');
+  if (featuredEl) {
+    featuredEl.hidden = false;
+    featuredEl.innerHTML = intro.detail
+      ? `<span class="sd-hero__featured-label">${intro.detail}</span>`
+      : '';
+  }
+
+  const prompt = $('#overview-team-prompt');
+  if (prompt) prompt.hidden = false;
+
+  syncModePanels();
+}
+
+function renderHomeHeroContext() {
+  renderOverviewHeroContext();
+}
+
+function renderHomeChart() {
+  const canvas = $('#hero-chart');
+  const empty = $('#hero-chart-empty');
+  const caption = $('#hero-chart-caption');
+  const tooltip = $('#hero-tooltip');
+  const { ctx, w, h } = setupCanvas(canvas);
+  const chartWrap = canvas.closest('.sd-chart-wrap');
+
+  if (!state.hoverHit) tooltip.hidden = true;
+  state.heroHitAreas = [];
+  chartWrap?.classList.remove('has-ghost-opponent');
+  renderHomeHeroContext();
+  renderHomeStats();
+
+  const intro = homeIntro();
+  const home = state.homePayload;
+  const spotlight = home?.spotlight;
+  const netEl = $('#hero-net-summary');
+  if (netEl) {
+    const mover = home?.topMovers?.[0];
+    const moverLine = mover
+      ? `${teamAbbrev(mover.teamId)} ${mover.delta > 0 ? '+' : ''}${mover.delta}% this week`
+      : intro.kicker;
+    netEl.innerHTML = `<span class="sd-hero__net-line--muted">${moverLine} · ${state.meta?.label ?? 'Historical game archive'}</span>`;
+    netEl.classList.add('is-loaded');
+  }
+
+  const lastPlayed = $('#hero-last-played');
+  if (lastPlayed) {
+    lastPlayed.hidden = true;
+    lastPlayed.innerHTML = '';
+  }
+
+  if (spotlight?.series?.points?.length) {
+    empty.style.display = 'none';
+    renderHeroLegend();
+    const teamId = spotlight.teamId;
+    const colored = seriesWithTeamColor(spotlight.series, teamId);
+    const chartProfile = resolveProfile('month');
+    const result = drawPerformanceChart(ctx, w, h, colored, null, {
+      rangePreset: 'month',
+      profile: chartProfile,
+    });
+    state.heroHitAreas = (result.hitAreas || []).map((hit) => ({
+      ...hit,
+      metric: 'winPct',
+    }));
+    const team = findTeam(teamId);
+    caption.textContent = `${spotlight.headline} · ${team?.abbreviation ?? teamId} win % · past month`;
+    return;
+  }
+
+  heroContextualPanel({
+    title: intro.detail || 'Latest around the league',
+    detail: 'Choose a team in the ribbon above, or open a recent result below.',
+    action: home?.outlook || '',
+  });
+  caption.textContent = `Orbit Overview · ${intro.kicker} · as of ${formatAsOfDate(home?.asOf ?? state.meta?.referenceDate)}`;
+  renderHeroLegend();
+  ctx.clearRect(0, 0, w, h);
+}
+
+function renderHomeWorkspace() {
+  updateGameLogHeading();
+  updateLedgerLabel();
+  renderHomeChart();
+  renderHomeGameLog();
+  renderTeamList();
+}
+
+async function loadOrbitOverview() {
+  const gen = ++loadGeneration;
+  state.orbitOverview = true;
+  state.selectedTeamId = null;
+  state.homepageFeature = null;
+  state.hoverHit = null;
+  state.ghostHover = false;
+  state.heroHitAreas = [];
+  state.errors = [];
+
+  syncHeroModeUi();
+  syncRangeUi();
+  syncTeamPickers();
+
+  if (!state.workspaceReady) setLoading(true);
+  const preset = homeOverviewRange();
+  try {
+    const payload = await fetchJson(`/api/home?league=NBA&range=${encodeURIComponent(preset)}`);
+    if (gen !== loadGeneration) return;
+    clearPanelGameData();
+    state.teamContext = null;
+    state.homePayload = payload;
+    if (payload.range && payload.range !== state.range.preset) {
+      state.range = createRange({
+        preset: payload.range,
+        mode: 'franchise',
+        metric: 'winPct',
+      });
+      syncRangeUi();
+    }
+    if (payload.referenceDate) setReferenceDate(payload.referenceDate);
+    state.meta = { ...state.meta, ...payload };
+    if (payload.featuredMatchup) {
+      state.featuredMarquee = payload.featuredMatchup;
+    }
+  } catch (err) {
+    if (gen !== loadGeneration) return;
+    state.errors = [`Home: ${err.message}`];
+    state.homePayload = null;
+  } finally {
+    if (gen !== loadGeneration) return;
+    markWorkspaceReady();
+    syncHeroModeUi();
+    syncRangeUi();
+    syncTeamPickers();
+    renderHomeWorkspace();
+    renderHeader();
+  }
+}
+
+function openHomeMatchup(teamA, teamB) {
+  const a = String(teamA || '').toUpperCase();
+  const b = String(teamB || '').toUpperCase();
+  if (!findTeam(a) || !findTeam(b)) return;
+  clearTeamScopedState();
+  state.orbitOverview = false;
+  state.teamA = a;
+  state.teamB = b;
+  state.heroMode = 'matchup';
+  ensureActiveRange('matchup');
+  state.range = createRange({
+    preset: state.featuredMarquee?.range || HOME_DEFAULT_RANGE,
+    mode: 'matchup',
+    metric: 'index',
+  });
+  const feat = state.homePayload?.featuredMatchup ?? state.featuredMarquee;
+  if (feat?.headline && frozensetMatch(a, b, feat)) {
+    state.homepageFeature = {
+      headline: feat.headline,
+      subheadline: feat.subheadline,
+    };
+  } else {
+    state.homepageFeature = null;
+  }
+  syncHeroModeUi();
+  syncRangeUi();
+  syncTeamPickers();
+  loadData();
+}
+
+function frozensetMatch(a, b, feat) {
+  const fa = String(feat.teamA || '').toUpperCase();
+  const fb = String(feat.teamB || '').toUpperCase();
+  return (a === fa && b === fb) || (a === fb && b === fa);
+}
+
+function openHomeMover(teamId) {
+  const id = String(teamId || '').toUpperCase();
+  if (!id || !findTeam(id)) return;
+  clearTeamScopedState();
+  state.orbitOverview = false;
+  state.heroMode = 'solo';
+  ensureActiveRange('solo');
+  state.selectedTeamId = id;
+  state.teamA = id;
+  state.homepageFeature = null;
+  state.range = createRange({
+    preset: HOME_DEFAULT_RANGE,
+    mode: 'franchise',
+    metric: 'winPct',
+  });
+  syncHeroModeUi();
+  syncRangeUi();
+  syncTeamPickers();
+  loadData();
+}
+
+function focusGameFromHomeLog(game) {
+  if (!game?.team || !game?.date) return;
+  const teamId = String(game.team).toUpperCase();
+  if (!findTeam(teamId)) return;
+  clearTeamScopedState();
+  state.orbitOverview = false;
+  state.heroMode = 'solo';
+  state.selectedTeamId = teamId;
+  state.teamA = teamId;
+  state.homepageFeature = null;
+  state.range = createRangeForGameDate(game.date, {
+    mode: 'franchise',
+    metric: 'winPct',
+  });
+  syncHeroModeUi();
+  syncRangeUi();
+  syncTeamPickers();
+  loadData();
+}
+
+function returnToOverview() {
+  loadGeneration += 1;
+  clearLogFocus();
+  state.heroMode = 'solo';
+  state.range = createRange({
+    preset: HOME_DEFAULT_RANGE,
+    mode: 'franchise',
+    metric: 'winPct',
+  });
+  loadOrbitOverview();
+}
+
+function returnToHome() {
+  returnToOverview();
+}
+
 function renderTeamList() {
   const el = $('#team-list');
+  if (!el) return;
   if (!state.teams.length) {
     el.innerHTML = emptyStateHtml({
       title: 'No teams available',
@@ -281,8 +1013,6 @@ function renderTeamList() {
   el.querySelectorAll('.sd-team-chip').forEach((btn) => {
     btn.addEventListener('click', () => selectTeam(btn.dataset.teamId));
   });
-  el.querySelector('.sd-team-chip.is-selected')
-    ?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   requestAnimationFrame(updateTeamExplorerScroll);
 }
 
@@ -407,6 +1137,14 @@ function bindGameLogScroll() {
   list.addEventListener('click', (event) => {
     const row = event.target.closest('.sd-log-row--action');
     if (!row?.dataset.gameDate) return;
+    if (row.dataset.homeTeam) {
+      focusGameFromHomeLog({
+        team: row.dataset.homeTeam,
+        date: row.dataset.gameDate,
+        opponent: row.dataset.opponent,
+      });
+      return;
+    }
     focusGameFromLog({
       date: row.dataset.gameDate,
       opponent: row.dataset.opponent,
@@ -418,6 +1156,14 @@ function bindGameLogScroll() {
     const row = event.target.closest('.sd-log-row--action');
     if (!row?.dataset.gameDate) return;
     event.preventDefault();
+    if (row.dataset.homeTeam) {
+      focusGameFromHomeLog({
+        team: row.dataset.homeTeam,
+        date: row.dataset.gameDate,
+        opponent: row.dataset.opponent,
+      });
+      return;
+    }
     focusGameFromLog({
       date: row.dataset.gameDate,
       opponent: row.dataset.opponent,
@@ -563,19 +1309,20 @@ function teamMatchupTitle(teamAId, teamBId) {
 }
 
 function renderHeroContext() {
+  if (state.orbitOverview) {
+    renderOverviewHeroContext();
+    return;
+  }
+
+  syncModePanels();
+
   const isSolo = state.heroMode === 'solo';
   const isMatchup = state.heroMode === 'matchup';
-
-  $('#team-explorer').hidden = !isSolo;
-  $('#solo-stats').hidden = !isSolo;
-  $('#matchup-row').hidden = !isMatchup;
-
-  if (isSolo) requestAnimationFrame(updateTeamExplorerScroll);
-
   if (isSolo) {
     const title = $('#hero-title');
     title.textContent = teamDisplayName(state.selectedTeamId);
     title.removeAttribute('title');
+    applyTeamContextHeadline();
   } else if (isMatchup) {
     const title = $('#hero-title');
     title.textContent = teamMatchupTitle(state.teamA, state.teamB);
@@ -648,6 +1395,40 @@ function renderSoloStats() {
   if (soloTodayIdle()) {
     statsEl?.classList.add('is-idle-today');
     statsEl?.classList.remove('is-today-event');
+    const ctx = state.teamContext;
+    const season = ctx?.seasonSummary;
+
+    if (ctx?.todayGame) {
+      if (labels[0]) labels[0].textContent = 'Result';
+      if (labels[1]) labels[1].textContent = 'Opponent';
+      if (labels[2]) labels[2].textContent = 'Final';
+      const g = ctx.todayGame;
+      winEl.textContent = g.result === 'W' ? 'W' : 'L';
+      winEl.className = g.result === 'W' ? 'is-up' : 'is-down';
+      recordEl.textContent = findTeam(g.opponent)?.abbreviation ?? g.opponent;
+      recordEl.className = 'is-context';
+      gamesEl.textContent = `${g.teamScore}–${g.opponentScore}`;
+      gamesEl.className = '';
+      moveEl.textContent = '';
+      moveEl.className = '';
+      return;
+    }
+
+    if (season?.games) {
+      if (labels[0]) labels[0].textContent = 'Season';
+      if (labels[1]) labels[1].textContent = 'Record';
+      if (labels[2]) labels[2].textContent = 'Win %';
+      winEl.textContent = season.seasonLabel ?? 'Season';
+      winEl.className = 'is-context';
+      recordEl.textContent = season.record;
+      recordEl.className = '';
+      gamesEl.textContent = `${season.winPct}%`;
+      gamesEl.className = '';
+      moveEl.textContent = ctx?.streak ? `${ctx.streak.result}${ctx.streak.length} streak` : '';
+      moveEl.className = ctx?.streak?.result === 'W' ? 'is-up' : ctx?.streak?.result === 'L' ? 'is-down' : '';
+      return;
+    }
+
     if (labels[0]) labels[0].textContent = 'Status';
     if (labels[1]) labels[1].textContent = 'Last result';
     if (labels[2]) labels[2].textContent = 'Last played';
@@ -734,7 +1515,7 @@ function renderSoloStats() {
   if (labels[1]) labels[1].textContent = 'Record';
   if (labels[2]) labels[2].textContent = 'Games';
 
-  const stats = latestGameStats(state.teamGames);
+  const stats = rangeScopedRecord(state.teamGames);
   winEl.textContent = stats.winPct != null ? `${stats.winPct}%` : '—';
   winEl.className = '';
   recordEl.textContent = stats.record ?? '—';
@@ -759,36 +1540,76 @@ function renderSoloStats() {
   }
 }
 
-function gamePointsEnriched() {
-  const raw = (state.teamSeries?.points || [])
+function enrichSeriesPoints(raw = []) {
+  const sorted = [...raw]
     .filter((p) => p.gameId && !p.flatline)
     .sort((a, b) => a.date.localeCompare(b.date));
-  return raw.map((p, i) => {
-    const prevVal = p.previousValue ?? (i > 0 ? raw[i - 1].value : p.value);
-    const move = p.movementAmount ?? Number((p.value - prevVal).toFixed(2));
-    return { ...p, previousValue: prevVal, movementAmount: move };
+  return sorted.map((p, i) => {
+    const prevVal = p.previousValue ?? (i > 0 ? sorted[i - 1].value : null);
+    if (prevVal == null || p.value == null) {
+      return { ...p, previousValue: prevVal ?? p.value, movementAmount: null };
+    }
+    const move = Number((p.value - prevVal).toFixed(2));
+    return { ...p, previousValue: prevVal, movementAmount: move === 0 ? null : move };
   });
 }
 
-function gamePointLookup() {
-  const byId = new Map();
-  const byDate = new Map();
-  for (const p of gamePointsEnriched()) {
-    byId.set(p.gameId, p);
-    byDate.set(p.date, p);
+function seriesForGameLogMode(mode) {
+  if (mode === 'matchup') {
+    return state.matchup?.series?.find((s) => s.teamId === state.teamA)
+      ?? state.matchup?.series?.[0]
+      ?? null;
   }
-  return { byId, byDate };
+  return state.teamSeries;
 }
 
-function formatMovePct(amount) {
-  if (amount == null || Number.isNaN(Number(amount)) || amount === 0) return null;
-  return `${amount > 0 ? '+' : ''}${Number(amount).toFixed(1)}%`;
+function gamePointLookup(mode) {
+  const series = seriesForGameLogMode(mode);
+  const byId = new Map();
+  const byDateOpp = new Map();
+  for (const p of enrichSeriesPoints(series?.points || [])) {
+    byId.set(p.gameId, p);
+    const date = (p.date || '').slice(0, 10);
+    const opp = String(p.opponentId || '').toUpperCase();
+    if (date && opp) byDateOpp.set(`${date}|${opp}`, p);
+  }
+  return { byId, byDateOpp };
+}
+
+function pointForGame(game, lookup) {
+  if (!game) return null;
+  if (game.id && lookup.byId.has(game.id)) {
+    return lookup.byId.get(game.id);
+  }
+  const date = (game.date || '').slice(0, 10);
+  const opp = String(game.opponent || '').toUpperCase();
+  return lookup.byDateOpp.get(`${date}|${opp}`) ?? null;
+}
+
+function movementForGame(game, pt) {
+  if (!pt || pt.gameId !== game.id) return null;
+  if (pt.value == null || pt.previousValue == null) return null;
+  const move = Number((pt.value - pt.previousValue).toFixed(2));
+  if (!Number.isFinite(move) || move === 0) return null;
+  return move;
+}
+
+function formatMoveValue(amount, metric = 'winPct') {
+  if (amount == null || Number.isNaN(Number(amount))) return null;
+  const n = Number(amount);
+  if (n === 0) return null;
+  const suffix = metric === 'winPct' ? '%' : '';
+  return `${n > 0 ? '+' : ''}${n.toFixed(1)}${suffix}`;
 }
 
 function significantPoint(gamePoints) {
   if (!gamePoints.length) return null;
   return [...gamePoints].sort((a, b) =>
     Math.abs(b.movementAmount ?? 0) - Math.abs(a.movementAmount ?? 0))[0];
+}
+
+function gamePointsForMode(mode) {
+  return enrichSeriesPoints(seriesForGameLogMode(mode)?.points || []);
 }
 
 function netMetricChange(gamePoints, metric) {
@@ -829,10 +1650,9 @@ function rangeOpponentRecords(games, limit = 5) {
 }
 
 function soloHasGameActivity() {
-  return (state.teamGames?.length ?? 0) > 0;
+  const count = state.archiveLog?.count ?? state.teamGames?.length ?? 0;
+  return count > 0;
 }
-
-const EMPTY_RANGE_MSG = 'No games in this range';
 
 function rangeHasGames(series) {
   if (!series) return false;
@@ -843,6 +1663,39 @@ function rangeHasGames(series) {
 
 function matchupHasGames(matchup) {
   return matchup?.series?.some((s) => (s.gameCount ?? 0) > 0) ?? false;
+}
+
+function matchupH2hSummary(matchup = state.matchup) {
+  return matchup?.h2h ?? matchup?.chartSet?.h2h ?? null;
+}
+
+function matchupIndexLabel() {
+  return state.range?.preset === 'season' ? 'season index' : 'index';
+}
+
+function formatMatchupH2hLine(h2h) {
+  if (!h2h?.count) return '';
+  const teamA = findTeam(h2h.teamAId || state.teamA);
+  const teamB = findTeam(h2h.teamBId || state.teamB);
+  const winsA = h2h.teamAWins ?? 0;
+  const winsB = h2h.teamBWins ?? 0;
+  if (winsA === winsB) {
+    return `Head-to-head: ${winsA}–${winsB}`;
+  }
+  const leader = winsA > winsB ? teamA : teamB;
+  const leaderW = Math.max(winsA, winsB);
+  const trailerW = Math.min(winsA, winsB);
+  const leaderName = leader?.name ?? (winsA > winsB ? h2h.teamAId : h2h.teamBId);
+  return `Head-to-head: ${leaderName} ${leaderW}–${trailerW}`;
+}
+
+function matchupChartCaption(matchup) {
+  const gameCount = Math.max(0, ...matchup.series.map((s) => s.gameCount ?? 0));
+  const range = rangeLabel(state.range);
+  if (!matchupHasGames(matchup)) {
+    return `${range} · Full team performance`;
+  }
+  return `${range} · Full team performance · ${gameCount} game${gameCount === 1 ? '' : 's'}`;
 }
 
 /** Chart points for net/swing — game-level when available, else aggregated period points. */
@@ -892,7 +1745,7 @@ function formatLastPlayedLabel(game) {
   return `Last played ${date} vs ${oppLabel} · ${result} ${game.teamScore}–${game.opponentScore}`;
 }
 
-async function loadLastPlayedGame() {
+async function loadLastPlayedGame(gen) {
   state.lastPlayedGame = null;
   if (state.heroMode !== 'solo' || soloHasGameActivity()) return;
 
@@ -901,11 +1754,13 @@ async function loadLastPlayedGame() {
       state.selectedTeamId,
       createRange({ preset: 'all', mode: 'franchise', metric: 'winPct' }),
     ));
+    if (gen !== loadGeneration) return;
     const games = payload.games || [];
     if (!games.length) return;
     const sorted = [...games].sort((a, b) => b.date.localeCompare(a.date));
     state.lastPlayedGame = sorted[0];
   } catch {
+    if (gen !== loadGeneration) return;
     state.lastPlayedGame = null;
   }
 }
@@ -914,7 +1769,7 @@ function renderLastPlayedContext() {
   const el = $('#hero-last-played');
   if (!el) return;
 
-  if (state.loading || state.heroMode !== 'solo' || soloHasGameActivity()) {
+  if ((state.loading && !state.workspaceReady) || state.heroMode !== 'solo' || soloHasGameActivity()) {
     el.hidden = true;
     el.innerHTML = '';
     return;
@@ -951,7 +1806,7 @@ function jumpToActivityRange(preset) {
 
 function buildSoloNetLine() {
   const label = rangeLabel(state.range);
-  const series = state.teamSeries;
+  const series = effectiveSoloSeries();
 
   if (series?.error) {
     return `<span class="sd-hero__net-line--muted">Summary unavailable — ${series.error}</span>`;
@@ -959,12 +1814,22 @@ function buildSoloNetLine() {
 
   if (!rangeHasGames(series)) {
     if (soloTodayIdle()) {
-      return '<span class="sd-hero__net-line--muted">No game today · franchise holds steady</span>';
+      const ctx = state.teamContext;
+      if (ctx?.outlook) {
+        return `<span class="sd-hero__net-line--muted">${ctx.outlook}</span>`;
+      }
+      return '<span class="sd-hero__net-line--muted">No game today · showing latest available trend</span>';
+    }
+    if (state.chartFallback?.note) {
+      return `<span class="sd-hero__net-line--muted">${state.chartFallback.note}</span>`;
+    }
+    if (state.teamContext?.headline) {
+      return `<span class="sd-hero__net-line--muted">${state.teamContext.headline}</span>`;
     }
     if (state.range.preset === 'today') {
-      return '<span class="sd-hero__net-line--muted">No games scheduled today</span>';
+      return '<span class="sd-hero__net-line--muted">No game today · see recent trend below</span>';
     }
-    return `<span class="sd-hero__net-line--muted">${EMPTY_RANGE_MSG}</span>`;
+    return `<span class="sd-hero__net-line--muted">Showing ${chartFallbackCaption() || 'recent'} performance</span>`;
   }
 
   const activityPoints = seriesActivityPoints(series);
@@ -982,7 +1847,7 @@ function buildSoloNetLine() {
 
   if (sig?.opponentId && Math.abs(sig.movementAmount ?? 0) > 0) {
     const opp = sig.opponentId;
-    const move = formatMovePct(sig.movementAmount);
+    const move = formatMoveValue(sig.movementAmount, 'winPct');
     const cls = movementClass(sig.movementAmount ?? 0);
     parts.push(`Largest swing vs ${opp} <em class="${cls}">${move}</em>`);
   }
@@ -997,7 +1862,6 @@ function buildSoloNetLine() {
 function buildMatchupNetLine() {
   const teamA = findTeam(state.teamA);
   const teamB = findTeam(state.teamB);
-  const label = rangeLabel(state.range);
   const matchup = state.matchup;
 
   if (matchup?.error) {
@@ -1008,10 +1872,13 @@ function buildMatchupNetLine() {
     return '<span class="sd-hero__net-line--muted">Select two teams and a range with overlapping games.</span>';
   }
 
-  const allGamePoints = matchup.series.flatMap((s) => seriesActivityPoints(s));
+  const h2hLine = formatMatchupH2hLine(matchupH2hSummary(matchup));
+  if (h2hLine) {
+    return `<span class="sd-hero__net-line--muted">${h2hLine}</span>`;
+  }
 
   if (!matchupHasGames(matchup)) {
-    return `<span class="sd-hero__net-line--muted">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · ${EMPTY_RANGE_MSG}</span>`;
+    return `<span class="sd-hero__net-line--muted">${teamA?.abbreviation ?? state.teamA} vs ${teamB?.abbreviation ?? state.teamB} · widen the timeline for season context</span>`;
   }
 
   const parts = [];
@@ -1022,9 +1889,9 @@ function buildMatchupNetLine() {
     const abbr = findTeam(s.teamId)?.abbreviation ?? s.teamId;
     if (net?.delta != null && net.delta !== 0) {
       const cls = movementClass(net.delta);
-      parts.push(`${abbr} index <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}</em>`);
+      parts.push(`${abbr} ${matchupIndexLabel()} <em class="${cls}">${net.delta > 0 ? '+' : ''}${net.delta}</em>`);
     } else {
-      parts.push(`${abbr} index unchanged`);
+      parts.push(`${abbr} ${matchupIndexLabel()} unchanged`);
     }
   }
 
@@ -1035,7 +1902,7 @@ function renderMarketSummary() {
   const el = $('#hero-net-summary');
   if (!el) return;
 
-  if (state.loading) {
+  if (state.loading && !state.workspaceReady) {
     el.textContent = '';
     el.classList.remove('is-loaded');
     return;
@@ -1061,11 +1928,12 @@ function renderHeroLegend() {
   if (!legend) return;
 
   if (state.heroMode === 'matchup' && state.matchup?.series?.length) {
+    const indexLabel = matchupIndexLabel();
     legend.innerHTML = state.matchup.series.map((s) => `
     <span class="sd-legend-item">
       <span class="sd-legend-swatch" style="background:${s.color}"></span>
       <span>${s.teamName}</span>
-      <span class="sd-legend-meta">Index · ${s.gameCount} game${s.gameCount === 1 ? '' : 's'}</span>
+      <span class="sd-legend-meta">${indexLabel} · ${s.gameCount} game${s.gameCount === 1 ? '' : 's'}</span>
     </span>`).join('');
     return;
   }
@@ -1074,6 +1942,11 @@ function renderHeroLegend() {
 }
 
 function renderHeroChart() {
+  if (state.orbitOverview) {
+    renderHomeChart();
+    return;
+  }
+
   const canvas = $('#hero-chart');
   const empty = $('#hero-chart-empty');
   const caption = $('#hero-chart-caption');
@@ -1090,21 +1963,24 @@ function renderHeroChart() {
 
   if (state.heroMode === 'solo') {
     renderSoloStats();
-    const series = state.teamSeries;
-    if (series?.error) {
-      heroEmptyState({
-        title: 'Data unavailable',
-        detail: series.error,
+    const series = effectiveSoloSeries();
+    const primary = state.teamSeries;
+    if (primary?.error && !series?.points?.length) {
+      heroContextualPanel({
+        title: state.teamContext?.headline || 'Performance archive',
+        detail: primary.error,
+        action: 'Try another timeline or team.',
       });
-      caption.textContent = 'Unable to load performance data';
+      caption.textContent = state.teamContext?.subheadline || 'Showing latest available context';
       return;
     }
-    if (!series?.points?.length) {
-      heroEmptyState({
-        title: 'No data in this range',
-        detail: 'Try a wider timeline or another team.',
+    if (soloSeriesEmpty(series)) {
+      heroContextualPanel({
+        title: state.teamContext?.headline || teamDisplayName(state.selectedTeamId),
+        detail: state.teamContext?.subheadline || 'Loading franchise history from the archive.',
+        action: state.teamContext?.outlook || '',
       });
-      caption.textContent = 'Data unavailable';
+      caption.textContent = 'Latest available context';
       return;
     }
     empty.style.display = 'none';
@@ -1112,22 +1988,28 @@ function renderHeroChart() {
     const vsLabel = state.logFocusOpponent
       ? ` vs ${teamAbbrev(state.logFocusOpponent)}`
       : '';
+    const fbCaption = state.chartFallback ? chartFallbackCaption() : null;
+    const rangeCaption = fbCaption && fbCaption !== rangeLabel(state.range)
+      ? `${rangeLabel(state.range)} · showing ${fbCaption}`
+      : rangeLabel(state.range);
     caption.textContent = hasRangeGames
-      ? `${rangeLabel(state.range)}${vsLabel} · Win % · ${series.gameCount} game${series.gameCount === 1 ? '' : 's'}`
-      : (soloTodayIdle() ? 'Today · Win %' : `${rangeLabel(state.range)}${vsLabel} · Win %`);
+      ? `${rangeCaption}${vsLabel} · Win % · ${series.gameCount} game${series.gameCount === 1 ? '' : 's'}`
+      : (soloTodayIdle() ? `${rangeCaption}${vsLabel} · Win %` : `${rangeCaption}${vsLabel} · Win %`);
     const colored = seriesWithTeamColor(series, state.selectedTeamId);
-    const contextColored = state.contextSeries && state.contextOpponentId
-      ? seriesWithTeamColor(state.contextSeries, state.contextOpponentId)
-      : null;
-    const wrap = chartWrap;
-    wrap?.classList.toggle('has-ghost-opponent', !!contextColored);
+    const contextColored = state.contextLayers.map((layer) =>
+      seriesWithTeamColor(layer.series, layer.teamId),
+    );
+    chartWrap?.classList.toggle('has-ghost-opponent', contextColored.length > 0);
     const primaryHover = state.hoverHit?.layer === 'context' ? null : state.hoverHit;
     const chartProfile = chartProfileForRange(state.range);
     const result = drawPerformanceChart(ctx, w, h, colored, primaryHover, {
-      contextSeries: contextColored,
+      contextSeriesList: contextColored,
       ghostHover: state.ghostHover,
+      ghostHoverId: state.contextHoverId,
       rangePreset: chartProfile.preset,
       profile: chartProfile,
+      opponentMarkerIds: state.opponentMarkerIds,
+      opponentColors: state.opponentMarkerColors,
     });
     state.heroHitAreas = (result.hitAreas || []).map((hit) => ({
       ...hit,
@@ -1138,27 +2020,25 @@ function renderHeroChart() {
 
   const matchup = state.matchup;
   if (matchup?.error) {
-    heroEmptyState({
-      title: 'Matchup unavailable',
+    heroContextualPanel({
+      title: 'Matchup context',
       detail: matchup.error,
+      action: 'Pick two teams with games in this range.',
     });
-    caption.textContent = 'Unable to load head-to-head data';
+    caption.textContent = 'Showing available head-to-head context';
     return;
   }
   if (!matchup?.series?.length) {
-    heroEmptyState({
-      title: 'No matchup data',
-      detail: 'Both teams need games in the selected range.',
+    heroContextualPanel({
+      title: `${teamMatchupTitle(state.teamA, state.teamB)}`,
+      detail: 'Widen the timeline to find overlapping games between these franchises.',
+      action: 'Try Season or All time.',
     });
-    caption.textContent = 'Data unavailable';
+    caption.textContent = 'Matchup index';
     return;
   }
   empty.style.display = 'none';
-  const gameCount = Math.max(0, ...matchup.series.map((s) => s.gameCount ?? 0));
-  const hasRangeGames = matchupHasGames(matchup);
-  caption.textContent = hasRangeGames
-    ? `${rangeLabel(state.range)} · Performance index · ${gameCount} game${gameCount === 1 ? '' : 's'}`
-    : `${rangeLabel(state.range)} · Performance index`;
+  caption.textContent = matchupChartCaption(matchup);
   const chartProfile = chartProfileForRange(state.range);
   const result = drawMatchupChart(ctx, w, h, matchup, state.hoverHit, {
     rangePreset: chartProfile.preset,
@@ -1176,12 +2056,6 @@ function formatResultDate(iso) {
 
 function ledgerOpponents(games, limit = 5) {
   return rangeOpponentRecords(games, limit);
-}
-
-function opponentSwatchHtml(opponentId) {
-  const team = findTeam(opponentId);
-  const color = team?.colors?.primary || '#5da396';
-  return `<span class="sd-log-swatch" style="--team-color: ${color}" aria-hidden="true"></span>`;
 }
 
 function opponentChipHtml(row, { isContext = false } = {}) {
@@ -1219,51 +2093,71 @@ function renderGameLogLedger({ games, isSolo }) {
 
   const ledger = ledgerOpponents(games);
   if (!ledger.length) {
+    const keyOpps = state.teamContext?.keyOpponents ?? [];
+    if (keyOpps.length) {
+      oppEl.innerHTML = keyOpps.map((row) => opponentChipHtml(row)).join('');
+      return;
+    }
     const range = rangeLabel(state.range);
-    oppEl.innerHTML = `<p class="sd-game-log__note">No head-to-head games in ${range}.</p>`;
+    oppEl.innerHTML = contextualPanelHtml({
+      title: state.teamContext?.seasonSummary
+        ? `${state.teamContext.seasonSummary.seasonLabel} opponents`
+        : 'Season opponents',
+      detail: `No head-to-head games in ${range} — showing season matchups when available.`,
+    });
     return;
   }
 
   oppEl.innerHTML = ledger.map((row) => {
-    const isContext = ghostOpponentEnabled() && state.contextOpponentId === row.id;
+    const contextIds = new Set(state.contextLayers.map((l) => l.teamId));
+    const isContext = contextIds.has(row.id)
+      || (ghostOpponentEnabled() && state.logFocusOpponent === row.id);
     return opponentChipHtml(row, { isContext });
   }).join('');
 }
 
 function renderGameLog() {
-  const recentEl = $('#recent-results');
-  const isSolo = state.heroMode === 'solo';
+  if (state.orbitOverview) {
+    renderHomeGameLog();
+    return;
+  }
 
-  const games = [...gamesForGameLog()].sort((a, b) => b.date.localeCompare(a.date));
-  const recent = dedupeGameLogEntries(games);
+  updateGameLogHeading();
+  updateLedgerLabel();
+
+  const recentEl = $('#recent-results');
+  const { games: recent, metric, mode } = getGameLogRows();
+  const isSolo = mode === 'solo';
 
   if (!recent.length) {
     const isToday = state.range.preset === 'today';
-    recentEl.innerHTML = emptyStateHtml({
-      title: isToday ? 'No games today' : 'No results in this range',
+    recentEl.innerHTML = contextualPanelHtml({
+      title: isToday ? 'No game today' : 'No games in this range',
       detail: isToday
-        ? 'Check back when the schedule has final scores.'
-        : 'Widen the timeline or pick another team.',
+        ? 'No completed game on the reference date for this team.'
+        : 'Try a wider timeline to find games in the archive.',
     });
-    renderGameLogLedger({ games, isSolo });
+    renderGameLogLedger({ games: recent, isSolo });
     requestAnimationFrame(updateGameLogScroll);
     return;
   }
 
-  const { byId, byDate } = gamePointLookup();
-  const gamePoints = [...byId.values()];
+  const lookup = gamePointLookup(mode);
+  const gamePoints = gamePointsForMode(mode);
   const sigPoint = significantPoint(gamePoints);
   const streaksByKey = computeGameStreakPeaks(recent);
 
-  recentEl.innerHTML = recent.map((g) => {
+  recentEl.innerHTML = recent.map((g, index) => {
     const gameDate = (g.date || '').slice(0, 10);
-    const pt = byId.get(g.id) || byDate.get(g.date);
+    const emphasizeLatest = state.range?.preset === 'today' && index === 0;
+    const latestCls = emphasizeLatest ? ' sd-log-row--latest' : '';
+    const pt = pointForGame(g, lookup);
     const cls = g.result === 'W' ? 'is-up' : 'is-down';
-    const move = pt?.movementAmount;
-    const moveText = formatMovePct(move);
+    const move = movementForGame(g, pt);
+    const moveText = formatMoveValue(move, metric);
     const moveCls = movementClass(move ?? 0);
     const isSwing = sigPoint && pt && sigPoint.gameId === pt.gameId
-      && Math.abs(move ?? 0) > 0;
+      && move != null && Math.abs(move) > 0;
     const score = g.teamScore != null ? `${g.teamScore} – ${g.opponentScore}` : `${pt?.pointsFor ?? '—'} – ${pt?.pointsAgainst ?? '—'}`;
     const opp = findTeam(g.opponent);
     const oppShort = opp ? `${opp.city} ${opp.name}` : g.opponent;
@@ -1273,7 +2167,6 @@ function renderGameLog() {
     const streakInfo = streaksByKey.get(gameLogKey(g));
     const tagsHtml = gameLogTagsHtml(pickGameLogBadges(g, pt, isSwing, streakInfo));
     const rowInner = `
-        ${opponentSwatchHtml(g.opponent)}
         <span class="sd-log-row__badge ${cls}">${g.result === 'W' ? 'W' : 'L'}</span>
         <div class="sd-log-row__main">
           <div class="sd-log-row__title-row">
@@ -1291,7 +2184,7 @@ function renderGameLog() {
     if (isSolo) {
       const label = `View ${formatResultDate(g.date)} vs ${oppShort}`.replace(/"/g, '&quot;');
       return `
-      <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${swingCls}${focusCls}"
+      <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${swingCls}${focusCls}${latestCls}"
         data-game-date="${gameDate}"
         data-opponent="${g.opponent}"
         aria-label="${label}">
@@ -1301,7 +2194,7 @@ function renderGameLog() {
 
     const label = `View matchup on ${formatResultDate(g.date)} vs ${oppShort}`.replace(/"/g, '&quot;');
     return `
-      <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${swingCls}${focusCls}"
+      <button type="button" class="sd-log-row sd-log-row--game sd-log-row--action${swingCls}${focusCls}${latestCls}"
         data-game-date="${gameDate}"
         data-opponent="${g.opponent}"
         aria-label="${label}">
@@ -1309,7 +2202,7 @@ function renderGameLog() {
       </button>`;
   }).join('');
 
-  renderGameLogLedger({ games, isSolo });
+  renderGameLogLedger({ games: recent, isSolo });
   requestAnimationFrame(updateGameLogScroll);
 }
 
@@ -1318,130 +2211,171 @@ function renderPanels() {
   renderTeamList();
 }
 
-async function loadContextOpponent() {
-  state.contextOpponentId = null;
-  state.contextSeries = null;
-  if (!ghostOpponentEnabled()) return;
+async function loadContextOpponents(gen) {
+  state.contextLayers = [];
+  state.contextHoverId = null;
 
-  const oppId = state.logFocusOpponent || resolveContextOpponent(state.teamGames);
-  if (!oppId || oppId === state.selectedTeamId) return;
+  if (ghostOverlayEnabled()) {
+    const opponents = resolveContextOpponents(state.teamGames)
+      .filter((id) => id && id !== state.selectedTeamId);
+    if (!opponents.length) return;
 
-  try {
-    const payload = await fetchJson(performanceUrl(oppId, soloRange()));
-    if (payload.error && !payload.series) return;
-    const filtered = buildContextSeries(state.teamGames, oppId, payload.series);
-    const useH2hOnly = state.logFocusOpponent || state.range.preset !== 'today';
-    const contextSeries = useH2hOnly ? filtered : payload.series;
-    if (contextSeries?.points?.length) {
-      state.contextOpponentId = oppId;
-      state.contextSeries = contextSeries;
-    }
-  } catch {
-    state.contextOpponentId = null;
-    state.contextSeries = null;
+    const mode = resolveGhostMode();
+    const results = await Promise.all(
+      opponents.map(async (oppId) => {
+        try {
+          const payload = await fetchJson(performanceUrl(oppId, soloRange()));
+          if (gen !== loadGeneration) return null;
+          if (payload.error && !payload.series) return null;
+          let contextSeries;
+          if (mode === 'full') {
+            contextSeries = payload.series;
+          } else {
+            contextSeries = buildContextSeries(state.teamGames, oppId, payload.series);
+          }
+          if (!contextSeries?.points?.length) return null;
+          return { teamId: oppId, series: contextSeries };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    if (gen !== loadGeneration) return;
+    state.contextLayers = results.filter(Boolean);
+    return;
   }
+
+  syncOpponentMarkers();
 }
 
-async function loadPanelData() {
+async function loadSoloPanelData(gen) {
+  const teamId = state.selectedTeamId;
+  if (!teamId) return;
   try {
-    const teamId = panelTeamId();
-    const needsMonthLog = gameLogUsesMonthScope();
     const payload = await fetchJson(performanceUrl(teamId, soloRange()));
-    if (payload.error && !payload.series) throw new Error(payload.error);
-    state.teamSeries = payload.series ?? null;
-    state.teamGames = payload.games || [];
-    if (needsMonthLog) {
-      try {
-        const monthPayload = await fetchJson(performanceUrl(teamId, soloGameLogRange()));
-        const monthGames = monthPayload?.error ? null : (monthPayload?.games || []);
-        state.gameLogGames = monthGames?.length ? monthGames : state.teamGames;
-      } catch {
-        state.gameLogGames = state.teamGames;
-      }
-    } else {
-      state.gameLogGames = state.teamGames;
+    if (gen !== loadGeneration) return;
+    if (payload.error && !payload.chartSet && !payload.archiveLog && !payload.series) {
+      throw new Error(payload.error);
     }
+    applyPanelPayload(payload, 'solo');
     if (payload.mode) state.meta = { ...state.meta, ...payload };
     if (state.teamSeries?.error) {
       state.errors = [`Panel data: ${state.teamSeries.error}`];
     }
   } catch (err) {
+    if (gen !== loadGeneration) return;
     state.errors = [`Panel data: ${err.message}`];
+    state.chartSet = null;
+    state.archiveLog = null;
+    state.gameSet = null;
     state.teamSeries = null;
     state.teamGames = [];
-    state.gameLogGames = [];
   }
 }
 
-async function loadMatchupHero() {
+async function loadMatchupHero(gen) {
   try {
     const payload = await fetchJson(matchupUrl(matchupRange()));
-    if (payload.error && !payload.series) throw new Error(payload.error);
+    if (gen !== loadGeneration) return;
+    if (payload.error && !payload.chartSet && !payload.archiveLog && !payload.series) {
+      throw new Error(payload.error);
+    }
+    applyPanelPayload(payload, 'matchup');
     state.matchup = payload;
+    state.teamSeries = null;
+    state.teamGames = [];
     if (payload.error) {
       state.errors = [`Matchup data: ${payload.error}`];
     }
   } catch (err) {
+    if (gen !== loadGeneration) return;
     state.errors = [`Matchup data: ${err.message}`];
     state.matchup = null;
+    state.chartSet = null;
+    state.archiveLog = null;
+    state.gameSet = null;
+    state.matchupGames = [];
   }
 }
 
 async function loadData() {
+  if (state.orbitOverview) state.orbitOverview = false;
+  if (state.heroMode === 'solo' && !state.selectedTeamId) return;
+  if (state.heroMode === 'matchup') {
+    const a = String(state.teamA || '').toUpperCase();
+    const b = String(state.teamB || '').toUpperCase();
+    if (!a || !b || a === b) return;
+  }
+
   const gen = ++loadGeneration;
+  ensureActiveRange(state.heroMode);
   state.errors = [];
   state.hoverHit = null;
   state.ghostHover = false;
 
-  if (state.heroMode === 'solo') {
-    state.matchup = null;
-  } else {
-    state.contextOpponentId = null;
-    state.contextSeries = null;
-    state.lastPlayedGame = null;
-    state.matchup = null;
-  }
+  syncHeroModeUi();
+  syncTeamPickers();
 
-  setLoading(true);
+  if (!state.workspaceReady) setLoading(true);
+  state.chartSet = null;
+  state.archiveLog = null;
+  state.gameSet = null;
+  state.teamSeries = null;
+  state.teamGames = [];
+  state.matchupGames = [];
   try {
-    await loadPanelData();
-    if (gen !== loadGeneration) return;
     if (state.heroMode === 'solo') {
-      await loadContextOpponent();
+      await loadSoloPanelData(gen);
+      if (gen !== loadGeneration) return;
+      state.chartFallback = null;
+      await loadContextOpponents(gen);
+      if (gen !== loadGeneration) return;
+      await loadSoloFallbacks(gen);
       if (gen !== loadGeneration) return;
       if (!soloHasGameActivity()) {
-        await loadLastPlayedGame();
+        await loadLastPlayedGame(gen);
       } else {
         state.lastPlayedGame = null;
       }
     } else if (state.heroMode === 'matchup') {
-      await loadMatchupHero();
+      state.contextLayers = [];
+      state.contextHoverId = null;
+      state.opponentMarkerIds = null;
+      state.opponentMarkerColors = null;
+      state.lastPlayedGame = null;
+      state.chartFallback = null;
+      await loadMatchupHero(gen);
     }
   } finally {
     if (gen !== loadGeneration) return;
-    setLoading(false);
+    markWorkspaceReady();
     renderHeroChart();
     if (applyLogGameChartFocus()) renderHeroChart();
     renderPanels();
     renderHeader();
-    if (state.focusedGameLogKey) {
-      requestAnimationFrame(() => {
-        $('#hero-chart-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      });
-    }
   }
 }
 
 function selectTeam(teamId) {
-  clearLogFocus();
+  clearTeamScopedState();
+  state.orbitOverview = false;
+  state.heroMode = 'solo';
   state.selectedTeamId = teamId;
+  state.teamA = teamId;
+  state.homepageFeature = null;
+  ensureActiveRange('solo');
+  syncHeroModeUi();
   loadData();
 }
 
-function flipToContextOpponent() {
-  const nextId = state.contextOpponentId;
-  if (!nextId || state.heroMode !== 'solo' || !ghostOpponentEnabled()) return;
+function flipToContextOpponent(teamId) {
+  const nextId = teamId || state.contextHoverId;
+  if (!nextId || state.heroMode !== 'solo' || !ghostOverlayEnabled()) return;
+  clearPanelGameData();
+  state.teamContext = null;
+  clearLogFocus();
   state.selectedTeamId = nextId;
+  state.teamA = nextId;
   loadData();
 }
 
@@ -1491,12 +2425,30 @@ function enterMatchupFromGame(opponentId) {
   setHeroMode('matchup');
 }
 
+function syncModePanels() {
+  const overview = state.orbitOverview;
+  const showSolo = overview || state.heroMode === 'solo';
+  const showMatchup = !overview && state.heroMode === 'matchup';
+  const explorer = $('#team-explorer');
+  const matchupRow = $('#matchup-row');
+  const soloStats = $('#solo-stats');
+  if (explorer) explorer.hidden = !showSolo;
+  if (matchupRow) matchupRow.hidden = !showMatchup;
+  if (soloStats) soloStats.hidden = !showSolo;
+  if (showSolo) requestAnimationFrame(updateTeamExplorerScroll);
+}
+
 function syncHeroModeUi() {
+  const inOverview = state.orbitOverview;
   document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
-    const active = btn.dataset.heroMode === state.heroMode;
+    const active = !inOverview && btn.dataset.heroMode === state.heroMode;
     btn.classList.toggle('is-active', active);
     btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
+  document.body.classList.toggle('is-orbit-overview', inOverview);
+  const prompt = $('#overview-team-prompt');
+  if (prompt) prompt.hidden = !inOverview;
+  syncModePanels();
 }
 
 function syncRangeUi() {
@@ -1531,21 +2483,64 @@ function setHeroMode(mode) {
   if (mode !== 'solo' && mode !== 'matchup') return;
   const wasMatchup = state.heroMode === 'matchup';
   clearLogFocus();
+  if (mode === 'matchup') {
+    const a = String(state.teamA || '').toUpperCase();
+    const b = String(state.teamB || '').toUpperCase();
+    if (a && b && a === b) {
+      state.errors = ['Choose two different teams for a matchup.'];
+      syncHeroModeUi();
+      return;
+    }
+  }
   if (mode === 'solo') state.homepageFeature = null;
+  if (mode === 'matchup') {
+    const feat = state.homePayload?.featuredMatchup ?? state.featuredMarquee;
+    if (state.orbitOverview && feat?.teamA && feat?.teamB) {
+      state.teamA = feat.teamA;
+      state.teamB = feat.teamB;
+    }
+  }
+  if (state.orbitOverview && mode === 'matchup') {
+    state.orbitOverview = false;
+  } else if (!state.orbitOverview || mode !== 'solo') {
+    state.orbitOverview = false;
+  }
+  if (state.orbitOverview && mode === 'solo') {
+    ensureActiveRange('solo');
+    syncHeroModeUi();
+    return;
+  }
+  if (mode === 'solo' && !state.range?.preset) {
+    ensureActiveRange('solo');
+  }
   state.heroMode = mode;
   syncHeroModeUi();
   state.range = createRange({
-    preset: state.range.preset || 'week',
+    preset: state.range.preset || HOME_DEFAULT_RANGE,
     mode: mode === 'solo' ? 'franchise' : 'matchup',
     metric: mode === 'solo' ? 'winPct' : 'index',
   });
+  syncRangeUi();
   if (mode === 'solo' && wasMatchup) {
     state.selectedTeamId = state.teamA;
   }
+  syncTeamPickers();
+  clearPanelGameData();
+  if (mode === 'solo') state.teamContext = null;
   loadData();
 }
 
 function setRange(preset) {
+  if (state.orbitOverview) {
+    state.range = createRange({
+      preset,
+      mode: 'franchise',
+      metric: 'winPct',
+    });
+    syncRangeUi();
+    loadOrbitOverview();
+    return;
+  }
   clearLogFocus();
   state.range = createRange({ preset, mode: state.heroMode === 'solo' ? 'franchise' : 'matchup', metric: state.heroMode === 'solo' ? 'winPct' : 'index' });
   syncRangeUi();
@@ -1554,7 +2549,16 @@ function setRange(preset) {
 
 /* ------------------------------------------------------------- binds */
 
+function bindBrandLink() {
+  $('#orbit-brand')?.addEventListener('click', (event) => {
+    if (!window.location.pathname.includes('/odds')) return;
+    event.preventDefault();
+    if (!state.orbitOverview) returnToOverview();
+  });
+}
+
 function bindControls() {
+  bindBrandLink();
   document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
     btn.addEventListener('click', () => setHeroMode(btn.dataset.heroMode));
   });
@@ -1599,6 +2603,7 @@ function bindControls() {
     const needsRedraw = state.hoverHit || state.ghostHover;
     state.hoverHit = null;
     state.ghostHover = false;
+    state.contextHoverId = null;
     if (needsRedraw) {
       cancelAnimationFrame(hoverRaf);
       hoverRaf = requestAnimationFrame(() => renderHeroChart());
@@ -1610,7 +2615,7 @@ function bindControls() {
 
     const { mx, my } = chartPoint(e);
     const hit = state.heroHitAreas.length ? findHit(state.heroHitAreas, mx, my) : null;
-    const contextHit = !hit && state.contextOpponentId
+    const contextHit = !hit && state.contextLayers.length
       ? findContextHit(state.heroHitAreas, mx, my)
       : null;
 
@@ -1629,6 +2634,7 @@ function bindControls() {
         || state.ghostHover;
       state.hoverHit = { point: hit.point, teamId: hit.teamId, layer: 'primary' };
       state.ghostHover = false;
+    state.contextHoverId = null;
       if (changed) {
         cancelAnimationFrame(hoverRaf);
         hoverRaf = requestAnimationFrame(() => renderHeroChart());
@@ -1640,7 +2646,10 @@ function bindControls() {
     tooltip.innerHTML = formatContextTooltipHtml(contextHit.teamName);
     tooltip.hidden = false;
     positionTooltip(e);
-    if (!state.ghostHover) {
+    const hoverId = contextHit.teamId || null;
+    const changed = !state.ghostHover || state.contextHoverId !== hoverId;
+    state.contextHoverId = hoverId;
+    if (!state.ghostHover || changed) {
       state.ghostHover = true;
       state.hoverHit = null;
       cancelAnimationFrame(hoverRaf);
@@ -1662,10 +2671,11 @@ function bindControls() {
   canvas?.addEventListener('pointercancel', clearChartHover);
 
   canvas?.addEventListener('click', (e) => {
-    if (state.heroMode !== 'solo' || !state.contextOpponentId || !ghostOpponentEnabled()) return;
+    if (state.heroMode !== 'solo' || !state.contextLayers.length || !ghostOverlayEnabled()) return;
     const { mx, my } = chartPoint(e);
     if (findHit(state.heroHitAreas, mx, my)) return;
-    if (findContextHit(state.heroHitAreas, mx, my)) flipToContextOpponent();
+    const contextHit = findContextHit(state.heroHitAreas, mx, my);
+    if (contextHit) flipToContextOpponent(contextHit.teamId);
   });
 
   document.querySelectorAll('[data-hero-mode]:not(:disabled)').forEach((btn) => {
@@ -1680,7 +2690,6 @@ function bindControls() {
 
 async function init() {
   state.errors = [];
-  setLoading(true);
   try {
     const [teamsPayload, marqueePayload] = await Promise.all([
       fetchJson('/api/teams?league=NBA'),
@@ -1693,12 +2702,14 @@ async function init() {
       setReferenceDate(teamsPayload.referenceDate);
     }
     if (!marqueePayload.error) {
-      applyFeaturedHomepage(marqueePayload);
+      state.featuredMarquee = marqueePayload;
     }
   } catch (err) {
     state.errors = [`Teams: ${err.message}`];
     state.teams = [];
   }
+
+  // Future: pinned team from storage → selectTeam(pinnedId) and skip home.
 
   initTeamPickers();
   syncTeamPickers();
@@ -1707,11 +2718,13 @@ async function init() {
   bindTeamExplorerScroll();
   bindGameLogScroll();
   bindControls();
-  await loadData();
+  renderHeader();
+  await loadOrbitOverview();
 }
 
 window.addEventListener('resize', () => {
-  renderHeroChart();
+  if (state.orbitOverview) renderHomeChart();
+  else renderHeroChart();
 });
 
 init();

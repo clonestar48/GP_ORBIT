@@ -28,24 +28,27 @@ def _ensure_env() -> None:
     load_dotenv(ROOT)
 
 
+def _explicit_reference_from_env() -> date | None:
+    raw = os.environ.get('ORBIT_REFERENCE_DATE', '').strip()
+    if not raw or raw.lower() == 'auto':
+        return None
+    return date.fromisoformat(raw[:10])
+
+
 def reference_date_mode() -> str:
     """Return how preset ranges are anchored: explicit, auto, or live."""
     _ensure_env()
-    raw = os.environ.get('ORBIT_REFERENCE_DATE', '').strip()
-    if raw and raw.lower() != 'auto':
+    if _explicit_reference_from_env() is not None:
         return 'explicit'
-    games_override = os.environ.get('ORBIT_GAMES_PATH', '').strip()
-    if raw.lower() == 'auto' or games_override:
-        return 'auto'
+    with _reference_lock:
+        if _archive_reference is not None:
+            return 'auto'
     return 'live'
 
 
 def configure_reference_from_games(games: list[dict]) -> date | None:
-    """Resolve ORBIT_REFERENCE_DATE=auto (or implicit auto) from archive max game date."""
+    """Anchor presets to the latest game date in the loaded archive."""
     global _archive_reference
-    if reference_date_mode() != 'auto':
-        return None
-
     dates = [(g.get('date') or '')[:10] for g in games if g.get('date')]
     resolved: date | None = None
     if dates:
@@ -57,16 +60,17 @@ def configure_reference_from_games(games: list[dict]) -> date | None:
 
 
 def reference_date() -> date:
-    """Anchor for preset ranges — override via ORBIT_REFERENCE_DATE or archive auto-detect."""
+    """Anchor for preset ranges — archive max date unless ORBIT_REFERENCE_DATE is explicit."""
     _ensure_env()
-    mode = reference_date_mode()
-    if mode == 'explicit':
-        raw = os.environ.get('ORBIT_REFERENCE_DATE', '').strip()
-        return date.fromisoformat(raw[:10])
-    if mode == 'auto':
-        with _reference_lock:
-            if _archive_reference is not None:
-                return _archive_reference
+    explicit = _explicit_reference_from_env()
+    with _reference_lock:
+        archive = _archive_reference
+    if explicit is not None:
+        if archive is not None and explicit > archive:
+            return archive
+        return explicit
+    if archive is not None:
+        return archive
     return datetime.now(timezone.utc).date()
 
 

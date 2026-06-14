@@ -13,6 +13,7 @@ from typing import Any, Callable, Literal
 
 ResolutionUnit = Literal['game', 'day', 'week', 'month', 'season']
 TooltipMode = Literal['game', 'game-or-day', 'period', 'league-summary']
+GhostMode = Literal['none', 'full', 'segments', 'markers']
 RangePreset = Literal['today', 'week', 'month', 'season', 'all', 'league']
 
 
@@ -23,6 +24,8 @@ class ChartResolution:
     max_points_per_series: int
     show_markers: bool
     show_ghost_opponent: bool
+    ghost_mode: GhostMode
+    max_ghost_opponents: int
     tooltip_mode: TooltipMode
 
     def to_dict(self) -> dict[str, Any]:
@@ -32,6 +35,8 @@ class ChartResolution:
             'maxPointsPerSeries': self.max_points_per_series,
             'showMarkers': self.show_markers,
             'showGhostOpponent': self.show_ghost_opponent,
+            'ghostMode': self.ghost_mode,
+            'maxGhostOpponents': self.max_ghost_opponents,
             'tooltipMode': self.tooltip_mode,
         }
 
@@ -43,6 +48,8 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         max_points_per_series=20,
         show_markers=True,
         show_ghost_opponent=True,
+        ghost_mode='full',
+        max_ghost_opponents=1,
         tooltip_mode='game',
     ),
     'week': ChartResolution(
@@ -50,7 +57,9 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         resolution='game',
         max_points_per_series=30,
         show_markers=True,
-        show_ghost_opponent=False,
+        show_ghost_opponent=True,
+        ghost_mode='segments',
+        max_ghost_opponents=5,
         tooltip_mode='game',
     ),
     'month': ChartResolution(
@@ -59,6 +68,8 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         max_points_per_series=90,
         show_markers=True,
         show_ghost_opponent=False,
+        ghost_mode='markers',
+        max_ghost_opponents=3,
         tooltip_mode='game-or-day',
     ),
     'season': ChartResolution(
@@ -67,6 +78,8 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         max_points_per_series=40,
         show_markers=False,
         show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
         tooltip_mode='period',
     ),
     'all': ChartResolution(
@@ -75,6 +88,8 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         max_points_per_series=120,
         show_markers=False,
         show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
         tooltip_mode='period',
     ),
     'league': ChartResolution(
@@ -83,6 +98,8 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         max_points_per_series=10,
         show_markers=False,
         show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
         tooltip_mode='league-summary',
     ),
 }

@@ -1,0 +1,8 @@
+# Offline game sync (scripts/sync_games.py) — not used by the frontend at runtime.
+# Copy to .env and fill in when running a sync:
+#   cp .env.example .env
+
+BALLDONTLIE_API_KEY=
+
+# Optional: point LocalProvider at synced JSON after you opt in (default: data/demo-games.json)
+# ORBIT_GAMES_PATH=data/games-2025.json

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -14,8 +15,11 @@ from lib.performance.series import build_index_series, build_multi_team_series, 
 
 from .base import SportsDataProvider
 
+logger = logging.getLogger(__name__)
+
 ROOT = Path(__file__).resolve().parent.parent.parent
-GAMES_PATH = ROOT / 'data' / 'demo-games.json'
+GAMES_PATH = ROOT / 'data' / 'games-2025.json'
+FALLBACK_GAMES_PATH = ROOT / 'data' / 'demo-games.json'
 TEAMS_PATH = ROOT / 'data' / 'demo-teams.json'
 CACHE_TTL = 3600
 
@@ -23,14 +27,24 @@ _lock = threading.Lock()
 _cache: dict = {'games': None, 'teams': None, 'at': 0.0, 'meta': None}
 
 
-def _resolve_games_path() -> Path:
+def _resolve_games_path() -> Path | None:
+    """Pick the first existing games archive: env override → games-2025 → demo."""
     override = os.environ.get('ORBIT_GAMES_PATH', '').strip()
-    if not override:
+    if override:
+        path = Path(override)
+        if not path.is_absolute():
+            path = ROOT / path
+        if path.is_file():
+            return path
+        logger.warning(
+            'ORBIT_GAMES_PATH not found (%s); falling back to default archives',
+            path,
+        )
+    if GAMES_PATH.is_file():
         return GAMES_PATH
-    path = Path(override)
-    if not path.is_absolute():
-        path = ROOT / path
-    return path
+    if FALLBACK_GAMES_PATH.is_file():
+        return FALLBACK_GAMES_PATH
+    return None
 
 
 def _load_env() -> None:
@@ -44,6 +58,23 @@ def _load(path: Path) -> dict:
         return json.load(fh)
 
 
+def _games_path_label(path: Path | None) -> str:
+    if path is None:
+        return ''
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _empty_games_doc() -> dict:
+    return {
+        'source': 'missing',
+        'label': 'No games archive found',
+        'games': [],
+    }
+
+
 def _cached_bundle() -> tuple[list[dict], list[dict], dict]:
     now = time.time()
     with _lock:
@@ -51,18 +82,51 @@ def _cached_bundle() -> tuple[list[dict], list[dict], dict]:
             return _cache['games'], _cache['teams'], _cache['meta']
         _load_env()
         games_path = _resolve_games_path()
-        games_doc = _load(games_path)
-        teams_doc = _load(TEAMS_PATH)
+        if games_path is not None:
+            try:
+                games_doc = _load(games_path)
+            except (OSError, json.JSONDecodeError) as err:
+                logger.error('Failed to load games archive %s: %s', games_path, err)
+                games_doc = _empty_games_doc()
+                games_path = None
+        else:
+            logger.error(
+                'No games archive found (checked ORBIT_GAMES_PATH, %s, %s)',
+                _games_path_label(GAMES_PATH),
+                _games_path_label(FALLBACK_GAMES_PATH),
+            )
+            games_doc = _empty_games_doc()
+
+        try:
+            teams_doc = _load(TEAMS_PATH)
+        except (OSError, json.JSONDecodeError) as err:
+            logger.error('Failed to load teams file %s: %s', TEAMS_PATH, err)
+            teams_doc = {'teams': []}
+
         games = games_doc.get('games', [])
         teams = teams_doc.get('teams', [])
         configure_reference_from_games(games)
-        using_override = games_path != GAMES_PATH
+        using_fallback = games_path == FALLBACK_GAMES_PATH
+        path_label = _games_path_label(games_path)
         meta = {
-            'source': games_doc.get('source', 'demo' if not using_override else 'synced'),
+            'source': games_doc.get('source', 'demo' if using_fallback else 'synced'),
             'label': games_doc.get('label', 'Historical performance demo data'),
             'cachedAt': int(now),
-            'gamesPath': str(games_path.relative_to(ROOT)) if games_path.is_relative_to(ROOT) else str(games_path),
+            'gamesPath': path_label,
+            'archiveFallback': using_fallback,
+            'gameCount': len(games),
         }
+        if games_path is not None:
+            logger.info(
+                'Loaded games archive: %s (%d games, source=%s, label=%s)',
+                path_label,
+                len(games),
+                meta['source'],
+                meta['label'],
+            )
+        else:
+            logger.warning('Serving empty games dataset — no archive available')
+
         _cache['games'] = games
         _cache['teams'] = teams
         _cache['meta'] = meta

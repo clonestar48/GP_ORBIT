@@ -226,6 +226,101 @@ def build_index_series(
     return meta
 
 
+def build_win_pct_series_for_game_set(
+    all_games: list[dict],
+    selected_games: list[dict],
+) -> dict[str, Any]:
+    """Win % at each selected game — game points only, shared by chart and game log."""
+    selected = sorted(selected_games, key=lambda g: g['date'])
+    if not selected:
+        return {'points': [], 'gameCount': 0, 'hasGames': False, 'metric': 'winPct'}
+
+    sorted_all = sorted(all_games, key=lambda g: g['date'])
+    points: list[dict] = []
+
+    for game in selected:
+        d = _parse_game_date(game['date'])
+        through = [g for g in sorted_all if _parse_game_date(g['date']) <= d]
+        prev = [g for g in sorted_all if _parse_game_date(g['date']) < d]
+        wins = sum(1 for g in through if g['result'] == 'W')
+        total = len(through)
+        pct = _entry_win_pct(wins, total)
+        prev_wins = sum(1 for g in prev if g['result'] == 'W')
+        prev_total = len(prev)
+        prev_pct = _entry_win_pct(prev_wins, prev_total) if prev_total else 50.0
+
+        points.append({
+            'date': game['date'],
+            'value': pct,
+            'label': f'{pct}%',
+            'previousValue': round(prev_pct, 2),
+            'movementAmount': round(pct - prev_pct, 2),
+            'gameId': game['id'],
+            'opponentId': game['opponent'],
+            'result': game['result'],
+            'pointsFor': game['teamScore'],
+            'pointsAgainst': game['opponentScore'],
+            'margin': _margin(game),
+            'cumulativeWins': wins,
+            'cumulativeLosses': total - wins,
+            'winPct': pct,
+            'movementReason': _movement_reason(game, 'winPct'),
+            'flatline': False,
+        })
+
+    return {
+        'metric': 'winPct',
+        'gameCount': len(selected),
+        'points': points,
+        'hasGames': True,
+        'startDate': selected[0]['date'][:10],
+        'endDate': selected[-1]['date'][:10],
+    }
+
+
+def build_index_series_for_game_set(
+    all_games: list[dict],
+    selected_games: list[dict],
+) -> dict[str, Any]:
+    """Index at each selected game — game points only."""
+    selected = sorted(selected_games, key=lambda g: g['date'])
+    if not selected:
+        return {'points': [], 'gameCount': 0, 'hasGames': False, 'metric': 'index'}
+
+    sorted_all = sorted(all_games, key=lambda g: g['date'])
+    points: list[dict] = []
+
+    for game in selected:
+        d = _parse_game_date(game['date'])
+        prev = [g for g in sorted_all if _parse_game_date(g['date']) < d]
+        value = _index_before(prev + [game])
+        prev_value = _index_before(prev) if prev else INDEX_BASE
+
+        points.append({
+            'date': game['date'],
+            'value': round(value, 2),
+            'previousValue': round(prev_value, 2),
+            'movementAmount': round(value - prev_value, 2),
+            'gameId': game['id'],
+            'opponentId': game['opponent'],
+            'result': game['result'],
+            'pointsFor': game['teamScore'],
+            'pointsAgainst': game['opponentScore'],
+            'margin': _margin(game),
+            'movementReason': _movement_reason(game, 'index'),
+            'flatline': False,
+        })
+
+    return {
+        'metric': 'index',
+        'gameCount': len(selected),
+        'points': points,
+        'hasGames': True,
+        'startDate': selected[0]['date'][:10],
+        'endDate': selected[-1]['date'][:10],
+    }
+
+
 def build_multi_team_series(
     team_games: dict[str, list[dict]],
     range_query: RangeQuery,

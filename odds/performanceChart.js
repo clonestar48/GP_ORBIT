@@ -23,6 +23,30 @@ const MICRO_Y_SPAN_WIN = 8;
 const MICRO_Y_SPAN_INDEX = 4;
 const MICRO_SERIES_X_OFFSET_PX = 14;
 
+/** Shared plot insets — same spatial role across Overview, Solo, Matchup. */
+export const CHART_LAYOUT = {
+  top: 20,
+  right: 20,
+  bottom: 20,
+  leftGutter: 44,
+};
+
+function resolvePlot(w, h, layout = CHART_LAYOUT) {
+  const left = layout.leftGutter;
+  const right = w - layout.right;
+  const top = layout.top;
+  const bottom = h - layout.bottom;
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    width: Math.max(right - left, 1),
+    height: Math.max(bottom - top, 1),
+    layout,
+  };
+}
+
 /** Sparse displayed data — keyed on point count, not range preset. */
 export function isMicroChart(allPoints) {
   if (!allPoints?.length) return false;
@@ -84,24 +108,23 @@ function isoDateFromMs(ms) {
   return `${y}-${m}-${day}`;
 }
 
-function createDateXFn(points, w, pad) {
+function createDateXFn(points, plot) {
   const ms = points
     .map((p) => parseDateMs(p.date))
     .filter((n) => !Number.isNaN(n));
   const t0 = ms[0] ?? 0;
   const t1 = ms[ms.length - 1] ?? t0;
   const span = Math.max(t1 - t0, 1);
-  const plotW = Math.max(w - pad * 2, 1);
 
   return (dateStr) => {
     const t = parseDateMs(dateStr);
-    if (Number.isNaN(t)) return pad;
-    return pad + ((t - t0) / span) * plotW;
+    if (Number.isNaN(t)) return plot.left;
+    return plot.left + ((t - t0) / span) * plot.width;
   };
 }
 
 /** Pad the time domain so single-day and tiny spans center in the plot. */
-function createMicroDateXFn(allPoints, w, pad) {
+function createMicroDateXFn(allPoints, plot) {
   const ms = allPoints
     .map((p) => parseDateMs(p.date))
     .filter((n) => !Number.isNaN(n));
@@ -117,12 +140,11 @@ function createMicroDateXFn(allPoints, w, pad) {
   }
 
   const span = Math.max(t1 - t0, 1);
-  const plotW = Math.max(w - pad * 2, 1);
 
   return (dateStr) => {
     const t = parseDateMs(dateStr);
-    if (Number.isNaN(t)) return pad + plotW / 2;
-    return pad + ((t - t0) / span) * plotW;
+    if (Number.isNaN(t)) return plot.left + plot.width / 2;
+    return plot.left + ((t - t0) / span) * plot.width;
   };
 }
 
@@ -234,8 +256,8 @@ function buildMovingAverage(points, windowSize) {
   return out;
 }
 
-function maxRenderPointsForWidth(w, pad, profile) {
-  const widthCap = Math.max(120, Math.min(MAX_RENDER_POINTS_CEILING, Math.floor(w - pad * 2)));
+function maxRenderPointsForWidth(plotWidth, profile) {
+  const widthCap = Math.max(120, Math.min(MAX_RENDER_POINTS_CEILING, Math.floor(plotWidth)));
   const profileCap = profile?.maxPointsPerSeries ?? MAX_RENDER_POINTS_CEILING;
   return Math.min(widthCap, profileCap);
 }
@@ -500,48 +522,45 @@ export function setupCanvas(canvas) {
   return { ctx, w: rect.width, h: rect.height };
 }
 
-function drawGrid(ctx, w, h, pad, yFn, values) {
-  const plotH = h - pad * 2;
+function drawGrid(ctx, plot, { yAxisTicks, yFn, metric } = {}) {
+  const { left, right, top, height } = plot;
   const minor = 'rgba(61, 139, 130, 0.045)';
   const major = 'rgba(61, 139, 130, 0.11)';
-  const steps = 16;
+  const steps = 8;
   ctx.lineWidth = 1;
-  for (let i = 0; i <= steps; i++) {
-    const y = pad + (i / steps) * plotH;
+  for (let i = 0; i <= steps; i += 1) {
+    const y = top + (i / steps) * height;
     ctx.strokeStyle = i % 4 === 0 ? major : minor;
     ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
     ctx.stroke();
   }
-  if (yFn && values?.length) {
-    ctx.fillStyle = 'rgba(236, 234, 228, 0.28)';
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'right';
-    for (let i = 0; i <= 4; i++) {
-      const y = pad + (i / 4) * plotH;
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      const span = max - min || 1;
-      const padded = span * 0.08;
-      const lo = min - padded;
-      const hi = max + padded;
-      const val = hi - (i / 4) * (hi - lo);
-      ctx.fillText(Number.isInteger(val) ? String(val) : val.toFixed(1), pad - 4, y + 3);
-    }
+
+  if (!yAxisTicks?.length || !yFn) return;
+
+  ctx.fillStyle = 'rgba(236, 234, 228, 0.32)';
+  ctx.font = '10px "Space Grotesk", sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const labelX = left - 10;
+  for (const val of yAxisTicks) {
+    const y = yFn(val);
+    if (y < top + 8 || y > top + height - 8) continue;
+    ctx.fillText(formatAxisLabel(val, metric), labelX, y);
   }
 }
 
-function drawGridMicro(ctx, w, h, pad) {
-  const plotH = h - pad * 2;
+function drawGridMicro(ctx, plot) {
+  const { left, right, top, height } = plot;
   const line = 'rgba(61, 139, 130, 0.07)';
   ctx.lineWidth = 1;
   for (const frac of [0.35, 0.65]) {
-    const y = pad + frac * plotH;
+    const y = top + frac * height;
     ctx.strokeStyle = line;
     ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
     ctx.stroke();
   }
 }
@@ -558,20 +577,121 @@ function domainFromValues(values, { padFraction = 0.08, minSpan = 0 } = {}) {
   return { lo: min - padded, hi: max + padded };
 }
 
-function yScaleFromDomain(lo, hi, h, pad) {
+function yScaleFromDomain(lo, hi, plot) {
   const span = hi - lo || 1;
-  return (v) => pad + (1 - (v - lo) / span) * (h - pad * 2);
+  return (v) => plot.top + (1 - (v - lo) / span) * plot.height;
 }
 
-function yScale(values, h, pad) {
+function yScale(values, plot) {
   const { lo, hi } = domainFromValues(values);
-  return yScaleFromDomain(lo, hi, h, pad);
+  return { yFn: yScaleFromDomain(lo, hi, plot), lo, hi };
 }
 
-function yScaleMicro(values, metric, h, pad) {
+function yScaleMicro(values, metric, plot) {
   const minSpan = metric === 'winPct' ? MICRO_Y_SPAN_WIN : MICRO_Y_SPAN_INDEX;
   const { lo, hi } = domainFromValues(values, { minSpan, padFraction: 0.06 });
-  return yScaleFromDomain(lo, hi, h, pad);
+  return { yFn: yScaleFromDomain(lo, hi, plot), lo, hi };
+}
+
+function winPctStepForSpan(span) {
+  if (span > 35) return 20;
+  if (span > 15) return 10;
+  return 5;
+}
+
+function indexStepForSpan(span) {
+  if (span > 40) return 10;
+  if (span > 24) return 5;
+  if (span > 12) return 4;
+  return 2;
+}
+
+function buildAxisTicks(lo, hi, step) {
+  const start = Math.floor(lo / step) * step;
+  const end = Math.ceil(hi / step) * step;
+  const ticks = [];
+  for (let v = start; v <= end + step * 0.001; v += step) {
+    const rounded = Math.round(v);
+    if (rounded >= Math.floor(lo) - 1 && rounded <= Math.ceil(hi) + 1) {
+      ticks.push(rounded);
+    }
+  }
+  return [...new Set(ticks)].sort((a, b) => a - b);
+}
+
+function computeYAxisTicks(lo, hi, metric, maxTicks = 3) {
+  const span = hi - lo;
+  if (!Number.isFinite(span) || span <= 0) return [];
+
+  const preferredStep = metric === 'winPct' ? winPctStepForSpan(span) : indexStepForSpan(span);
+  let ticks = buildAxisTicks(lo, hi, preferredStep);
+
+  if (ticks.length < 2) {
+    const fallbackStep = metric === 'winPct'
+      ? Math.max(5, preferredStep / 2)
+      : Math.max(2, preferredStep / 2);
+    ticks = buildAxisTicks(lo, hi, fallbackStep);
+  }
+
+  if (ticks.length < 2) return [];
+
+  if (ticks.length <= maxTicks) return ticks;
+
+  const out = [];
+  for (let i = 0; i < maxTicks; i += 1) {
+    const idx = Math.round((i / (maxTicks - 1)) * (ticks.length - 1));
+    out.push(ticks[idx]);
+  }
+  return [...new Set(out)].sort((a, b) => a - b);
+}
+
+function formatAxisLabel(value, metric) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return '—';
+  if (metric === 'winPct') return `${n}%`;
+  return String(n);
+}
+
+function countGamePoints(allPoints) {
+  return normalizeSeriesPoints(allPoints)
+    .filter((p) => p.gameId && !p.flatline).length;
+}
+
+function resolveYAxisDisplay({
+  micro,
+  metric,
+  lo,
+  hi,
+  profile,
+  gameCount,
+}) {
+  if (micro) return { show: false, ticks: [] };
+
+  const preset = profile?.preset;
+  if (preset === 'today') return { show: false, ticks: [] };
+
+  const span = hi - lo;
+  if (!Number.isFinite(span) || span <= 0) return { show: false, ticks: [] };
+
+  const ticks = computeYAxisTicks(lo, hi, metric);
+  if (ticks.length < 2) return { show: false, ticks: [] };
+
+  if (preset === 'week') {
+    if (gameCount <= 3) return { show: false, ticks: [] };
+    if (metric === 'winPct' && span < 12) return { show: false, ticks: [] };
+    if (metric === 'index' && span < 8) return { show: false, ticks: [] };
+    return { show: true, ticks };
+  }
+
+  if (preset === 'month' || preset === 'season' || preset === 'all') {
+    if (metric === 'winPct' && span < 8) return { show: false, ticks: [] };
+    if (metric === 'index' && span < 6) return { show: false, ticks: [] };
+    return { show: true, ticks };
+  }
+
+  if (metric === 'winPct' && span < 12) return { show: false, ticks: [] };
+  if (metric === 'index' && span < 8) return { show: false, ticks: [] };
+  return { show: true, ticks };
 }
 
 function enrichGamePoints(gamePoints) {
@@ -583,7 +703,106 @@ function enrichGamePoints(gamePoints) {
   });
 }
 
-function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hoverHit = null) {
+function splitPointsByDayGap(points, maxGapDays = 1) {
+  const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
+  const segments = [];
+  let current = [];
+  for (const p of sorted) {
+    if (!current.length) {
+      current.push(p);
+      continue;
+    }
+    const prevDay = new Date(`${current[current.length - 1].date.slice(0, 10)}T12:00:00`);
+    const curDay = new Date(`${p.date.slice(0, 10)}T12:00:00`);
+    const gap = (curDay - prevDay) / DAY_MS;
+    if (gap > maxGapDays) {
+      segments.push(current);
+      current = [p];
+    } else {
+      current.push(p);
+    }
+  }
+  if (current.length) segments.push(current);
+  return segments;
+}
+
+/** Opponent traces tied to matchup dates — no franchise-wide comparison lines. */
+function drawContextGhostSeries(ctx, rawPoints, color, plot, yFn, hitAreas, meta, {
+  ghostDrawMode = 'full',
+  ghostHover = false,
+} = {}) {
+  const xFn = meta.xFn ?? createDateXFn(rawPoints, plot);
+  const lineWidth = 1.15;
+  const alpha = ghostHover ? 0.42 : 0.26;
+  const gamePoints = enrichGamePoints(rawPoints.filter((p) => p.gameId && !p.flatline));
+  const segmentsOut = [];
+
+  if (ghostDrawMode === 'segments') {
+    const chunks = splitPointsByDayGap(gamePoints, 0);
+    for (const chunk of chunks) {
+      if (chunk.length >= 2) {
+        const path = buildLinePath(chunk, xFn, yFn);
+        strokeSeriesLine(ctx, path, color, lineWidth, alpha, { underlay: true, layer: 'context' });
+        for (let i = 1; i < chunk.length; i += 1) {
+          segmentsOut.push({
+            x1: xFn(chunk[i - 1].date),
+            y1: yFn(chunk[i - 1].value),
+            x2: xFn(chunk[i].date),
+            y2: yFn(chunk[i].value),
+            teamId: meta.teamId,
+            teamName: meta.teamName,
+          });
+        }
+      }
+      for (const p of chunk) {
+        const x = xFn(p.date);
+        const y = yFn(p.value);
+        ctx.beginPath();
+        ctx.arc(x, y, 2.75, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = alpha;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        hitAreas.push({
+          x,
+          y,
+          r: 12,
+          point: p,
+          isGame: true,
+          teamName: meta.teamName,
+          teamId: meta.teamId,
+          color,
+          metric: meta.metric,
+          layer: 'context',
+        });
+      }
+    }
+    segmentsOut.forEach((seg) => {
+      hitAreas.push({ ...seg, layer: 'context', metric: meta.metric, r: 12 });
+    });
+    return { segments: segmentsOut };
+  }
+
+  const renderPoints = aggregatePointsByX(rawPoints, xFn, MIN_LINE_BUCKET_PX);
+  const linePath = buildLinePath(renderPoints, xFn, yFn);
+  strokeSeriesLine(ctx, linePath, color, lineWidth, alpha, { underlay: true, layer: 'context' });
+  for (let i = 1; i < renderPoints.length; i += 1) {
+    segmentsOut.push({
+      x1: xFn(renderPoints[i - 1].date),
+      y1: yFn(renderPoints[i - 1].value),
+      x2: xFn(renderPoints[i].date),
+      y2: yFn(renderPoints[i].value),
+      teamId: meta.teamId,
+      teamName: meta.teamName,
+    });
+  }
+  segmentsOut.forEach((seg) => {
+    hitAreas.push({ ...seg, layer: 'context', metric: meta.metric, r: 12 });
+  });
+  return { segments: segmentsOut };
+}
+
+function drawOneSeries(ctx, points, color, plot, yFn, hitAreas, meta = {}, hoverHit = null) {
   let rawPoints = normalizeSeriesPoints(points);
   if (!rawPoints.length) return { segments: [] };
 
@@ -591,8 +810,16 @@ function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hov
   const micro = meta.micro === true;
   if (micro) rawPoints = augmentPointsForMicro(rawPoints);
 
-  const xFn = meta.xFn ?? createDateXFn(rawPoints, w, pad);
-  const maxPts = maxRenderPointsForWidth(w, pad, profile);
+  const isContext = meta.layer === 'context';
+  if (isContext) {
+    return drawContextGhostSeries(ctx, rawPoints, color, plot, yFn, hitAreas, meta, {
+      ghostDrawMode: meta.ghostDrawMode || 'full',
+      ghostHover: meta.ghostHover,
+    });
+  }
+
+  const xFn = meta.xFn ?? createDateXFn(rawPoints, plot);
+  const maxPts = maxRenderPointsForWidth(plot.width, profile);
   const dense = meta.dense === true;
   const lineBucketPx = micro ? 0.75 : MIN_LINE_BUCKET_PX;
   const renderPoints = aggregatePointsByX(
@@ -601,12 +828,10 @@ function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hov
     lineBucketPx,
   );
 
-  const isContext = meta.layer === 'context';
-  const ghostBright = isContext && meta.ghostHover;
-  const lineWidth = isContext ? 1.15 : (meta.lineWidth || 2);
+  const lineWidth = meta.lineWidth || 2;
   const segments = [];
 
-  if (!isContext && showTrendOverlay(profile)) {
+  if (showTrendOverlay(profile)) {
     const maWindow = movingAverageWindow(profile, rawPoints.length);
     const maPoints = buildMovingAverage(rawPoints, maWindow);
     if (maPoints?.length) {
@@ -636,16 +861,17 @@ function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hov
     segments.push({ x1: px, y1: py, x2: x, y2: y, teamId: meta.teamId, teamName: meta.teamName });
   });
 
-  strokeSeriesLine(ctx, linePath, color, lineWidth, isContext ? (ghostBright ? 0.42 : 0.26) : 1, {
-    underlay: !isContext,
-    layer: isContext ? 'context' : 'primary',
+  strokeSeriesLine(ctx, linePath, color, lineWidth, 1, {
+    underlay: true,
+    layer: 'primary',
   });
 
-  if (!isContext && meta.showMarkers !== false) {
+  if (meta.showMarkers !== false) {
     const hoverPoint = hoverHit?.point && hoverHit?.teamId === meta.teamId ? hoverHit.point : null;
     const gamePoints = enrichGamePoints(rawPoints.filter((p) => p.gameId && !p.flatline));
     const last = rawPoints[rawPoints.length - 1];
     const landmarks = findLandmarkPoints(gamePoints, meta.metric || 'winPct', dense);
+    const opponentMarkerIds = meta.opponentMarkerIds;
     const markerPoints = selectMarkerPoints(gamePoints, xFn, {
       dense,
       hoverPoint,
@@ -682,13 +908,15 @@ function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hov
       const isHover = hoverPoint === p;
       const isEndpoint = p === last;
       const isLandmark = Boolean(landmark) && !isEndpoint;
-      const r = isHover ? 3.25 : (isLandmark ? 3 : 2.75);
+      const isOpponentEvent = opponentMarkerIds?.has?.(p.opponentId) || p.isH2h;
+      const r = isHover ? 3.25 : (isLandmark || isOpponentEvent ? 3 : 2.75);
       const fill = meta.dotColor || (p.result === 'W' ? '#6dd4a8' : '#f08080');
+      const oppColor = isOpponentEvent && p.opponentId ? meta.opponentColors?.[p.opponentId] : null;
       drawSeriesMarker(ctx, x, y, r, fill, {
         isHover,
-        isLandmark,
+        isLandmark: isLandmark || isOpponentEvent,
         isEndpoint,
-        ringColor: isLandmark ? color : null,
+        ringColor: oppColor || (isLandmark ? color : null),
       });
     }
 
@@ -703,7 +931,7 @@ function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hov
         { isEndpoint: true, ringColor: color },
       );
     }
-  } else if (!isContext) {
+  } else {
     const gamePoints = enrichGamePoints(rawPoints.filter((p) => p.gameId && !p.flatline));
     for (const p of gamePoints) {
       const x = xFn(p.date);
@@ -723,15 +951,6 @@ function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hov
         layer: 'primary',
       });
     }
-  } else {
-    segments.forEach((seg) => {
-      hitAreas.push({
-        ...seg,
-        layer: 'context',
-        metric: meta.metric,
-        r: 12,
-      });
-    });
   }
 
   return { segments };
@@ -741,16 +960,20 @@ function drawOneSeries(ctx, points, color, w, pad, yFn, hitAreas, meta = {}, hov
  * Generic N-series chart — used by franchise, matchup, and future league views.
  */
 export function drawMultiSeriesChart(ctx, w, h, seriesList, {
-  pad = 22,
+  layout = CHART_LAYOUT,
   hoverHit = null,
   ghostHover = false,
+  ghostHoverId = null,
   rangePreset = null,
   profile = null,
+  opponentMarkerIds = null,
+  opponentColors = null,
 } = {}) {
   const hitAreas = [];
   const valid = (seriesList || []).filter((s) => s.points?.length);
   if (!valid.length) return { hitAreas };
 
+  const plot = resolvePlot(w, h, layout);
   const chartProfile = profile ?? resolveProfile(rangePreset);
   const dense = isDenseProfile(chartProfile);
   const allPoints = valid.flatMap((s) => normalizeSeriesPoints(s.points));
@@ -759,12 +982,26 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
   const primaryMetric = valid.find((s) => s.layer !== 'context')?.metric
     || valid[0]?.metric
     || 'winPct';
-  const yFn = micro
-    ? yScaleMicro(values, primaryMetric, h, pad)
-    : yScale(values, h, pad);
+  const scale = micro
+    ? yScaleMicro(values, primaryMetric, plot)
+    : yScale(values, plot);
+  const { yFn, lo, hi } = scale;
+  const gameCount = countGamePoints(allPoints);
+  const yAxis = resolveYAxisDisplay({
+    micro,
+    metric: primaryMetric,
+    lo,
+    hi,
+    profile: chartProfile,
+    gameCount,
+  });
 
-  if (micro) drawGridMicro(ctx, w, h, pad);
-  else drawGrid(ctx, w, h, pad, yFn, values);
+  if (micro) drawGridMicro(ctx, plot);
+  else drawGrid(ctx, plot, {
+    yAxisTicks: yAxis.show ? yAxis.ticks : [],
+    yFn,
+    metric: primaryMetric,
+  });
 
   const ordered = [...valid].sort((a, b) => {
     const aCtx = a.layer === 'context' ? 0 : 1;
@@ -779,7 +1016,7 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
       .map((p) => (p.date || '').slice(0, 10)),
   );
   const sameDayCluster = gameDates.size <= 1 && gameDates.size > 0;
-  const microBaseXFn = micro ? createMicroDateXFn(allPoints, w, pad) : null;
+  const microBaseXFn = micro ? createMicroDateXFn(allPoints, plot) : null;
   let primaryIndex = 0;
 
   ordered.forEach((teamSeries) => {
@@ -796,19 +1033,30 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
       }
     }
 
-    drawOneSeries(ctx, teamSeries.points, teamSeries.color || '#5da396', w, pad, yFn, hitAreas, {
+    const contextHovered = teamSeries.layer === 'context'
+      && ghostHover
+      && (!ghostHoverId || ghostHoverId === teamSeries.teamId);
+
+    drawOneSeries(ctx, teamSeries.points, teamSeries.color || '#5da396', plot, yFn, hitAreas, {
       teamName: teamSeries.teamName,
       teamId: teamSeries.teamId,
       metric: teamSeries.metric,
       dotColor: teamSeries.color,
       layer: teamSeries.layer || 'primary',
-      ghostHover: teamSeries.layer === 'context' && ghostHover,
+      ghostDrawMode: teamSeries.ghostDrawMode || chartProfile.ghostMode,
+      ghostHover: contextHovered,
+      opponentMarkerIds: teamSeries.layer === 'context'
+        ? null
+        : (teamSeries.opponentMarkerIds ?? opponentMarkerIds),
+      opponentColors: teamSeries.layer === 'context'
+        ? null
+        : (teamSeries.opponentColors ?? opponentColors),
       dense,
       micro,
       xFn,
       profile: chartProfile,
       rangePreset: chartProfile.preset,
-      showMarkers: chartProfile.showMarkers,
+      showMarkers: teamSeries.showMarkers ?? (teamSeries.layer === 'context' ? false : chartProfile.showMarkers),
     }, teamSeries.layer === 'context' ? null : hoverHit);
   });
 
@@ -817,25 +1065,51 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
 
 export function drawPerformanceChart(ctx, w, h, series, hoverHit = null, options = {}) {
   if (!series?.points?.length) return { hitAreas: [] };
+  const profile = options.profile ?? resolveProfile(options.rangePreset);
+  const ghostDrawMode = profile.ghostMode === 'full' ? 'full' : 'segments';
   const layers = [];
-  if (options.contextSeries?.points?.length) {
-    layers.push({ ...options.contextSeries, metric: 'winPct', layer: 'context' });
+
+  const contextList = options.contextSeriesList?.length
+    ? options.contextSeriesList
+    : (options.contextSeries?.points?.length ? [options.contextSeries] : []);
+
+  for (const ctxSeries of contextList) {
+    layers.push({
+      ...ctxSeries,
+      metric: 'winPct',
+      layer: 'context',
+      ghostDrawMode,
+    });
   }
+
   layers.push({ ...series, metric: 'winPct', layer: 'primary' });
   return drawMultiSeriesChart(ctx, w, h, layers, {
     hoverHit,
     ghostHover: options.ghostHover,
+    ghostHoverId: options.ghostHoverId ?? null,
     rangePreset: options.rangePreset ?? null,
-    profile: options.profile ?? null,
+    profile,
+    opponentMarkerIds: options.opponentMarkerIds ?? null,
+    opponentColors: options.opponentColors ?? null,
   });
 }
 
 export function drawMatchupChart(ctx, w, h, matchup, hoverHit = null, options = {}) {
   if (!matchup?.series?.length) return { hitAreas: [] };
-  return drawMultiSeriesChart(ctx, w, h, matchup.series.map((s) => ({
-    ...s,
-    metric: 'index',
-  })), {
+  const colorByTeam = Object.fromEntries(
+    matchup.series.map((s) => [String(s.teamId || '').toUpperCase(), s.color]),
+  );
+  const layers = matchup.series.map((s) => {
+    const oppId = s.h2hOpponentId ? String(s.h2hOpponentId).toUpperCase() : null;
+    return {
+      ...s,
+      metric: 'index',
+      showMarkers: true,
+      opponentMarkerIds: oppId ? new Set([oppId]) : null,
+      opponentColors: oppId ? { [oppId]: colorByTeam[oppId] || s.color } : null,
+    };
+  });
+  return drawMultiSeriesChart(ctx, w, h, layers, {
     hoverHit,
     rangePreset: options.rangePreset ?? null,
     profile: options.profile ?? null,
@@ -872,8 +1146,13 @@ export function findContextHit(hitAreas, mx, my, maxDist = 12) {
   let best = null;
   let bestDist = Infinity;
   for (const hit of hitAreas) {
-    if (hit.layer !== 'context' || hit.x1 == null) continue;
-    const d = distToSegment(mx, my, hit.x1, hit.y1, hit.x2, hit.y2);
+    if (hit.layer !== 'context') continue;
+    let d = Infinity;
+    if (hit.x1 != null) {
+      d = distToSegment(mx, my, hit.x1, hit.y1, hit.x2, hit.y2);
+    } else if (hit.x != null) {
+      d = Math.hypot(mx - hit.x, my - hit.y);
+    }
     if (d <= maxDist && d < bestDist) {
       best = hit;
       bestDist = d;
@@ -905,6 +1184,13 @@ function esc(s) {
 
 function metricLabel(metric) {
   return metric === 'winPct' ? 'Win %' : 'Performance index';
+}
+
+function fmtMetricValue(value, metric) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  if (metric === 'winPct') return n.toFixed(1);
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
 function fmtMovement(amount, metric) {
@@ -942,7 +1228,7 @@ export function formatTooltipHtml(hit) {
         ${hit.teamName ? `<div class="sd-tip__team">${esc(hit.teamName)}</div>` : ''}
         <div class="sd-tip__date">${esc(fmtDate(p.date))}</div>
         <div class="sd-tip__note">No game — flat performance line</div>
-        <div class="sd-tip__row"><span>${ml}</span><strong>${esc(p.value)}${suffix}</strong></div>
+        <div class="sd-tip__row"><span>${ml}</span><strong>${esc(fmtMetricValue(p.value, metric))}${suffix}</strong></div>
         ${p.movementReason ? `<div class="sd-tip__reason">${esc(p.movementReason)}</div>` : ''}
       </div>`;
   }
@@ -955,8 +1241,8 @@ export function formatTooltipHtml(hit) {
       <div class="sd-tip__date">${esc(fmtDate(p.date))}</div>
       <div class="sd-tip__result ${resultCls}">${esc(p.result)} vs ${esc(p.opponentId)} · ${esc(p.pointsFor)}–${esc(p.pointsAgainst)}</div>
       <div class="sd-tip__grid">
-        <div class="sd-tip__row"><span>Previous</span><strong>${esc(p.previousValue)}${suffix}</strong></div>
-        <div class="sd-tip__row"><span>New</span><strong>${esc(p.value)}${suffix}</strong></div>
+        <div class="sd-tip__row"><span>Previous</span><strong>${esc(fmtMetricValue(p.previousValue, metric))}${suffix}</strong></div>
+        <div class="sd-tip__row"><span>New</span><strong>${esc(fmtMetricValue(p.value, metric))}${suffix}</strong></div>
         <div class="sd-tip__row"><span>Movement</span><strong class="${resultCls}">${esc(fmtMovement(p.movementAmount, metric))}</strong></div>
       </div>
       ${p.movementReason ? `<div class="sd-tip__reason">${esc(p.movementReason)}</div>` : ''}
