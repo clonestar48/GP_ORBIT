@@ -188,6 +188,14 @@ def resolve_matchup_archive_log(
     }
 
 
+def _record_in_range(games: list[dict], start, end) -> str | None:
+    scoped = _games_in_range(games, start, end)
+    if not scoped:
+        return None
+    wins = sum(1 for g in scoped if g.get('result') == 'W')
+    return f'{wins}–{len(scoped) - wins}'
+
+
 def _matchup_h2h_games(
     team_a_games: list[dict],
     team_b_id: str,
@@ -269,13 +277,17 @@ def resolve_matchup_chart_set(
         games=h2h_games,
         limit=limit,
     )
+    chart_game_count = max(series_a.get('gameCount', 0), series_b.get('gameCount', 0))
     return {
         **meta,
+        'count': chart_game_count,
         'chartKind': 'trajectory',
         'metric': 'index',
         'series': [series_a, series_b],
         'h2h': h2h,
         'honestCount': h2h['count'],
+        'teamARecord': _record_in_range(team_a_games, rq.start_date, rq.end_date),
+        'teamBRecord': _record_in_range(team_b_games, rq.start_date, rq.end_date),
         'h2hOpponentIds': {
             team_a_id.upper(): team_b_id.upper(),
             team_b_id.upper(): team_a_id.upper(),

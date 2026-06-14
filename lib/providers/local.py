@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 GAMES_PATH = ROOT / 'data' / 'games-2025.json'
+ARCHIVE_PATH = ROOT / 'data' / 'games-archive.json'
 FALLBACK_GAMES_PATH = ROOT / 'data' / 'demo-games.json'
 TEAMS_PATH = ROOT / 'data' / 'demo-teams.json'
 CACHE_TTL = 3600
@@ -28,7 +29,7 @@ _cache: dict = {'games': None, 'teams': None, 'at': 0.0, 'meta': None}
 
 
 def _resolve_games_path() -> Path | None:
-    """Pick the first existing games archive: env override → games-2025 → demo."""
+    """Pick the first existing games archive: env → multi-season → single season → demo."""
     override = os.environ.get('ORBIT_GAMES_PATH', '').strip()
     if override:
         path = Path(override)
@@ -40,6 +41,8 @@ def _resolve_games_path() -> Path | None:
             'ORBIT_GAMES_PATH not found (%s); falling back to default archives',
             path,
         )
+    if ARCHIVE_PATH.is_file():
+        return ARCHIVE_PATH
     if GAMES_PATH.is_file():
         return GAMES_PATH
     if FALLBACK_GAMES_PATH.is_file():
@@ -91,7 +94,8 @@ def _cached_bundle() -> tuple[list[dict], list[dict], dict]:
                 games_path = None
         else:
             logger.error(
-                'No games archive found (checked ORBIT_GAMES_PATH, %s, %s)',
+                'No games archive found (checked ORBIT_GAMES_PATH, %s, %s, %s)',
+                _games_path_label(ARCHIVE_PATH),
                 _games_path_label(GAMES_PATH),
                 _games_path_label(FALLBACK_GAMES_PATH),
             )

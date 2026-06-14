@@ -211,6 +211,8 @@ def get_matchup_payload(
         'games': archive_log['games'],
         'gameSet': chart_set,
         'h2h': h2h,
+        'teamARecord': chart_set.get('teamARecord'),
+        'teamBRecord': chart_set.get('teamBRecord'),
         'series': [
             {
                 'teamId': team_a_meta['id'],

@@ -20,6 +20,45 @@ lib/performance/series.py  ← win % / index series
 
 **Default today:** `LocalProvider` serves `demo-games.json`. Sync output is separate until you opt in.
 
+## Multi-season archive (recommended)
+
+Five NBA regular seasons for Orbit testing (2021-22 through 2025-26):
+
+| `--season-year` | Season label | Output file |
+|-----------------|--------------|-------------|
+| 2021 | 2021-22 | `data/games-2022.json` |
+| 2022 | 2022-23 | `data/games-2023.json` |
+| 2023 | 2023-24 | `data/games-2024.json` |
+| 2024 | 2024-25 | `data/games-2025.json` |
+| 2025 | 2025-26 | `data/games-2026.json` |
+
+`season-year` is the **starting year** of the NBA season. The filename uses the ending calendar year.
+
+```bash
+pip install nba_api   # one-time, sync scripts only
+
+# Dry-run all five seasons + merge validation
+python3 scripts/sync_archive.py --dry-run --season-years 2021 2022 2023 2024 2025
+
+# Fetch each season → individual JSON files + combined archive
+python3 scripts/sync_archive.py --provider nba_api --season-years 2021 2022 2023 2024 2025
+
+# Re-use already-synced season files (skip network for those)
+python3 scripts/sync_archive.py --skip-existing --season-years 2021 2022 2023 2024 2025
+```
+
+Combined output: `data/games-archive.json` (deduped, chronological, season metadata).
+
+Single season (same as before):
+
+```bash
+python3 scripts/sync_games.py --dry-run --provider nba_api --season-year 2024
+python3 scripts/sync_games.py --provider nba_api --season-year 2024
+# writes data/games-2025.json by default
+```
+
+Incomplete seasons (e.g. in-progress 2025-26) are written as-is with a console warning — missing games are never fabricated.
+
 ## 2024–25 season import (one-time)
 
 Offline import for a single real NBA season — regular season only, two rows per game.
@@ -29,7 +68,6 @@ Offline import for a single real NBA season — regular season only, two rows pe
 python3 scripts/sync_games.py --dry-run --provider nba_api --season-year 2024
 
 # Write data/games-2025.json (does not touch demo-games.json)
-pip install nba_api   # one-time, sync script only
 python3 scripts/sync_games.py --provider nba_api --season-year 2024
 
 # Alternative: balldontlie (requires BALLDONTLIE_API_KEY in .env)
@@ -47,7 +85,9 @@ Each API game becomes **two rows** (home + visitor perspective), matching `demo-
 |-------|------|---------|
 | `id` | string | `2015-10-23-bos-mia-0028-BOS` |
 | `date` | string (ISO date) | `2015-10-23` |
-| `season` | int | `2015` |
+| `season` | int | `2015` | Season start year |
+| `seasonLabel` | string | `2024-25` | Human-readable season |
+| `seasonType` | string | `Regular Season` | Regular season vs playoffs |
 | `league` | string | `NBA` |
 | `team` | string | `BOS` |
 | `opponent` | string | `MIA` |
@@ -63,6 +103,7 @@ Top-level document (`games.json`):
 | `label` | Human-readable description |
 | `provider` | Provider key used for sync |
 | `syncedAt` | UTC ISO timestamp of last sync |
+| `seasons` | Per-season summary (multi-season archives only) |
 | `games` | Array of normalized rows |
 
 Schema helpers: `lib/ingest/schema.py`.
@@ -95,6 +136,10 @@ Use `--dry-run` first. Increase `--max-pages` gradually; do not sync the full ar
 When ready to serve synced data instead of demo data:
 
 1. Set in `.env`:
+   ```
+   ORBIT_GAMES_PATH=data/games-archive.json
+   ```
+   Single-season fallback:
    ```
    ORBIT_GAMES_PATH=data/games-2025.json
    ```

@@ -361,11 +361,13 @@ function applyPanelPayload(payload, mode) {
   state.gameSet = chart.chartSet;
   state.archiveLog = archive.archiveLog;
   state.teamGames = archive.games;
-  state.teamSeries = chart.series ?? payload?.series ?? null;
   if (mode === 'matchup') {
     state.matchupGames = archive.games;
+    // Keep full trajectory series from payload — never substitute archive/chartSet H2H lens.
+    state.teamSeries = null;
   } else {
     state.matchupGames = [];
+    state.teamSeries = chart.series ?? payload?.series ?? null;
   }
   return { chart, archive };
 }
@@ -542,12 +544,11 @@ function updateGameLogHeading() {
       ?? state.archiveLog?.count
       ?? state.matchupGames?.length
       ?? 0;
-    const limit = state.archiveLog?.limit ?? 10;
-    if (count > 0 && count < limit) {
-      heading.textContent = `Game log · ${eraLabel} · ${count} head-to-head`;
+    if (count > 0) {
+      heading.textContent = `Head-to-head · ${eraLabel} · ${count} meeting${count === 1 ? '' : 's'}`;
       return;
     }
-    heading.textContent = `Game log · ${eraLabel}`;
+    heading.textContent = `Head-to-head · ${eraLabel}`;
     return;
   }
   if (state.heroMode === 'solo' && state.selectedTeamId) {
@@ -1384,6 +1385,44 @@ function applyLogGameChartFocus() {
   return true;
 }
 
+function formatMatchupH2hStat(h2h) {
+  if (!h2h?.count) return '—';
+  const winsA = h2h.teamAWins ?? 0;
+  const winsB = h2h.teamBWins ?? 0;
+  if (winsA === winsB) return `${winsA}–${winsB}`;
+  const leaderAbbr = winsA > winsB
+    ? (findTeam(h2h.teamAId || state.teamA)?.abbreviation ?? h2h.teamAId)
+    : (findTeam(h2h.teamBId || state.teamB)?.abbreviation ?? h2h.teamBId);
+  return `${leaderAbbr} ${Math.max(winsA, winsB)}–${Math.min(winsA, winsB)}`;
+}
+
+function renderMatchupStats() {
+  const statsEl = $('#solo-stats');
+  const moveEl = $('#stat-winpct-move');
+  const winEl = $('#stat-winpct');
+  const recordEl = $('#stat-record');
+  const gamesEl = $('#stat-games');
+  const labels = soloStatLabels();
+  const teamA = findTeam(state.teamA);
+  const teamB = findTeam(state.teamB);
+  const matchup = state.matchup;
+  const h2h = matchupH2hSummary(matchup);
+
+  statsEl?.classList.remove('is-idle-today', 'is-today-event');
+  if (labels[0]) labels[0].textContent = teamA?.abbreviation ?? state.teamA;
+  if (labels[1]) labels[1].textContent = teamB?.abbreviation ?? state.teamB;
+  if (labels[2]) labels[2].textContent = 'H2H';
+
+  winEl.textContent = matchup?.teamARecord ?? '—';
+  winEl.className = '';
+  recordEl.textContent = matchup?.teamBRecord ?? '—';
+  recordEl.className = '';
+  gamesEl.textContent = formatMatchupH2hStat(h2h);
+  gamesEl.className = 'is-context';
+  moveEl.textContent = '';
+  moveEl.className = '';
+}
+
 function renderSoloStats() {
   const statsEl = $('#solo-stats');
   const moveEl = $('#stat-winpct-move');
@@ -2026,6 +2065,7 @@ function renderHeroChart() {
       action: 'Pick two teams with games in this range.',
     });
     caption.textContent = 'Showing available head-to-head context';
+    renderMatchupStats();
     return;
   }
   if (!matchup?.series?.length) {
@@ -2035,8 +2075,10 @@ function renderHeroChart() {
       action: 'Try Season or All time.',
     });
     caption.textContent = 'Matchup index';
+    renderMatchupStats();
     return;
   }
+  renderMatchupStats();
   empty.style.display = 'none';
   caption.textContent = matchupChartCaption(matchup);
   const chartProfile = chartProfileForRange(state.range);
@@ -2429,12 +2471,13 @@ function syncModePanels() {
   const overview = state.orbitOverview;
   const showSolo = overview || state.heroMode === 'solo';
   const showMatchup = !overview && state.heroMode === 'matchup';
+  const showStats = overview || state.heroMode === 'solo' || state.heroMode === 'matchup';
   const explorer = $('#team-explorer');
   const matchupRow = $('#matchup-row');
   const soloStats = $('#solo-stats');
   if (explorer) explorer.hidden = !showSolo;
   if (matchupRow) matchupRow.hidden = !showMatchup;
-  if (soloStats) soloStats.hidden = !showSolo;
+  if (soloStats) soloStats.hidden = !showStats;
   if (showSolo) requestAnimationFrame(updateTeamExplorerScroll);
 }
 
