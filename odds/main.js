@@ -4,6 +4,11 @@
  */
 
 import {
+  formatGameMatchupLabel,
+  parseMatchupHomeFromString,
+  resolveGameIsHome,
+} from './matchupLabel.js';
+import {
   drawMatchupChart,
   drawPerformanceChart,
   findContextHit,
@@ -605,6 +610,16 @@ function rangeScopedRecord(games) {
   return latestGameStats(scoped.length ? scoped : games);
 }
 
+function enrichGameRow(game) {
+  if (!game || typeof game !== 'object') return game;
+  if (typeof game.isHome === 'boolean') return game;
+  if (game.matchup) {
+    const isHome = parseMatchupHomeFromString(game.matchup, game.team);
+    if (isHome !== null) return { ...game, isHome };
+  }
+  return game;
+}
+
 function applyPanelPayload(payload, mode) {
   const chart = applyChartPayload(payload, mode);
   const archive = applyArchiveLogPayload(payload, mode);
@@ -612,10 +627,10 @@ function applyPanelPayload(payload, mode) {
   state.chartSet = chart.chartSet;
   state.gameSet = chart.chartSet;
   state.archiveLog = archive.archiveLog;
-  state.teamGames = archive.games;
+  state.teamGames = archive.games.map(enrichGameRow);
   state.rangeStats = rangeStats.rangeStats;
   if (mode === 'matchup') {
-    state.matchupGames = archive.games;
+    state.matchupGames = state.teamGames;
     state.teamSeries = null;
   } else {
     state.matchupGames = [];
@@ -1198,9 +1213,9 @@ function renderHomeGameLog() {
     const latestCls = emphasizeLatest ? ' sd-log-row--latest' : '';
     const cls = g.result === 'W' ? 'is-up' : 'is-down';
     const score = formatGameScore(g, null);
-    const matchupLabel = gameLogMatchupLabel(g, { isHome: true });
+    const matchupLabel = formatGameMatchupLabel(g, g.team, { abbrev: teamAbbrev });
     const sparkHtml = gameLogSparklineHtml(g, [], null);
-    const label = `View ${teamAbbrev(g.team)} vs ${teamAbbrev(g.opponent)} on ${formatResultDate(g.date)}`
+    const label = `View ${matchupLabel} on ${formatResultDate(g.date)}`
       .replace(/"/g, '&quot;');
     const rowInner = buildGameLogRowInner({
       game: g,
@@ -1996,6 +2011,8 @@ function gamesForStreakLookup(teamId = null) {
       opponentScore: p.pointsAgainst,
       seasonType: p.seasonType,
       seriesId: p.seriesId,
+      isHome: p.isHome,
+      matchup: p.matchup,
     });
   }
   return games.sort((a, b) => a.date.localeCompare(b.date));
@@ -2061,6 +2078,18 @@ function opponentWinsThroughGame(game, allGames) {
   return wins;
 }
 
+/** Opponent series wins through this game; infer from team losses when opp rows aren't in context. */
+function opponentSeriesWinsThroughGame(game, teamGames, allGames) {
+  const fromOpponent = opponentWinsThroughGame(game, allGames);
+  const { losses } = seriesRecordThroughGame(game, teamGames);
+  return Math.max(fromOpponent, losses);
+}
+
+function isSeriesSweepOutcome(playoffEvent) {
+  const kind = playoffEvent?.kind;
+  return kind === 'sweep' || kind === 'swept';
+}
+
 /** True when this game is the series finale and one team has clinched. */
 function isSeriesDecidingGame(game, teamGames, allGames) {
   if (!game?.seriesId || !teamGames.length) return false;
@@ -2073,7 +2102,7 @@ function isSeriesDecidingGame(game, teamGames, allGames) {
   if (!gameNum || gameNum !== maxGameNum) return false;
 
   const { wins, losses } = seriesRecordThroughGame(game, teamGames);
-  const oppWins = opponentWinsThroughGame(game, allGames);
+  const oppWins = opponentSeriesWinsThroughGame(game, teamGames, allGames);
   const winnerWins = Math.max(wins, oppWins);
   const loserWins = Math.min(wins, oppWins);
   if (winnerWins <= loserWins) return false;
@@ -2116,7 +2145,7 @@ function playoffEventForGame(game, games = null) {
   }
 
   if (resolved.result === 'L') {
-    const oppWins = opponentWinsThroughGame(resolved, list);
+    const oppWins = opponentSeriesWinsThroughGame(resolved, teamGames, list);
     if (oppWins === PLAYOFF_SERIES_WIN_TARGET) {
       if (wins === 0) {
         return { kind: 'swept', label: 'Swept' };
@@ -2144,6 +2173,8 @@ function playoffEventForPoint(point, teamId = null) {
     seasonType: point.seasonType,
     seriesId: point.seriesId,
     seriesGameNumber: point.seriesGameNumber,
+    isHome: point.isHome,
+    matchup: point.matchup,
   }, list);
   return playoffEventForGame(game, list);
 }
@@ -2215,6 +2246,7 @@ function pickGameLogBadges(game, pt, isSwing, streakInfo, streakEndInfo, playoff
 
   const playoff = playoffEventBadge(playoffEvent);
   const comeback = comebackEventBadge(comebackEvent);
+  const sweepOutcome = isSeriesSweepOutcome(playoffEvent);
 
   if (playoffEvent?.kind === 'won-title') add(1, playoff);
   else if (isHistoricEvent(comebackEvent)) add(2, comeback);
@@ -2226,8 +2258,10 @@ function pickGameLogBadges(game, pt, isSwing, streakInfo, streakEndInfo, playoff
 
   add(8, streakEndedBadge(streakEndInfo));
   add(9, largestMoveBadge(isSwing));
-  add(10, blowoutBadge(game, pt));
-  add(11, streakBadge(streakInfo));
+  if (!sweepOutcome) {
+    add(10, blowoutBadge(game, pt));
+    add(11, streakBadge(streakInfo));
+  }
 
   ranked.sort((a, b) => a.priority - b.priority);
   return ranked.slice(0, 2).map((entry) => entry.badge);
@@ -2248,15 +2282,14 @@ function formatGameScore(game, pt) {
   return `${forScore}–${againstScore}`;
 }
 
-function gameLogMatchupLabel(game, { isSolo, isHome = false } = {}) {
-  if (isHome) {
-    return `${teamAbbrev(game.team)} vs ${teamAbbrev(game.opponent)}`;
-  }
-  if (isSolo) {
-    return `vs ${teamAbbrev(game.opponent)}`;
-  }
-  const teamId = game.team || state.teamA;
-  return `${teamAbbrev(teamId)} vs ${teamAbbrev(game.opponent)}`;
+function gameLogMatchupLabel(game, { isSolo, selectedTeamId } = {}) {
+  const teamId = selectedTeamId
+    ?? (isSolo ? (state.selectedTeamId || game?.team) : (game?.team || state.teamA));
+  const isHome = resolveGameIsHome(game, teamId);
+  return formatGameMatchupLabel(game, teamId, {
+    abbrev: teamAbbrev,
+    soloCompact: Boolean(isSolo && isHome === null),
+  });
 }
 
 function gameLogSparklineSlice(gamePoints, idx) {
@@ -3956,13 +3989,8 @@ function renderRangeControls() {
 
   group.classList.toggle('is-range-compact', isMatchup);
   group.classList.add('is-chart-lens');
-  if (isMatchup) {
-    group.style.removeProperty('--orbit-range-track-slots');
-    group.style.removeProperty('--orbit-range-slot-count');
-  } else {
-    group.style.setProperty('--orbit-range-track-slots', String(options.length));
-    group.style.setProperty('--orbit-range-slot-count', String(options.length));
-  }
+  group.style.setProperty('--orbit-range-track-slots', String(options.length));
+  group.style.setProperty('--orbit-range-slot-count', String(options.length));
 
   group.replaceChildren(...options.map(({ preset, label }) => {
     const btn = document.createElement('button');

@@ -9,6 +9,7 @@ import {
   resolveProfile,
   showTrendOverlay,
 } from './resolution.js';
+import { formatGameMatchupLabel } from './matchupLabel.js';
 
 const MIN_MARKER_SPACING_PX = 9;
 const MIN_LINE_BUCKET_PX = 1.5;
@@ -1726,9 +1727,15 @@ function fmtResultLine(hit) {
   const abbr = teamAbbr(hit);
   const opp = String(p.opponentId || '').toUpperCase();
   const score = `${p.pointsFor}–${p.pointsAgainst}`;
-  if (p.result === 'W') return `${abbr} def. ${opp}, ${score}`;
-  if (p.result === 'L') return `${abbr} lost to ${opp}, ${score}`;
-  return `${abbr} vs ${opp}, ${score}`;
+  const matchup = formatGameMatchupLabel({
+    team: abbr,
+    opponent: opp,
+    isHome: p.isHome,
+    matchup: p.matchup,
+    homeTeamId: p.homeTeamId,
+    awayTeamId: p.awayTeamId,
+  }, abbr, { abbrev: (id) => id });
+  return `${matchup}, ${score}`;
 }
 
 function fmtMoveLine(amount, metric) {
@@ -1758,6 +1765,11 @@ function playoffTooltipTag(playoffEvent) {
     default:
       return null;
   }
+}
+
+function isSeriesSweepOutcome(playoffEvent) {
+  const kind = playoffEvent?.kind;
+  return kind === 'sweep' || kind === 'swept';
 }
 
 function streakEndTooltipTag(streakEndInfo) {
@@ -1803,6 +1815,7 @@ function buildTooltipTags(p, hit, {
 
   const playoffTag = playoffTooltipTag(playoffEvent);
   const comebackTag = comebackTooltipTag(comebackEvent);
+  const sweepOutcome = isSeriesSweepOutcome(playoffEvent);
   const historicEvent = comebackEvent && (
     comebackEvent.tier === 'historic'
     || String(comebackEvent.kind || '').startsWith('historic')
@@ -1834,7 +1847,7 @@ function buildTooltipTags(p, hit, {
     add(12, p.result === 'W' ? 'Close Win' : 'Close Loss');
   }
 
-  if (blowout) {
+  if (blowout && !sweepOutcome) {
     add(10, p.result === 'W' ? 'Blowout Win' : 'Blowout Loss');
   }
 

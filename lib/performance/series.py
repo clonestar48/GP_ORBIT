@@ -261,6 +261,7 @@ def build_momentum_form_series(
             'flatline': False,
             'seriesKind': 'momentumForm',
             **impact,
+            **_game_location_fields(game),
         })
 
     meta = _series_meta(rq, 'index', len(in_range), points)
@@ -272,6 +273,15 @@ def build_momentum_form_series(
 
 def _margin(game: dict) -> int:
     return int(game['teamScore']) - int(game['opponentScore'])
+
+
+def _game_location_fields(game: dict) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    if 'isHome' in game:
+        fields['isHome'] = game['isHome']
+    if game.get('matchup'):
+        fields['matchup'] = game['matchup']
+    return fields
 
 
 def _movement_reason(game: dict, metric: str = 'index') -> str:
@@ -396,6 +406,7 @@ def build_win_pct_series(
             'winPct': pct,
             'movementReason': _movement_reason(game, 'winPct'),
             'flatline': False,
+            **_game_location_fields(game),
         }
 
     initial = prior_pct if prior else 50.0
@@ -434,6 +445,7 @@ def build_index_series(
             'margin': _margin(game),
             'movementReason': _movement_reason(game, 'index'),
             'flatline': False,
+            **_game_location_fields(game),
         }
 
     points = _daily_points(start, end, games_by_date, initial, on_game)
@@ -476,6 +488,7 @@ def build_impact_index_series(
             'movementAmount': delta,
             'flatline': False,
             **impact,
+            **_game_location_fields(game),
         }
 
     points = _daily_points(start, end, games_by_date, initial, on_game)
@@ -513,6 +526,7 @@ def build_h2h_matchup_index_series(h2h_games: list[dict]) -> dict[str, Any]:
             'flatline': False,
             'meetingNumber': meeting,
             **impact,
+            **_game_location_fields(game),
         })
 
     return {
@@ -566,6 +580,7 @@ def build_win_pct_series_for_game_set(
             'winPct': pct,
             'movementReason': _movement_reason(game, 'winPct'),
             'flatline': False,
+            **_game_location_fields(game),
         })
 
     return {
@@ -609,6 +624,7 @@ def build_index_series_for_game_set(
             'margin': _margin(game),
             'movementReason': _movement_reason(game, 'index'),
             'flatline': False,
+            **_game_location_fields(game),
         })
 
     return {

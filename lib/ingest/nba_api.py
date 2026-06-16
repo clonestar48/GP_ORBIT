@@ -66,6 +66,17 @@ def fetch_playoff_series_by_game(season: str) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _home_from_matchup(matchup: str) -> bool | None:
+    text = (matchup or '').strip()
+    if not text:
+        return None
+    if ' @ ' in text:
+        return False
+    if ' vs. ' in text or ' vs ' in text.lower():
+        return True
+    return None
+
+
 def _row_from_record(
     raw: dict[str, Any],
     *,
@@ -96,6 +107,12 @@ def _row_from_record(
     if series_meta:
         row['seriesId'] = series_meta['seriesId']
         row['seriesGameNumber'] = series_meta['seriesGameNumber']
+    matchup = (raw.get('MATCHUP') or '').strip()
+    if matchup:
+        row['matchup'] = matchup
+        is_home = _home_from_matchup(matchup)
+        if is_home is not None:
+            row['isHome'] = is_home
     errors = validate_game(row)
     return row if not errors else None
 
