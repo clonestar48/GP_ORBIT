@@ -2,7 +2,7 @@
   "source": "nba_api",
   "label": "NBA multi-season archive (2021-22 through 2025-26, regular + playoffs, nba_api)",
   "provider": "nba_api",
-  "syncedAt": "2026-06-14T20:37:04Z",
+  "syncedAt": "2026-06-14T20:54:14Z",
   "seasons": [
     {
       "seasonStartYear": 2021,

@@ -12,13 +12,14 @@ from lib.performance.game_set import (
     GAME_SET_LIMIT,
     resolve_franchise_archive_log,
     resolve_franchise_chart_set,
+    resolve_franchise_range_stats,
     resolve_league_archive_log,
     resolve_league_chart_set,
     resolve_matchup_archive_log,
     resolve_matchup_chart_set,
 )
 from lib.performance.marquee import resolve_featured_matchup
-from lib.performance.range import reference_date, reference_date_mode
+from lib.performance.range import normalize_matchup_preset, reference_date, reference_date_mode
 from lib.performance.resolution import aggregate_points, resolve_profile
 from lib.providers import get_provider
 
@@ -62,6 +63,7 @@ def _meta() -> dict:
             'gamesPath': provider_meta.get('gamesPath', ''),
             'archiveFallback': provider_meta.get('archiveFallback', False),
             'gameCount': provider_meta.get('gameCount', 0),
+            'seasonCount': provider_meta.get('seasonCount', 0),
         }
         _meta_cache['payload'] = payload
         _meta_cache['at'] = now
@@ -73,12 +75,35 @@ def get_teams_payload(league: str = 'NBA') -> dict:
     return {**_meta(), 'teams': provider.get_teams(league)}
 
 
+def _matchup_resolution_key(preset: str, chart_kind: str | None) -> str:
+    preset = normalize_matchup_preset(preset) or 'season'
+    if chart_kind == 'headToHead':
+        return 'matchupSeason'
+    if preset == 'season':
+        return 'matchupSeason'
+    if preset == 'all':
+        return 'matchupAll'
+    return preset
+
+
+def _solo_resolution_key(preset: str) -> str:
+    if preset == 'season':
+        return 'soloSeason'
+    if preset == 'all':
+        return 'soloAll'
+    return preset
+
+
 def _apply_resolution(payload: dict, time_range: str) -> dict:
-    profile_key = time_range
     chart_set = payload.get('chartSet') or payload.get('gameSet')
-    if chart_set and chart_set.get('chartKind') != 'trajectory':
-        # Canonical game-set charts/logs: one point per real game, no period bucketing.
-        profile_key = 'today'
+    chart_kind = (chart_set or {}).get('chartKind')
+    chart_mode = (chart_set or {}).get('mode')
+    if chart_mode == 'matchup' and chart_kind in ('headToHead', 'trajectory'):
+        profile_key = _matchup_resolution_key(time_range, chart_kind)
+    elif chart_mode == 'solo' and chart_kind == 'trajectory':
+        profile_key = _solo_resolution_key(time_range)
+    else:
+        profile_key = time_range
     profile = resolve_profile(profile_key)
     resolution = profile.to_dict()
 
@@ -107,6 +132,37 @@ def _apply_resolution(payload: dict, time_range: str) -> dict:
             **payload,
             'points': aggregate_points(payload.get('points') or [], profile),
         }
+
+    for block_key in ('chartSet', 'gameSet'):
+        block = payload.get(block_key)
+        if not isinstance(block, dict):
+            continue
+        inner = block.get('series')
+        if isinstance(inner, dict) and inner.get('points') is not None:
+            payload = {
+                **payload,
+                block_key: {
+                    **block,
+                    'series': {
+                        **inner,
+                        'points': aggregate_points(inner.get('points') or [], profile),
+                    },
+                },
+            }
+        elif isinstance(inner, list):
+            payload = {
+                **payload,
+                block_key: {
+                    **block,
+                    'series': [
+                        {
+                            **entry,
+                            'points': aggregate_points(entry.get('points') or [], profile),
+                        }
+                        for entry in inner
+                    ],
+                },
+            }
 
     return {**payload, 'resolution': resolution}
 
@@ -142,6 +198,7 @@ def get_performance_payload(
     team = provider._team_meta(team_id)
     chart_set = resolve_franchise_chart_set(all_games, preset)
     archive_log = resolve_franchise_archive_log(all_games, preset)
+    range_stats = resolve_franchise_range_stats(all_games, preset, team_id=team_id)
     series = {
         'teamId': team['id'] if team else team_id,
         'teamName': team['name'] if team else team_id,
@@ -153,9 +210,11 @@ def get_performance_payload(
         'series': series,
         'chartSet': chart_set,
         'archiveLog': archive_log,
+        'rangeStats': range_stats,
         'games': archive_log['games'],
         'gameSet': chart_set,
         'range': preset,
+        'seasonBoundaries': chart_set.get('seasonBoundaries') or [],
     }
     return _apply_resolution(payload, preset)
 
@@ -168,7 +227,7 @@ def get_matchup_payload(
     end_date: str | None = None,
 ) -> dict:
     provider = _provider()
-    preset = time_range or 'season'
+    preset = normalize_matchup_preset(time_range or 'season') or 'season'
     team_a_meta = provider._team_meta(team_a)
     team_b_meta = provider._team_meta(team_b)
     if not team_a_meta or not team_b_meta:
@@ -198,6 +257,11 @@ def get_matchup_payload(
     games_b = provider._team_games(team_b)
     chart_set = resolve_matchup_chart_set(games_a, games_b, team_a, team_b, preset)
     archive_log = resolve_matchup_archive_log(games_a, team_b, preset)
+    range_stats = {
+        'teamA': resolve_franchise_range_stats(games_a, preset),
+        'teamB': resolve_franchise_range_stats(games_b, preset),
+        'h2h': chart_set.get('h2h'),
+    }
     sa = chart_set['series'][0]
     sb = chart_set['series'][1]
     h2h = chart_set.get('h2h') or {}
@@ -211,14 +275,17 @@ def get_matchup_payload(
         'games': archive_log['games'],
         'gameSet': chart_set,
         'h2h': h2h,
+        'h2hBreakdown': chart_set.get('h2hBreakdown'),
         'teamARecord': chart_set.get('teamARecord'),
         'teamBRecord': chart_set.get('teamBRecord'),
+        'rangeStats': range_stats,
         'series': [
             {
                 'teamId': team_a_meta['id'],
                 'teamName': team_a_meta['name'],
                 'color': team_a_meta.get('colors', {}).get('primary', '#5da396'),
                 'h2hOpponentId': h2h_opponents.get(team_a_meta['id'].upper()),
+                'seriesKind': chart_set.get('seriesKind'),
                 **sa,
             },
             {
@@ -226,13 +293,18 @@ def get_matchup_payload(
                 'teamName': team_b_meta['name'],
                 'color': team_b_meta.get('colors', {}).get('primary', '#5da396'),
                 'h2hOpponentId': h2h_opponents.get(team_b_meta['id'].upper()),
+                'seriesKind': chart_set.get('seriesKind'),
                 **sb,
             },
         ],
     }
     resolution_key = preset
-    resolved = _apply_resolution({**_meta(), **matchup}, resolution_key)
-    if h2h_dates and isinstance(resolved.get('series'), list):
+    resolved = _apply_resolution({**_meta(), **matchup, 'range': preset}, resolution_key)
+    if (
+        h2h_dates
+        and chart_set.get('chartKind') == 'trajectory'
+        and isinstance(resolved.get('series'), list)
+    ):
         resolved = {
             **resolved,
             'series': [

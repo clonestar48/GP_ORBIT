@@ -1,16 +1,60 @@
 /** Flexible range object — presets populate start/end dates internally. */
 
 export const RANGE_LABELS = {
-  today: 'Today',
-  week: 'Past Week',
-  month: 'Past Month',
+  today: 'Latest',
+  week: 'This week',
+  month: 'This month',
   season: 'Current Season',
-  all: 'All Time',
+  all: 'Full archive',
   series: 'Series',
 };
 
+/** Hero stat block scope — full selected range, not game-log rows. */
+export const STAT_SCOPE_LABELS = {
+  today: 'Latest',
+  week: 'This week',
+  month: 'This month',
+  season: 'Current Season',
+  all: 'Loaded archive',
+  matchup: 'Head-to-head',
+};
+
+/** Loaded multi-season archive — never "All Time" unless the dataset is truly complete. */
+export function archiveSampleLabel(seasonCount) {
+  const n = Number(seasonCount);
+  if (Number.isFinite(n) && n > 0 && n <= 12) {
+    return `${n}-season archive`;
+  }
+  return 'Full archive';
+}
+
+export function scopeLabelForPreset(preset, { seasonCount } = {}) {
+  if (preset === 'all') return archiveSampleLabel(seasonCount);
+  return STAT_SCOPE_LABELS[preset] ?? RANGE_LABELS[preset] ?? preset ?? '';
+}
+
 export const FRANCHISE_RANGE_PRESETS = ['today', 'week', 'month', 'season', 'all'];
-export const MATCHUP_RANGE_PRESETS = ['series', 'season', 'all'];
+export const MATCHUP_RANGE_PRESETS = ['season', 'all'];
+
+/** Right-side range bar — one visible set per mode. */
+export const FRANCHISE_RANGE_CONTROLS = [
+  { preset: 'today', label: 'Today' },
+  { preset: 'week', label: 'Week' },
+  { preset: 'month', label: 'Month' },
+  { preset: 'season', label: 'Season' },
+  { preset: 'all', label: 'All' },
+];
+
+export const MATCHUP_RANGE_CONTROLS = [
+  { preset: 'season', label: 'Season' },
+  { preset: 'all', label: 'All' },
+];
+
+/** Map legacy or invalid matchup presets to the active comparison lens. */
+export function normalizeMatchupPreset(preset) {
+  if (!preset || preset === 'matchup' || preset === 'series') return 'season';
+  return preset;
+}
 export const MATCHUP_DEFAULT_PRESET = 'season';
 
 /** @deprecated use FRANCHISE_RANGE_PRESETS */
@@ -59,6 +103,9 @@ function presetDates(preset, ref = referenceDate()) {
   if (preset === 'all') {
     return { startDate: '1900-01-01', endDate: toIsoDateString(end) };
   }
+  if (preset === 'matchup') {
+    return presetDates('season', ref);
+  }
   if (preset === 'series') {
     return { startDate: '1900-01-01', endDate: toIsoDateString(end) };
   }
@@ -104,19 +151,21 @@ export function createRange({
   };
 }
 
-export function rangeLabel(range) {
-  if (range.preset && RANGE_LABELS[range.preset]) return RANGE_LABELS[range.preset];
-  if (range.startDate && range.endDate) return `${range.startDate} – ${range.endDate}`;
+export function rangeLabel(range, { seasonCount } = {}) {
+  if (range?.preset === 'all') return archiveSampleLabel(seasonCount);
+  if (range?.preset && RANGE_LABELS[range.preset]) return RANGE_LABELS[range.preset];
+  if (range?.startDate && range?.endDate) return `${range.startDate} – ${range.endDate}`;
   return 'Custom range';
 }
 
 export function rangeToQuery(range) {
   const params = new URLSearchParams();
-  if (range.startDate && range.endDate) {
+  // Preset is authoritative — do not send date bounds that would override it server-side.
+  if (range.preset) {
+    params.set('range', range.preset);
+  } else if (range.startDate && range.endDate) {
     params.set('startDate', range.startDate);
     params.set('endDate', range.endDate);
-  } else if (range.preset) {
-    params.set('range', range.preset);
   }
   if (range.mode) params.set('mode', range.mode);
   if (range.metric) params.set('metric', range.metric);

@@ -18,8 +18,25 @@ RANGE_LABELS = {
     'series': 'Series',
 }
 
+# Hero stat block — honest scope labels (not tied to game-log row cap).
+STAT_SCOPE_LABELS = {
+    'today': 'Today',
+    'week': 'Current Week',
+    'month': 'Current Month',
+    'season': 'Current Season',
+    'all': 'Full Archive',
+    'matchup': 'Head-to-head',
+}
+
 FRANCHISE_RANGE_PRESETS = ('today', 'week', 'month', 'season', 'all')
-MATCHUP_RANGE_PRESETS = ('series', 'season', 'all')
+MATCHUP_RANGE_PRESETS = ('season', 'all')
+
+
+def normalize_matchup_preset(preset: str | None) -> str | None:
+    """Map legacy presets to Season — Series reserved for playoff/tournament UX."""
+    if not preset or preset in ('matchup', 'series'):
+        return 'season'
+    return preset
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 _reference_lock = threading.Lock()
@@ -112,8 +129,8 @@ def preset_dates(preset: str, reference: date | None = None) -> tuple[date, date
         return date(start_year, 10, 1), ref
     if preset == 'all':
         return date(1900, 1, 1), ref
-    if preset == 'series':
-        # Comparison lens — date window resolved by H2H game selection, not calendar math.
+    if preset in ('matchup', 'series'):
+        # Head-to-head lens — date window resolved by direct meetings, not calendar math.
         return date(1900, 1, 1), ref
     raise ValueError(f'Unknown preset: {preset}')
 

@@ -21,22 +21,16 @@
     <div class="sd-status" id="status-banner" hidden></div>
 
     <main class="sd-main">
-      <section class="sd-hero sd-hero--primary" aria-label="Performance chart">
+      <section class="sd-hero sd-hero--primary sd-orbit-layout" aria-label="Performance chart">
         <div class="sd-hero__stack">
           <div class="sd-hero__control-row sd-hero__control-row--split">
             <div class="sd-toggle-group sd-mode-group" role="group" aria-label="Chart mode">
+              <button type="button" class="sd-toggle is-active" data-hero-mode="overview">Overview</button>
               <button type="button" class="sd-toggle" data-hero-mode="solo">Solo</button>
               <button type="button" class="sd-toggle" data-hero-mode="matchup">Matchup</button>
               <button type="button" class="sd-toggle sd-toggle--soon" data-hero-mode="league" disabled title="Coming soon">League</button>
             </div>
-            <div class="sd-toggle-group sd-range-group" id="hero-range-group" role="group" aria-label="Timeline">
-              <button type="button" class="sd-toggle" data-range="today" data-range-set="franchise">Today</button>
-              <button type="button" class="sd-toggle" data-range="week" data-range-set="franchise">Week</button>
-              <button type="button" class="sd-toggle" data-range="month" data-range-set="franchise">Month</button>
-              <button type="button" class="sd-toggle is-active" data-range="season" data-range-set="both">Season</button>
-              <button type="button" class="sd-toggle" data-range="all" data-range-set="both">All</button>
-              <button type="button" class="sd-toggle" data-range="series" data-range-set="matchup" hidden>Series</button>
-            </div>
+            <div class="sd-toggle-group sd-range-group" id="hero-range-group" role="group" aria-label="Timeline"></div>
           </div>
 
           <div class="sd-hero__mode-slot">
@@ -88,6 +82,10 @@
 
         <div class="sd-chart-wrap sd-chart-wrap--primary" id="hero-chart-wrap">
           <canvas id="hero-chart" aria-label="Performance chart"></canvas>
+          <div class="sd-bracket" id="playoff-bracket" hidden aria-label="2026 NBA playoff bracket">
+            <svg class="sd-bracket__lines" aria-hidden="true"></svg>
+            <div class="sd-bracket__grid" id="playoff-bracket-grid"></div>
+          </div>
           <div class="sd-chart-skeleton" id="hero-chart-skeleton" hidden aria-hidden="true">
             <div class="sd-skeleton sd-skeleton--chart"></div>
           </div>
@@ -96,10 +94,10 @@
         </div>
 
         <div class="sd-game-log" id="game-log" aria-labelledby="game-log-heading">
-          <h2 class="sd-game-log__heading" id="game-log-heading">Game log</h2>
+          <h2 class="sd-game-log__heading" id="game-log-heading">Event tape</h2>
           <div class="sd-game-log__layout" id="game-log-layout">
             <div class="sd-game-log__scroll-wrap">
-              <div class="sd-game-log__list" id="recent-results" tabindex="0" aria-label="Recent games">
+              <div class="sd-game-log__list" id="recent-results" tabindex="0" aria-label="Event tape">
                 <p class="sd-empty">Loading…</p>
               </div>
             </div>

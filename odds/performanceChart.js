@@ -56,7 +56,7 @@ export function isMicroChart(allPoints) {
   );
   const gameCount = normalized.filter((p) => p.gameId && !p.flatline).length;
   if (dates.size <= 1) return true;
-  if (gameCount <= 2) return true;
+  if (gameCount <= 4) return true;
   return false;
 }
 
@@ -266,6 +266,23 @@ function buildLinePath(renderPoints, xFn, yFn) {
   return renderPoints.map((p) => ({ x: xFn(p.date), y: yFn(p.value) }));
 }
 
+/** Robinhood-style curve — display only; hit areas stay on raw game values. */
+function traceSmoothPath(ctx, path) {
+  if (!path?.length) return;
+  if (path.length === 1) {
+    ctx.moveTo(path[0].x, path[0].y);
+    return;
+  }
+  ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 0; i < path.length - 2; i += 1) {
+    const xc = (path[i].x + path[i + 1].x) / 2;
+    const yc = (path[i].y + path[i + 1].y) / 2;
+    ctx.quadraticCurveTo(path[i].x, path[i].y, xc, yc);
+  }
+  const last = path.length - 1;
+  ctx.quadraticCurveTo(path[last - 1].x, path[last - 1].y, path[last].x, path[last].y);
+}
+
 function tracePath(ctx, path) {
   path.forEach((pt, i) => {
     if (i === 0) ctx.moveTo(pt.x, pt.y);
@@ -277,28 +294,48 @@ function tracePath(ctx, path) {
 function strokeSeriesLine(ctx, path, color, lineWidth, alpha = 1, {
   underlay = false,
   layer = 'primary',
+  smooth = false,
+  emphasize = false,
+  deemphasize = false,
 } = {}) {
   if (!path || path.length < 2) return;
+
+  const lineAlpha = deemphasize ? alpha * 0.86 : alpha;
 
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.shadowBlur = 0;
 
+  if (emphasize && layer === 'primary') {
+    ctx.globalAlpha = lineAlpha * 0.2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth + 3;
+    ctx.shadowBlur = 7;
+    ctx.shadowColor = colorWithAlpha(color, 0.38);
+    ctx.beginPath();
+    if (smooth) traceSmoothPath(ctx, path);
+    else tracePath(ctx, path);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
   if (underlay && layer === 'primary') {
-    ctx.globalAlpha = alpha * 0.18;
+    ctx.globalAlpha = emphasize ? lineAlpha * 0.22 : lineAlpha * 0.18;
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth + 1.25;
     ctx.beginPath();
-    tracePath(ctx, path);
+    if (smooth) traceSmoothPath(ctx, path);
+    else tracePath(ctx, path);
     ctx.stroke();
   }
 
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = lineAlpha;
   ctx.strokeStyle = color;
-  ctx.lineWidth = lineWidth;
+  ctx.lineWidth = emphasize ? lineWidth + 0.15 : lineWidth;
   ctx.beginPath();
-  tracePath(ctx, path);
+  if (smooth) traceSmoothPath(ctx, path);
+  else tracePath(ctx, path);
   ctx.stroke();
   ctx.restore();
 }
@@ -309,6 +346,8 @@ function drawSeriesMarker(ctx, x, y, r, fillColor, {
   isEndpoint = false,
   isLandmark = false,
   ringColor = null,
+  headToHead = false,
+  playoffFinale = false,
 } = {}) {
   const coreR = isEndpoint ? r + 0.35 : (isLandmark ? r + 0.3 : r);
   const ringR = coreR + (isHover ? 2.75 : (isLandmark ? 2.15 : 1.75));
@@ -317,20 +356,43 @@ function drawSeriesMarker(ctx, x, y, r, fillColor, {
   ctx.save();
   ctx.shadowBlur = 0;
 
+  if (isHover) {
+    const hoverCore = coreR + 0.85;
+    ctx.fillStyle = fillColor;
+    ctx.beginPath();
+    ctx.arc(x, y, hoverCore, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = colorWithAlpha(stroke, 0.78);
+    ctx.lineWidth = 1.35;
+    ctx.beginPath();
+    ctx.arc(x, y, hoverCore + 2.35, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
   ctx.fillStyle = 'rgba(8, 10, 14, 0.92)';
   ctx.beginPath();
   ctx.arc(x, y, ringR + 0.75, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = isHover
-    ? 'rgba(236, 234, 228, 0.52)'
-    : isLandmark
-      ? colorWithAlpha(stroke, 0.58)
-      : colorWithAlpha(stroke, 0.42);
-  ctx.lineWidth = isHover ? 1.15 : (isLandmark ? 1 : 0.85);
+  ctx.strokeStyle = isLandmark
+    ? colorWithAlpha(stroke, 0.58)
+    : colorWithAlpha(stroke, 0.42);
+  ctx.lineWidth = isLandmark ? 1 : 0.85;
   ctx.beginPath();
   ctx.arc(x, y, ringR, 0, Math.PI * 2);
   ctx.stroke();
+
+  if (headToHead && !isEndpoint) {
+    ctx.strokeStyle = colorWithAlpha(stroke, 0.48);
+    ctx.lineWidth = 0.85;
+    ctx.setLineDash([2.5, 2.5]);
+    ctx.beginPath();
+    ctx.arc(x, y, ringR + 2.1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   ctx.fillStyle = fillColor;
   ctx.beginPath();
@@ -341,6 +403,13 @@ function drawSeriesMarker(ctx, x, y, r, fillColor, {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
     ctx.beginPath();
     ctx.arc(x, y, Math.max(1, coreR * 0.34), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (playoffFinale) {
+    ctx.fillStyle = 'rgba(232, 197, 71, 0.82)';
+    ctx.beginPath();
+    ctx.arc(x, y, Math.max(1.05, coreR * 0.26), 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -500,6 +569,240 @@ function selectMarkerPoints(gamePoints, xFn, {
   return [...chosen.values()]
     .sort((a, b) => xFn(a.point.date) - xFn(b.point.date))
     .map((entry) => entry.point);
+}
+
+/** Matchup/Solo + Season — game-level form index with controlled display smoothing. */
+function isFormSeasonTrajectory(meta = {}) {
+  const preset = meta.profile?.preset;
+  return (preset === 'matchupSeason' || preset === 'soloSeason')
+    && meta.chartKind === 'trajectory';
+}
+
+/** Matchup/Solo + All — macro archive form (monthly aggregation on server). */
+function isFormArchiveTrajectory(meta = {}) {
+  const preset = meta.profile?.preset;
+  return (preset === 'matchupAll' || preset === 'soloAll')
+    && meta.chartKind === 'trajectory';
+}
+
+function usesFormTrajectoryMarkers(meta = {}) {
+  return isFormSeasonTrajectory(meta) || isFormArchiveTrajectory(meta);
+}
+
+/** @deprecated alias */
+function isMatchupSeasonTrajectory(meta = {}) {
+  return isFormSeasonTrajectory(meta);
+}
+
+const MATCHUP_SEASON_SMOOTH_ALPHA = 0.44;
+const MATCHUP_SEASON_EVENT_ALPHA = 0.82;
+const MATCHUP_SEASON_MAJOR_SWING_MIN = 14;
+const MATCHUP_SEASON_EVENT_MOVE_MIN = 9;
+const MATCHUP_SEASON_EVENT_RAW_BLEND = 0.78;
+const MATCHUP_SEASON_NEIGHBOR_BLEND = 0.68;
+
+function isMatchupFormEventPoint(p) {
+  return Boolean(p.isH2h)
+    || Boolean(p.isPlayoff)
+    || Math.abs(p.movementAmount ?? 0) >= MATCHUP_SEASON_EVENT_MOVE_MIN;
+}
+
+/** Soften ordinary zig-zags for display; preserve swings at meaningful games. */
+function smoothMatchupSeasonLine(points) {
+  const normalized = normalizeSeriesPoints(points);
+  const gamePoints = normalized.filter((p) => p.gameId && !p.flatline);
+  if (gamePoints.length < 2) return points;
+
+  const displayValues = new Map();
+  let ema = Number(gamePoints[0].value);
+
+  for (let i = 0; i < gamePoints.length; i += 1) {
+    const p = gamePoints[i];
+    const raw = Number(p.value);
+    const event = isMatchupFormEventPoint(p);
+    const alpha = event ? MATCHUP_SEASON_EVENT_ALPHA : MATCHUP_SEASON_SMOOTH_ALPHA;
+    ema = alpha * raw + (1 - alpha) * ema;
+    const display = event
+      ? raw * MATCHUP_SEASON_EVENT_RAW_BLEND + ema * (1 - MATCHUP_SEASON_EVENT_RAW_BLEND)
+      : ema;
+    displayValues.set(pointKey(p), display);
+  }
+
+  const keys = gamePoints.map((p) => pointKey(p));
+  const softened = keys.map((k) => displayValues.get(k));
+  const neighborWeight = (1 - MATCHUP_SEASON_NEIGHBOR_BLEND) / 2;
+  for (let i = 1; i < softened.length - 1; i += 1) {
+    if (isMatchupFormEventPoint(gamePoints[i])) continue;
+    softened[i] = softened[i] * MATCHUP_SEASON_NEIGHBOR_BLEND
+      + (softened[i - 1] + softened[i + 1]) * neighborWeight;
+  }
+  keys.forEach((k, i) => displayValues.set(k, Number(softened[i].toFixed(2))));
+
+  return normalized.map((p) => {
+    const k = pointKey(p);
+    if (k && displayValues.has(k)) {
+      return { ...p, value: displayValues.get(k) };
+    }
+    return p;
+  });
+}
+
+function formSeasonDisplayY(displayYByKey, p, fallbackYFn) {
+  const k = pointKey(p);
+  const v = k && displayYByKey?.has(k) ? displayYByKey.get(k) : p.value;
+  return fallbackYFn(v);
+}
+
+function trajectoryMarkerPoints(rawPoints, formSeasonMode) {
+  const candidates = formSeasonMode
+    ? rawPoints.filter((p) => p.gameId && !p.flatline)
+    : rawPoints.filter((p) => !p.flatline && (p.aggregated || p.gameId));
+  return enrichGamePoints(candidates);
+}
+
+function trajectoryLastPoint(rawPoints, formSeasonMode) {
+  const points = formSeasonMode
+    ? rawPoints.filter((p) => p.gameId && !p.flatline)
+    : rawPoints.filter((p) => !p.flatline && (p.aggregated || p.gameId));
+  return points[points.length - 1] ?? null;
+}
+
+function classifyFormTrajectoryMarkers(gamePoints, { hoverPoint = null, lastPoint = null } = {}) {
+  const chosen = new Map();
+  const lastKey = lastPoint ? pointKey(lastPoint) : null;
+
+  const add = (p, type, priority, extra = {}) => {
+    const k = pointKey(p);
+    if (!k) return;
+    const prev = chosen.get(k);
+    if (!prev || priority >= prev.priority) {
+      chosen.set(k, { point: p, type, priority, ...extra });
+    }
+  };
+
+  for (const p of gamePoints) {
+    if (p.isH2h && pointKey(p) !== lastKey) {
+      add(p, p.isPlayoff ? 'headToHeadPlayoff' : 'headToHead', 5);
+    }
+  }
+
+  for (const p of gamePoints) {
+    if (
+      p.isPlayoff
+      && !p.isH2h
+      && pointKey(p) !== lastKey
+      && Math.abs(p.movementAmount ?? 0) >= MATCHUP_SEASON_MAJOR_SWING_MIN
+      && !chosen.has(pointKey(p))
+    ) {
+      add(p, 'playoffSwing', 4);
+    }
+  }
+
+  const [largest] = [...gamePoints].sort(
+    (a, b) => Math.abs(b.movementAmount ?? 0) - Math.abs(a.movementAmount ?? 0),
+  );
+  if (
+    largest
+    && pointKey(largest) !== lastKey
+    && Math.abs(largest.movementAmount ?? 0) >= MATCHUP_SEASON_MAJOR_SWING_MIN
+    && !chosen.has(pointKey(largest))
+  ) {
+    add(largest, 'largestMove', 3);
+  }
+
+  if (lastPoint) add(lastPoint, 'endpoint', 6);
+
+  if (hoverPoint) {
+    const hoverKey = pointKey(hoverPoint);
+    const existing = chosen.get(hoverKey);
+    if (existing) {
+      existing.hover = true;
+    } else {
+      add(hoverPoint, 'hover', 10);
+    }
+  }
+
+  return [...chosen.values()].sort(
+    (a, b) => (a.point.date || '').localeCompare(b.point.date || ''),
+  );
+}
+
+function drawFormTrajectoryMarker(ctx, x, y, entry, meta, seriesColor) {
+  const { type, hover = false } = entry;
+  const isHover = hover || type === 'hover';
+  const isEndpoint = type === 'endpoint';
+  const isHeadToHead = type === 'headToHead' || type === 'headToHeadPlayoff';
+  const isEvent = isHeadToHead || type === 'largestMove' || type === 'playoffSwing';
+  const teamColor = seriesColor || meta.dotColor || '#5da396';
+
+  let r = 2.3;
+  if (isHover) r = 2.75;
+  else if (isEndpoint) r = 2.5;
+  else if (isEvent) r = 2.55;
+
+  ctx.save();
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = colorWithAlpha(teamColor, isHover ? 0.5 : (isEndpoint ? 0.36 : 0.28));
+  ctx.lineWidth = isHover ? 0.95 : 0.7;
+  ctx.beginPath();
+  ctx.arc(x, y, r + (isHover ? 1.45 : 1.05), 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (isHeadToHead && !isEndpoint) {
+    ctx.strokeStyle = colorWithAlpha(teamColor, 0.32);
+    ctx.lineWidth = 0.6;
+    ctx.setLineDash([2, 2.5]);
+    ctx.beginPath();
+    ctx.arc(x, y, r + 2.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.fillStyle = teamColor;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (type === 'headToHeadPlayoff' && !isEndpoint) {
+    ctx.fillStyle = 'rgba(232, 197, 71, 0.72)';
+    ctx.beginPath();
+    ctx.arc(x, y, 0.85, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function resolveMatchupSeasonLeader(seriesList) {
+  let leaderId = null;
+  let leaderValue = -Infinity;
+
+  for (const series of seriesList || []) {
+    if (series.layer === 'context') continue;
+    const gamePoints = normalizeSeriesPoints(series.points)
+      .filter((p) => p.gameId && !p.flatline);
+    const last = gamePoints[gamePoints.length - 1];
+    if (!last || last.value == null) continue;
+    const value = Number(last.value);
+    if (value > leaderValue) {
+      leaderValue = value;
+      leaderId = series.teamId;
+    }
+  }
+
+  return leaderId;
+}
+
+function orderSeriesForMatchupSeason(seriesList, leaderId) {
+  if (!leaderId) return seriesList;
+  const leader = String(leaderId).toUpperCase();
+  return [...seriesList].sort((a, b) => {
+    const aLead = String(a.teamId || '').toUpperCase() === leader;
+    const bLead = String(b.teamId || '').toUpperCase() === leader;
+    if (aLead === bLead) return 0;
+    return aLead ? 1 : -1;
+  });
 }
 
 function drawPolyline(ctx, renderPoints, xFn, yFn, color, lineWidth, alpha = 1, meta = {}) {
@@ -669,6 +972,8 @@ function resolveYAxisDisplay({
 
   const preset = profile?.preset;
   if (preset === 'today') return { show: false, ticks: [] };
+  if (preset === 'matchupSeason' || preset === 'matchupAll') return { show: false, ticks: [] };
+  if (preset === 'soloSeason' || preset === 'soloAll') return { show: false, ticks: [] };
 
   const span = hi - lo;
   if (!Number.isFinite(span) || span <= 0) return { show: false, ticks: [] };
@@ -802,6 +1107,30 @@ function drawContextGhostSeries(ctx, rawPoints, color, plot, yFn, hitAreas, meta
   return { segments: segmentsOut };
 }
 
+function resolveHoverPoint(hoverHit, teamId) {
+  if (!hoverHit) return null;
+  if (hoverHit.relatedHits?.length) {
+    const match = hoverHit.relatedHits.find((h) => h.teamId === teamId);
+    if (match?.point) return match.point;
+  }
+  if (hoverHit.teamId === teamId && hoverHit.point) return hoverHit.point;
+  return null;
+}
+
+function drawHoverGuide(ctx, plot, guideX) {
+  if (guideX == null || !plot) return;
+  const x = Math.max(plot.left, Math.min(plot.left + plot.width, guideX));
+  ctx.save();
+  ctx.strokeStyle = 'rgba(93, 163, 150, 0.22)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(x, plot.top);
+  ctx.lineTo(x, plot.top + plot.height);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawOneSeries(ctx, points, color, plot, yFn, hitAreas, meta = {}, hoverHit = null) {
   let rawPoints = normalizeSeriesPoints(points);
   if (!rawPoints.length) return { segments: [] };
@@ -822,13 +1151,28 @@ function drawOneSeries(ctx, points, color, plot, yFn, hitAreas, meta = {}, hover
   const maxPts = maxRenderPointsForWidth(plot.width, profile);
   const dense = meta.dense === true;
   const lineBucketPx = micro ? 0.75 : MIN_LINE_BUCKET_PX;
+  const formSeasonMode = isFormSeasonTrajectory(meta);
+  const formMarkerMode = usesFormTrajectoryMarkers(meta);
+  const displayYByKey = new Map();
+  let linePoints = rawPoints;
+
+  if (formSeasonMode) {
+    linePoints = smoothMatchupSeasonLine(rawPoints);
+    const gameRaw = enrichGamePoints(rawPoints.filter((p) => p.gameId && !p.flatline));
+    const gameSmooth = enrichGamePoints(linePoints.filter((p) => p.gameId && !p.flatline));
+    gameRaw.forEach((p, i) => {
+      const k = pointKey(p);
+      if (k && gameSmooth[i]) displayYByKey.set(k, gameSmooth[i].value);
+    });
+  }
+
   const renderPoints = aggregatePointsByX(
-    downsampleSeriesPoints(rawPoints, maxPts),
+    downsampleSeriesPoints(linePoints, maxPts),
     xFn,
     lineBucketPx,
   );
 
-  const lineWidth = meta.lineWidth || 2;
+  const lineWidth = meta.lineWidth || (meta.chartKind === 'headToHead' ? 2.65 : 2);
   const segments = [];
 
   if (showTrendOverlay(profile)) {
@@ -864,34 +1208,30 @@ function drawOneSeries(ctx, points, color, plot, yFn, hitAreas, meta = {}, hover
   strokeSeriesLine(ctx, linePath, color, lineWidth, 1, {
     underlay: true,
     layer: 'primary',
+    smooth: false,
+    emphasize: Boolean(meta.emphasizeLine),
+    deemphasize: Boolean(meta.deemphasizeLine),
   });
 
   if (meta.showMarkers !== false) {
-    const hoverPoint = hoverHit?.point && hoverHit?.teamId === meta.teamId ? hoverHit.point : null;
-    const gamePoints = enrichGamePoints(rawPoints.filter((p) => p.gameId && !p.flatline));
-    const last = rawPoints[rawPoints.length - 1];
-    const landmarks = findLandmarkPoints(gamePoints, meta.metric || 'winPct', dense);
-    const opponentMarkerIds = meta.opponentMarkerIds;
-    const markerPoints = selectMarkerPoints(gamePoints, xFn, {
-      dense,
-      hoverPoint,
-      landmarks,
-      lastPoint: last?.gameId && !last.flatline ? last : null,
-    });
+    const hoverPoint = resolveHoverPoint(hoverHit, meta.teamId);
+    const gamePoints = trajectoryMarkerPoints(rawPoints, formSeasonMode);
+    const lastGame = trajectoryLastPoint(rawPoints, formSeasonMode);
+    const yAt = (p) => (formSeasonMode
+      ? formSeasonDisplayY(displayYByKey, p, yFn)
+      : yFn(p.value));
 
     for (const p of gamePoints) {
-      const k = pointKey(p);
-      const landmark = landmarks.get(k);
       const x = xFn(p.date);
-      const y = yFn(p.value);
+      const y = yAt(p);
       hitAreas.push({
         x,
         y,
-        r: dense ? (landmark ? 16 : 14) : (landmark ? 12 : 10),
+        r: dense ? 14 : 10,
         point: p,
         isGame: true,
-        isLandmark: Boolean(landmark),
-        landmarkKind: landmark?.kind ?? null,
+        isLandmark: Boolean(p.isH2h || p.isPlayoff),
+        landmarkKind: p.isH2h ? 'h2h' : (p.isPlayoff ? 'playoff' : null),
         teamName: meta.teamName,
         teamId: meta.teamId,
         color,
@@ -900,36 +1240,84 @@ function drawOneSeries(ctx, points, color, plot, yFn, hitAreas, meta = {}, hover
       });
     }
 
-    for (const p of markerPoints) {
-      const k = pointKey(p);
-      const landmark = landmarks.get(k);
-      const x = xFn(p.date);
-      const y = yFn(p.value);
-      const isHover = hoverPoint === p;
-      const isEndpoint = p === last;
-      const isLandmark = Boolean(landmark) && !isEndpoint;
-      const isOpponentEvent = opponentMarkerIds?.has?.(p.opponentId) || p.isH2h;
-      const r = isHover ? 3.25 : (isLandmark || isOpponentEvent ? 3 : 2.75);
-      const fill = meta.dotColor || (p.result === 'W' ? '#6dd4a8' : '#f08080');
-      const oppColor = isOpponentEvent && p.opponentId ? meta.opponentColors?.[p.opponentId] : null;
-      drawSeriesMarker(ctx, x, y, r, fill, {
-        isHover,
-        isLandmark: isLandmark || isOpponentEvent,
-        isEndpoint,
-        ringColor: oppColor || (isLandmark ? color : null),
+    if (formMarkerMode) {
+      const classified = classifyFormTrajectoryMarkers(gamePoints, {
+        hoverPoint,
+        lastPoint: lastGame,
       });
-    }
+      for (const entry of classified) {
+        const p = entry.point;
+        drawFormTrajectoryMarker(ctx, xFn(p.date), yAt(p), entry, meta, color);
+      }
+    } else {
+      const landmarks = findLandmarkPoints(gamePoints, meta.metric || 'winPct', dense);
+      const markerPoints = selectMarkerPoints(gamePoints, xFn, {
+        dense,
+        hoverPoint,
+        landmarks,
+        lastPoint: lastGame,
+      });
 
-    const lastDrawnAsMarker = markerPoints.some((p) => p.date === last.date);
-    if (!lastDrawnAsMarker && last?.gameId && !last.flatline) {
-      drawSeriesMarker(
-        ctx,
-        xFn(last.date),
-        yFn(last.value),
-        dense ? 2.75 : 3,
-        color,
-        { isEndpoint: true, ringColor: color },
-      );
+      for (const p of gamePoints) {
+        const k = pointKey(p);
+        const landmark = landmarks.get(k);
+        if (landmark) {
+          const idx = hitAreas.findIndex((h) => h.point === p);
+          if (idx >= 0) {
+            hitAreas[idx].isLandmark = true;
+            hitAreas[idx].landmarkKind = landmark.kind;
+            hitAreas[idx].r = dense ? 16 : 12;
+          }
+        }
+      }
+
+      for (const p of markerPoints) {
+        const k = pointKey(p);
+        const landmark = landmarks.get(k);
+        const x = xFn(p.date);
+        const y = yAt(p);
+        const isHover = hoverPoint === p;
+        const isEndpoint = lastGame && p === lastGame;
+        const isLandmark = Boolean(landmark) && !isEndpoint;
+        const isHeadToHead = meta.chartKind === 'headToHead';
+        const isH2hEvent = Boolean(p.isH2h) && !isHeadToHead;
+        const isHeadToHeadGame = isHeadToHead && p.gameId && !p.flatline;
+        const isPlayoff = Boolean(p.isPlayoff);
+        const isHighImpact = p.impactTier === 'playoff' || p.impactTier === 'blowout';
+        const isFormSwing = Math.abs(p.movementAmount ?? 0) >= 12;
+        const isOpponentEvent = isH2hEvent;
+        let r = isHover ? 3.25 : 2.75;
+        if (isHeadToHeadGame) {
+          r = isHover ? 4.35 : (isHighImpact ? 3.9 : 3.35);
+        } else if (isOpponentEvent) {
+          r = isHover ? 4.1 : 3.45;
+        } else if (isPlayoff || isHighImpact || isFormSwing) {
+          r = isHover ? 3.85 : 3.25;
+        } else if (isLandmark) {
+          r = isHover ? 3.35 : 3;
+        }
+        const fill = meta.dotColor || (p.result === 'W' ? '#6dd4a8' : '#f08080');
+        const oppColor = isOpponentEvent && p.opponentId ? meta.opponentColors?.[p.opponentId] : null;
+        drawSeriesMarker(ctx, x, y, r, fill, {
+          isHover,
+          isLandmark: isLandmark || isOpponentEvent || isHeadToHeadGame || isPlayoff,
+          isEndpoint,
+          ringColor: oppColor || (isPlayoff ? '#e8c547' : (isHighImpact ? color : null)) || (isLandmark ? color : null),
+        });
+      }
+
+      const lastDrawnAsMarker = lastGame
+        && markerPoints.some((p) => p === lastGame || p.date === lastGame.date);
+      if (!lastDrawnAsMarker && lastGame) {
+        drawSeriesMarker(
+          ctx,
+          xFn(lastGame.date),
+          yAt(lastGame),
+          dense ? 2.75 : 3,
+          color,
+          { isEndpoint: true, ringColor: color },
+        );
+      }
     }
   } else {
     const gamePoints = enrichGamePoints(rawPoints.filter((p) => p.gameId && !p.flatline));
@@ -956,6 +1344,23 @@ function drawOneSeries(ctx, points, color, plot, yFn, hitAreas, meta = {}, hover
   return { segments };
 }
 
+function drawSeasonBoundaries(ctx, boundaries, xFn, plot) {
+  if (!boundaries?.length) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(236, 234, 228, 0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 5]);
+  for (const day of boundaries) {
+    const x = xFn(day);
+    if (x < plot.left || x > plot.left + plot.width) continue;
+    ctx.beginPath();
+    ctx.moveTo(x, plot.top);
+    ctx.lineTo(x, plot.top + plot.height);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /**
  * Generic N-series chart — used by franchise, matchup, and future league views.
  */
@@ -968,14 +1373,20 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
   profile = null,
   opponentMarkerIds = null,
   opponentColors = null,
+  seasonBoundaries = null,
+  leadingTeamId = null,
 } = {}) {
   const hitAreas = [];
   const valid = (seriesList || []).filter((s) => s.points?.length);
-  if (!valid.length) return { hitAreas };
+  if (!valid.length) return { hitAreas, plot: resolvePlot(w, h, layout) };
 
   const plot = resolvePlot(w, h, layout);
   const chartProfile = profile ?? resolveProfile(rangePreset);
   const dense = isDenseProfile(chartProfile);
+  const matchupSeasonChart = chartProfile?.preset === 'matchupSeason';
+  const leaderId = leadingTeamId
+    ? String(leadingTeamId).toUpperCase()
+    : null;
   const allPoints = valid.flatMap((s) => normalizeSeriesPoints(s.points));
   const micro = isMicroChart(allPoints);
   const values = allPoints.map((p) => p.value);
@@ -1003,11 +1414,22 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
     metric: primaryMetric,
   });
 
-  const ordered = [...valid].sort((a, b) => {
-    const aCtx = a.layer === 'context' ? 0 : 1;
-    const bCtx = b.layer === 'context' ? 0 : 1;
-    return aCtx - bCtx;
-  });
+  if (!micro && seasonBoundaries?.length) {
+    drawSeasonBoundaries(ctx, seasonBoundaries, createDateXFn(allPoints, plot), plot);
+  }
+
+  if (hoverHit?.guideX != null) {
+    drawHoverGuide(ctx, plot, hoverHit.guideX);
+  }
+
+  const ordered = orderSeriesForMatchupSeason(
+    [...valid].sort((a, b) => {
+      const aCtx = a.layer === 'context' ? 0 : 1;
+      const bCtx = b.layer === 'context' ? 0 : 1;
+      return aCtx - bCtx;
+    }),
+    matchupSeasonChart ? leaderId : null,
+  );
 
   const primarySeries = ordered.filter((s) => s.layer !== 'context');
   const gameDates = new Set(
@@ -1056,17 +1478,38 @@ export function drawMultiSeriesChart(ctx, w, h, seriesList, {
       xFn,
       profile: chartProfile,
       rangePreset: chartProfile.preset,
+      chartKind: teamSeries.chartKind ?? null,
       showMarkers: teamSeries.showMarkers ?? (teamSeries.layer === 'context' ? false : chartProfile.showMarkers),
+      emphasizeLine: matchupSeasonChart
+        && leaderId
+        && teamSeries.layer !== 'context'
+        && String(teamSeries.teamId || '').toUpperCase() === leaderId,
+      deemphasizeLine: matchupSeasonChart
+        && leaderId
+        && teamSeries.layer !== 'context'
+        && String(teamSeries.teamId || '').toUpperCase() !== leaderId,
     }, teamSeries.layer === 'context' ? null : hoverHit);
   });
 
-  return { hitAreas };
+  return {
+    hitAreas,
+    plot: {
+      left: plot.left,
+      top: plot.top,
+      width: plot.width,
+      height: plot.height,
+      right: plot.right,
+      bottom: plot.bottom,
+    },
+  };
 }
 
 export function drawPerformanceChart(ctx, w, h, series, hoverHit = null, options = {}) {
-  if (!series?.points?.length) return { hitAreas: [] };
+  if (!series?.points?.length) return { hitAreas: [], plot: resolvePlot(w, h) };
   const profile = options.profile ?? resolveProfile(options.rangePreset);
   const ghostDrawMode = profile.ghostMode === 'full' ? 'full' : 'segments';
+  const primaryMetric = series.metric || 'winPct';
+  const chartKind = options.chartKind ?? series.chartKind ?? null;
   const layers = [];
 
   const contextList = options.contextSeriesList?.length
@@ -1076,13 +1519,18 @@ export function drawPerformanceChart(ctx, w, h, series, hoverHit = null, options
   for (const ctxSeries of contextList) {
     layers.push({
       ...ctxSeries,
-      metric: 'winPct',
+      metric: ctxSeries.metric || 'winPct',
       layer: 'context',
       ghostDrawMode,
     });
   }
 
-  layers.push({ ...series, metric: 'winPct', layer: 'primary' });
+  layers.push({
+    ...series,
+    metric: primaryMetric,
+    chartKind,
+    layer: 'primary',
+  });
   return drawMultiSeriesChart(ctx, w, h, layers, {
     hoverHit,
     ghostHover: options.ghostHover,
@@ -1091,11 +1539,14 @@ export function drawPerformanceChart(ctx, w, h, series, hoverHit = null, options
     profile,
     opponentMarkerIds: options.opponentMarkerIds ?? null,
     opponentColors: options.opponentColors ?? null,
+    seasonBoundaries: options.seasonBoundaries ?? null,
   });
 }
 
 export function drawMatchupChart(ctx, w, h, matchup, hoverHit = null, options = {}) {
-  if (!matchup?.series?.length) return { hitAreas: [] };
+  if (!matchup?.series?.length) return { hitAreas: [], plot: resolvePlot(w, h) };
+  const chartKind = matchup.chartKind ?? matchup.chartSet?.chartKind ?? 'trajectory';
+  const isHeadToHead = chartKind === 'headToHead';
   const colorByTeam = Object.fromEntries(
     matchup.series.map((s) => [String(s.teamId || '').toUpperCase(), s.color]),
   );
@@ -1104,15 +1555,22 @@ export function drawMatchupChart(ctx, w, h, matchup, hoverHit = null, options = 
     return {
       ...s,
       metric: 'index',
+      chartKind,
       showMarkers: true,
       opponentMarkerIds: oppId ? new Set([oppId]) : null,
       opponentColors: oppId ? { [oppId]: colorByTeam[oppId] || s.color } : null,
     };
   });
+  const chartProfile = options.profile ?? resolveProfile(options.rangePreset);
+  const leadingTeamId = chartProfile?.preset === 'matchupSeason'
+    ? resolveMatchupSeasonLeader(layers)
+    : null;
   return drawMultiSeriesChart(ctx, w, h, layers, {
     hoverHit,
     rangePreset: options.rangePreset ?? null,
-    profile: options.profile ?? null,
+    profile: chartProfile,
+    seasonBoundaries: options.seasonBoundaries ?? matchup.seasonBoundaries ?? [],
+    leadingTeamId,
   });
 }
 
@@ -1131,6 +1589,54 @@ export function findHit(hitAreas, mx, my) {
     }
   }
   return best;
+}
+
+/** Forgiving plot-area hover — snap to nearest game date by x, not line proximity. */
+export function findNearestChartHover(hitAreas, plot, mx, my) {
+  if (!hitAreas?.length || !plot) return null;
+
+  const plotRight = plot.left + plot.width;
+  const plotBottom = plot.top + plot.height;
+  if (mx < plot.left || mx > plotRight || my < plot.top || my > plotBottom) {
+    return null;
+  }
+
+  const gameHits = hitAreas.filter((h) =>
+    h.layer !== 'context'
+    && h.isGame
+    && h.point?.gameId
+    && !h.point?.flatline);
+
+  if (!gameHits.length) return null;
+
+  let nearest = null;
+  let nearestDx = Infinity;
+  for (const hit of gameHits) {
+    const dx = Math.abs(mx - hit.x);
+    if (dx < nearestDx) {
+      nearestDx = dx;
+      nearest = hit;
+    }
+  }
+  if (!nearest) return null;
+
+  const dateKey = (nearest.point.date || '').slice(0, 10);
+  const byTeam = new Map();
+  for (const hit of gameHits) {
+    if ((hit.point.date || '').slice(0, 10) !== dateKey) continue;
+    const id = hit.teamId || hit.point?.teamId || '';
+    const existing = byTeam.get(id);
+    if (!existing || Math.abs(mx - hit.x) < Math.abs(mx - existing.x)) {
+      byTeam.set(id, hit);
+    }
+  }
+
+  const hits = [...byTeam.values()].sort((a, b) => a.x - b.x);
+  const guideX = hits.length > 1
+    ? hits.reduce((sum, h) => sum + h.x, 0) / hits.length
+    : nearest.x;
+
+  return { guideX, dateKey, hits, primary: nearest };
 }
 
 function distToSegment(px, py, x1, y1, x2, y2) {
@@ -1178,6 +1684,258 @@ function fmtDate(iso) {
   });
 }
 
+function fmtTipDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(`${String(iso).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function teamAbbr(hit) {
+  return String(hit.teamId || hit.point?.teamId || hit.teamName || '').toUpperCase();
+}
+
+function fmtResultLine(hit) {
+  const p = hit.point;
+  const abbr = teamAbbr(hit);
+  const opp = String(p.opponentId || '').toUpperCase();
+  const score = `${p.pointsFor}–${p.pointsAgainst}`;
+  if (p.result === 'W') return `${abbr} def. ${opp}, ${score}`;
+  if (p.result === 'L') return `${abbr} lost to ${opp}, ${score}`;
+  return `${abbr} vs ${opp}, ${score}`;
+}
+
+function fmtMoveLine(amount, metric) {
+  if (amount == null || Number.isNaN(Number(amount)) || amount === 0) return null;
+  const suffix = metric === 'winPct' ? '%' : '';
+  const n = Number(amount);
+  const cls = n > 0 ? 'is-up' : n < 0 ? 'is-down' : '';
+  const text = `${n > 0 ? '+' : ''}${metric === 'winPct' ? n.toFixed(1) : n.toFixed(1)}${suffix}`;
+  return { text, cls };
+}
+
+function playoffTooltipTag(playoffEvent) {
+  if (!playoffEvent?.kind) return null;
+  switch (playoffEvent.kind) {
+    case 'won-title':
+      return { label: 'Won Title', cls: 'is-up' };
+    case 'won-series':
+      return { label: 'Won Series', cls: 'is-up' };
+    case 'eliminated':
+      return { label: 'Eliminated', cls: 'is-down' };
+    default:
+      return null;
+  }
+}
+
+function streakEndTooltipTag(streakEndInfo) {
+  if (!streakEndInfo || streakEndInfo.length < 4) return null;
+  if (streakEndInfo.endedResult === 'W') {
+    return { label: 'Streak Ended', cls: 'is-down' };
+  }
+  return { label: 'Drought Ended', cls: 'is-up' };
+}
+
+function capTooltipTags(tags, max = 3) {
+  return tags.slice(0, max);
+}
+
+function isLargestMoveInView(point, allHitAreas, metric) {
+  if (!point?.gameId || !allHitAreas?.length) return false;
+  const moves = allHitAreas
+    .filter((h) => h.layer !== 'context' && h.point?.gameId)
+    .map((h) => Math.abs(Number(h.point.movementAmount) || 0));
+  const max = Math.max(...moves, 0);
+  const amt = Math.abs(Number(point.movementAmount) || 0);
+  if (amt <= 0 || amt < max) return false;
+  const threshold = metric === 'winPct' ? 0.5 : 1;
+  return amt >= threshold;
+}
+
+function buildTooltipTags(p, hit, {
+  metric,
+  allHitAreas = [],
+  streakEndInfo = null,
+  playoffEvent = null,
+} = {}) {
+  const ranked = [];
+  const add = (priority, tag) => {
+    if (tag) ranked.push({ priority, tag });
+  };
+
+  const playoffTag = playoffTooltipTag(playoffEvent);
+  if (playoffEvent?.kind === 'won-title') add(1, playoffTag);
+  else if (playoffEvent?.kind === 'eliminated') add(2, playoffTag);
+  else if (playoffEvent?.kind === 'won-series') add(3, playoffTag);
+
+  add(4, streakEndTooltipTag(streakEndInfo));
+
+  const margin = p.margin ?? (
+    p.pointsFor != null && p.pointsAgainst != null
+      ? Number(p.pointsFor) - Number(p.pointsAgainst)
+      : null
+  );
+
+  const blowout = p.isBlowout
+    || p.impactTier === 'blowout'
+    || (margin != null && Math.abs(margin) >= 15);
+  if (blowout) {
+    add(6, p.result === 'W' ? 'Blowout Win' : 'Blowout Loss');
+  }
+
+  if (isLargestMoveInView(p, allHitAreas, metric)) {
+    const amt = Number(p.movementAmount) || 0;
+    add(5, amt < 0 ? 'Largest Drop' : 'Largest Move');
+  } else if (margin != null && Math.abs(margin) <= 3 && p.result) {
+    add(6, p.result === 'W' ? 'Close Win' : 'Close Loss');
+  }
+
+  if (p.isPlayoff || p.impactTier === 'playoff') {
+    add(8, 'Postseason');
+  }
+  if (p.meetingNumber) {
+    add(8, `G${p.meetingNumber}`);
+  }
+
+  ranked.sort((a, b) => a.priority - b.priority);
+  return capTooltipTags(dedupeTooltipTags(ranked.map((entry) => entry.tag)));
+}
+
+function dedupeTooltipTags(tags) {
+  const seen = new Set();
+  const out = [];
+  for (const tag of tags) {
+    const label = typeof tag === 'string' ? tag : tag.label;
+    if (seen.has(label)) continue;
+    seen.add(label);
+    out.push(tag);
+  }
+  return out;
+}
+
+function renderTooltipTagsHtml(tags) {
+  if (!tags?.length) return '';
+  return tags.map((tag) => {
+    if (typeof tag === 'string') {
+      return `<span class="sd-tip__tag">${esc(tag)}</span>`;
+    }
+    const cls = tag.cls ? ` ${tag.cls}` : '';
+    return `<span class="sd-tip__tag${cls}">${esc(tag.label)}</span>`;
+  }).join('<span class="sd-tip__sep"> · </span>');
+}
+
+function formatSoloTooltipHtml(hit, allHitAreas = [], options = {}) {
+  const p = hit.point;
+  if (!p) return '';
+  const metric = hit.metric || 'winPct';
+  const streakEndInfo = options.streakEndForPoint?.(p, hit.teamId) ?? null;
+  const playoffEvent = options.playoffEventForPoint?.(p, hit.teamId) ?? null;
+
+  if (p.flatline || !p.gameId) {
+    return `
+      <div class="sd-tip">
+        <div class="sd-tip__context">${esc(fmtTipDate(p.date))}</div>
+        <div class="sd-tip__note">Off day · line held steady</div>
+      </div>`;
+  }
+
+  const move = fmtMoveLine(p.movementAmount, metric);
+  const tags = buildTooltipTags(p, hit, {
+    metric,
+    allHitAreas,
+    streakEndInfo,
+    playoffEvent,
+  });
+  const resultCls = p.result === 'W' ? 'is-up' : 'is-down';
+
+  return `
+    <div class="sd-tip">
+      <div class="sd-tip__context">${esc(fmtTipDate(p.date))}</div>
+      <div class="sd-tip__result ${resultCls}">${esc(fmtResultLine(hit))}</div>
+      ${move ? `<div class="sd-tip__move ${move.cls}">${esc(move.text)}</div>` : ''}
+      ${tags.length ? `<div class="sd-tip__tags">${renderTooltipTagsHtml(tags)}</div>` : ''}
+    </div>`;
+}
+
+function formatMatchupTooltipHtml(hoverBundle, allHitAreas = [], options = {}) {
+  const hits = hoverBundle.hits || [];
+  if (!hits.length) return '';
+
+  const sharedDate = hoverBundle.dateKey || hits[0].point?.date;
+  const contextParts = [fmtTipDate(sharedDate)];
+  const playoffHit = hits.find((h) => h.point?.isPlayoff);
+  const meeting = hits.find((h) => h.point?.meetingNumber)?.point?.meetingNumber;
+  if (meeting) contextParts.push(`G${meeting}`);
+  else if (playoffHit) contextParts.push('postseason');
+
+  const headToHead = hits.length >= 2
+    && hits.every((h) => {
+      const opp = String(h.point?.opponentId || '').toUpperCase();
+      return hits.some((other) => other !== h && teamAbbr(other) === opp);
+    });
+
+  let resultLine = '';
+  if (headToHead && hits.length >= 2) {
+    resultLine = fmtResultLine(hits[0]);
+  } else if (hits.length === 1) {
+    resultLine = fmtResultLine(hits[0]);
+  } else {
+    resultLine = hits.map((h) => {
+      const p = h.point;
+      return `${teamAbbr(h)} ${p.pointsFor}–${p.pointsAgainst}`;
+    }).join(', ');
+  }
+
+  const moveLines = hits.map((h) => {
+    const metric = h.metric || 'index';
+    const amt = Number(h.point?.movementAmount) || 0;
+    const suffix = metric === 'winPct' ? '%' : '';
+    const cls = amt > 0 ? 'is-up' : amt < 0 ? 'is-down' : '';
+    const text = `${teamAbbr(h)} ${amt > 0 ? '+' : ''}${amt.toFixed(1)}${suffix}`;
+    return `<span class="${cls}">${esc(text)}</span>`;
+  }).join('<span class="sd-tip__sep"> · </span>');
+
+  const streakEndForPoint = options.streakEndForPoint;
+  const playoffEventForPoint = options.playoffEventForPoint;
+  const tagEntries = [];
+  for (const h of hits) {
+    const streakEndInfo = streakEndForPoint?.(h.point, h.teamId) ?? null;
+    const playoffEvent = playoffEventForPoint?.(h.point, h.teamId) ?? null;
+    tagEntries.push(...buildTooltipTags(h.point, h, {
+      metric: h.metric || 'index',
+      allHitAreas,
+      streakEndInfo,
+      playoffEvent,
+    }));
+  }
+  const tags = dedupeTooltipTags(tagEntries).slice(0, 3);
+
+  return `
+    <div class="sd-tip sd-tip--matchup">
+      <div class="sd-tip__context">${esc(contextParts.join(' · '))}</div>
+      <div class="sd-tip__result">${esc(resultLine)}</div>
+      <div class="sd-tip__moves">${moveLines}</div>
+      ${tags.length ? `<div class="sd-tip__tags">${renderTooltipTagsHtml(tags)}</div>` : ''}
+    </div>`;
+}
+
+export function formatChartTooltipHtml(hoverBundle, {
+  matchupMode = false,
+  allHitAreas = [],
+  streakEndForPoint = null,
+  playoffEventForPoint = null,
+} = {}) {
+  const options = { streakEndForPoint, playoffEventForPoint };
+  if (!hoverBundle?.hits?.length) return '';
+  if (matchupMode && hoverBundle.hits.length >= 1) {
+    if (hoverBundle.hits.length > 1) {
+      return formatMatchupTooltipHtml(hoverBundle, allHitAreas, options);
+    }
+    return formatSoloTooltipHtml(hoverBundle.hits[0], allHitAreas, options);
+  }
+  return formatSoloTooltipHtml(hoverBundle.hits[0], allHitAreas, options);
+}
+
 function esc(s) {
   return String(s ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;');
 }
@@ -1215,37 +1973,5 @@ function landmarkLabel(kind) {
 }
 
 export function formatTooltipHtml(hit) {
-  const p = hit.point;
-  if (!p) return '';
-  const metric = hit.metric || 'winPct';
-  const ml = metricLabel(metric);
-  const suffix = metric === 'winPct' ? '%' : '';
-  const landmark = hit.landmarkKind ? landmarkLabel(hit.landmarkKind) : null;
-
-  if (p.flatline || !p.gameId) {
-    return `
-      <div class="sd-tip">
-        ${hit.teamName ? `<div class="sd-tip__team">${esc(hit.teamName)}</div>` : ''}
-        <div class="sd-tip__date">${esc(fmtDate(p.date))}</div>
-        <div class="sd-tip__note">No game — flat performance line</div>
-        <div class="sd-tip__row"><span>${ml}</span><strong>${esc(fmtMetricValue(p.value, metric))}${suffix}</strong></div>
-        ${p.movementReason ? `<div class="sd-tip__reason">${esc(p.movementReason)}</div>` : ''}
-      </div>`;
-  }
-
-  const resultCls = p.result === 'W' ? 'is-up' : 'is-down';
-  return `
-    <div class="sd-tip">
-      ${hit.teamName ? `<div class="sd-tip__team">${esc(hit.teamName)}</div>` : ''}
-      ${landmark ? `<div class="sd-tip__landmark">${esc(landmark)}</div>` : ''}
-      <div class="sd-tip__date">${esc(fmtDate(p.date))}</div>
-      <div class="sd-tip__result ${resultCls}">${esc(p.result)} vs ${esc(p.opponentId)} · ${esc(p.pointsFor)}–${esc(p.pointsAgainst)}</div>
-      <div class="sd-tip__grid">
-        <div class="sd-tip__row"><span>Previous</span><strong>${esc(fmtMetricValue(p.previousValue, metric))}${suffix}</strong></div>
-        <div class="sd-tip__row"><span>New</span><strong>${esc(fmtMetricValue(p.value, metric))}${suffix}</strong></div>
-        <div class="sd-tip__row"><span>Movement</span><strong class="${resultCls}">${esc(fmtMovement(p.movementAmount, metric))}</strong></div>
-      </div>
-      ${p.movementReason ? `<div class="sd-tip__reason">${esc(p.movementReason)}</div>` : ''}
-      ${p.cumulativeWins != null ? `<div class="sd-tip__meta">Range record · ${p.cumulativeWins}–${p.cumulativeLosses ?? 0}</div>` : ''}
-    </div>`;
+  return formatSoloTooltipHtml(hit, []);
 }

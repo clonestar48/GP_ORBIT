@@ -14,7 +14,7 @@ from typing import Any, Callable, Literal
 ResolutionUnit = Literal['game', 'day', 'week', 'month', 'season']
 TooltipMode = Literal['game', 'game-or-day', 'period', 'league-summary']
 GhostMode = Literal['none', 'full', 'segments', 'markers']
-RangePreset = Literal['today', 'week', 'month', 'season', 'all', 'series', 'league']
+RangePreset = Literal['today', 'week', 'month', 'season', 'all', 'matchup', 'series', 'league']
 
 
 @dataclass(frozen=True)
@@ -92,8 +92,8 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         max_ghost_opponents=0,
         tooltip_mode='period',
     ),
-    'series': ChartResolution(
-        preset='series',
+    'matchup': ChartResolution(
+        preset='matchup',
         resolution='game',
         max_points_per_series=30,
         show_markers=True,
@@ -101,6 +101,46 @@ RESOLUTION_BY_PRESET: dict[str, ChartResolution] = {
         ghost_mode='none',
         max_ghost_opponents=0,
         tooltip_mode='game',
+    ),
+    'matchupSeason': ChartResolution(
+        preset='matchupSeason',
+        resolution='game',
+        max_points_per_series=200,
+        show_markers=True,
+        show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
+        tooltip_mode='game',
+    ),
+    'matchupAll': ChartResolution(
+        preset='matchupAll',
+        resolution='month',
+        max_points_per_series=120,
+        show_markers=True,
+        show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
+        tooltip_mode='period',
+    ),
+    'soloSeason': ChartResolution(
+        preset='soloSeason',
+        resolution='game',
+        max_points_per_series=200,
+        show_markers=True,
+        show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
+        tooltip_mode='game',
+    ),
+    'soloAll': ChartResolution(
+        preset='soloAll',
+        resolution='month',
+        max_points_per_series=120,
+        show_markers=True,
+        show_ghost_opponent=False,
+        ghost_mode='none',
+        max_ghost_opponents=0,
+        tooltip_mode='period',
     ),
     'league': ChartResolution(
         preset='league',
@@ -120,6 +160,8 @@ MAX_RENDER_POINTS_CEILING = 900
 
 def resolve_profile(preset: str | None = None) -> ChartResolution:
     key = preset or DEFAULT_PRESET
+    if key == 'series':
+        key = 'matchup'
     return RESOLUTION_BY_PRESET.get(key, RESOLUTION_BY_PRESET[DEFAULT_PRESET])
 
 
@@ -215,7 +257,9 @@ def _period_point(
     games = [p for p in ordered if _is_game_point(p)]
     wins = sum(1 for p in games if p.get('result') == 'W')
     losses = len(games) - wins
-    return {
+    h2h_games = [p for p in games if p.get('isH2h')]
+    playoff_games = [p for p in games if p.get('isPlayoff')]
+    row = {
         'date': effective_end.isoformat(),
         'value': round(end_value, 2),
         'previousValue': round(start_value, 2),
@@ -232,6 +276,16 @@ def _period_point(
             f'({wins}-{losses}) in period'
         ),
     }
+    if h2h_games:
+        row['isH2h'] = True
+        row['h2hCountInPeriod'] = len(h2h_games)
+    if playoff_games:
+        row['isPlayoff'] = True
+    if any(p.get('impactTier') == 'blowout' for p in games):
+        row['impactTier'] = 'blowout'
+    elif any(p.get('impactTier') == 'playoff' for p in games):
+        row['impactTier'] = 'playoff'
+    return row
 
 
 def _bucket_points(

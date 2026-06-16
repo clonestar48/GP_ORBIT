@@ -112,6 +112,11 @@ def _cached_bundle() -> tuple[list[dict], list[dict], dict]:
         configure_reference_from_games(games)
         using_fallback = games_path == FALLBACK_GAMES_PATH
         path_label = _games_path_label(games_path)
+        season_years = {
+            int(g['season'])
+            for g in games
+            if g.get('season') is not None
+        }
         meta = {
             'source': games_doc.get('source', 'demo' if using_fallback else 'synced'),
             'label': games_doc.get('label', 'Historical performance demo data'),
@@ -119,6 +124,7 @@ def _cached_bundle() -> tuple[list[dict], list[dict], dict]:
             'gamesPath': path_label,
             'archiveFallback': using_fallback,
             'gameCount': len(games),
+            'seasonCount': len(season_years),
         }
         if games_path is not None:
             logger.info(

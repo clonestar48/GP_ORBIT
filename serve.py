@@ -23,6 +23,22 @@ API_ROUTES = frozenset({
 })
 
 
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """Handle parallel browser requests — avoids one slow API blocking the whole page."""
+    daemon_threads = True
+
+
+def warm_performance_cache() -> None:
+    """Load the games archive once at startup so first page load is not blocked."""
+    try:
+        from odds.performance_data import get_teams_payload
+
+        get_teams_payload('NBA')
+        print('Performance cache ready.')
+    except Exception as err:
+        print(f'Performance cache warm-up failed: {err}')
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -61,9 +77,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 payload = get_teams_payload(league)
             elif route == '/api/performance':
                 team_id = (qs.get('teamId') or [''])[0]
+                range_param = (qs.get('range') or [None])[0]
                 start_date = (qs.get('startDate') or [None])[0]
                 end_date = (qs.get('endDate') or [None])[0]
-                time_range = None if start_date and end_date else (qs.get('range') or ['week'])[0]
+                if range_param:
+                    time_range = range_param
+                    start_date = end_date = None
+                elif start_date and end_date:
+                    time_range = None
+                else:
+                    time_range = 'week'
                 payload = (
                     get_performance_payload(team_id, time_range, start_date, end_date)
                     if team_id else {'error': 'teamId required'}
@@ -71,9 +94,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             elif route == '/api/matchup':
                 team_a = (qs.get('teamA') or ['SAS'])[0]
                 team_b = (qs.get('teamB') or ['NYK'])[0]
+                range_param = (qs.get('range') or [None])[0]
                 start_date = (qs.get('startDate') or [None])[0]
                 end_date = (qs.get('endDate') or [None])[0]
-                time_range = None if start_date and end_date else (qs.get('range') or ['week'])[0]
+                if range_param:
+                    time_range = range_param
+                    start_date = end_date = None
+                elif start_date and end_date:
+                    time_range = None
+                else:
+                    time_range = 'season'
                 payload = get_matchup_payload(team_a, team_b, time_range, start_date, end_date)
             elif route == '/api/marquee':
                 league = (qs.get('league') or ['NBA'])[0]
@@ -116,9 +146,10 @@ if __name__ == '__main__':
             print(f'  - {path}')
         raise SystemExit(1)
 
-    socketserver.TCPServer.allow_reuse_address = True
+    ThreadingHTTPServer.allow_reuse_address = True
+    warm_performance_cache()
     try:
-        httpd = socketserver.TCPServer(('', PORT), Handler)
+        httpd = ThreadingHTTPServer(('', PORT), Handler)
     except OSError as e:
         if e.errno == 48:
             print(f'Port {PORT} is already in use. Stop the other server, then run:')

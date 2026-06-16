@@ -36,6 +36,13 @@ export function applyChartPayload(payload, mode) {
   };
 }
 
+/** Full selected-range summary for hero stats (not capped to game log). */
+export function applyRangeStatsPayload(payload) {
+  return {
+    rangeStats: payload?.rangeStats ?? null,
+  };
+}
+
 /** Archive-backed game log (latest real games for context). */
 export function applyArchiveLogPayload(payload, mode) {
   const archiveLog = payload?.archiveLog ?? null;

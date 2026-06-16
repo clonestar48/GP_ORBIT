@@ -72,8 +72,8 @@ export const RESOLUTION_BY_PRESET = {
     maxGhostOpponents: 0,
     tooltipMode: 'period',
   },
-  series: {
-    preset: 'series',
+  matchup: {
+    preset: 'matchup',
     resolution: 'game',
     maxPointsPerSeries: 30,
     showMarkers: true,
@@ -81,6 +81,46 @@ export const RESOLUTION_BY_PRESET = {
     ghostMode: 'none',
     maxGhostOpponents: 0,
     tooltipMode: 'game',
+  },
+  matchupSeason: {
+    preset: 'matchupSeason',
+    resolution: 'game',
+    maxPointsPerSeries: 200,
+    showMarkers: true,
+    showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
+    tooltipMode: 'game',
+  },
+  matchupAll: {
+    preset: 'matchupAll',
+    resolution: 'month',
+    maxPointsPerSeries: 120,
+    showMarkers: true,
+    showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
+    tooltipMode: 'period',
+  },
+  soloSeason: {
+    preset: 'soloSeason',
+    resolution: 'game',
+    maxPointsPerSeries: 200,
+    showMarkers: true,
+    showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
+    tooltipMode: 'game',
+  },
+  soloAll: {
+    preset: 'soloAll',
+    resolution: 'month',
+    maxPointsPerSeries: 120,
+    showMarkers: true,
+    showGhostOpponent: false,
+    ghostMode: 'none',
+    maxGhostOpponents: 0,
+    tooltipMode: 'period',
   },
   league: {
     preset: 'league',
@@ -98,7 +138,9 @@ export const DEFAULT_PRESET = 'week';
 
 /** @param {string|null|undefined} preset */
 export function resolveProfile(preset) {
-  return RESOLUTION_BY_PRESET[preset] ?? RESOLUTION_BY_PRESET[DEFAULT_PRESET];
+  let key = preset;
+  if (key === 'matchup' || key === 'series') key = 'season';
+  return RESOLUTION_BY_PRESET[key] ?? RESOLUTION_BY_PRESET[DEFAULT_PRESET];
 }
 
 /** @param {ChartProfile} profile */
