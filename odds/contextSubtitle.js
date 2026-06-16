@@ -76,8 +76,8 @@ function isSeasonComplete(referenceDate, postseasonGames) {
 }
 
 /**
- * Structured Solo > Season subtitle — counts plus per-round series results for coloring.
- * @returns {{ textParts: string[], roundSegments: Array<{ label: string, record: string, tone: 'win'|'loss'|'neutral' }> }}
+ * Structured Solo > Season subtitle — regular/postseason scope plus per-round series chips.
+ * @returns {{ regularGames: number, postseasonNote: 'none'|'no'|'active', roundSegments: Array<{ label: string, record: string, tone: 'win'|'loss'|'neutral' }> }}
  */
 export function formatSoloSeasonSubtitle({
   regularGames,
@@ -88,14 +88,6 @@ export function formatSoloSeasonSubtitle({
   const reg = Number(regularGames) || 0;
   const post = Number(postseasonGames) || 0;
   const complete = seasonStatus === 'complete';
-  const textParts = [`${reg} regular`];
-
-  if (complete && post === 0) {
-    textParts.push('No postseason');
-  } else if (post > 0) {
-    textParts.push(`${post} postseason`);
-  }
-
   const roundSegments = (playoffSeriesResults || []).map((row) => {
     const record = row.record ?? `${row.wins ?? 0}–${row.losses ?? 0}`;
     let tone = 'neutral';
@@ -108,7 +100,14 @@ export function formatSoloSeasonSubtitle({
     };
   });
 
-  return { textParts, roundSegments };
+  let postseasonNote = 'none';
+  if (complete && post === 0 && roundSegments.length === 0) {
+    postseasonNote = 'no';
+  } else if (post > 0 || roundSegments.length > 0) {
+    postseasonNote = 'active';
+  }
+
+  return { regularGames: reg, postseasonNote, roundSegments };
 }
 
 function soloSeasonRoundToneClass(tone) {
@@ -131,16 +130,22 @@ function escSubtitleHtml(text) {
 }
 
 function buildSoloSeasonSubtitle(scopeLabel, formatted) {
-  const { textParts, roundSegments } = formatted;
-  if (!textParts.length && !roundSegments.length) {
+  const { regularGames, postseasonNote, roundSegments } = formatted;
+  if (!regularGames && postseasonNote === 'none' && !roundSegments.length) {
     return { caption: scopeLabel || '—', suffix: '', suffixHtml: '', seasonStrip: false };
   }
 
-  const countHtml = textParts.map((part) => (
-    `<span class="sd-season-strip__count">${escSubtitleHtml(part)}</span>`
-  )).join('<span class="sd-season-strip__sep" aria-hidden="true">·</span>');
+  const sep = '<span class="sd-season-strip__sep" aria-hidden="true">·</span>';
+  const parts = [
+    `<span class="sd-season-strip__count">${escSubtitleHtml(`${regularGames} regular`)}</span>`,
+  ];
 
-  let roundsHtml = '';
+  if (postseasonNote === 'no') {
+    parts.push(`${sep}<span class="sd-season-strip__count">${escSubtitleHtml('No postseason')}</span>`);
+  } else if (postseasonNote === 'active') {
+    parts.push(`${sep}<span class="sd-season-strip__post">POSTSEASON</span>`);
+  }
+
   if (roundSegments.length) {
     const chips = roundSegments.map((round) => {
       const toneCls = soloSeasonRoundToneClass(round.tone);
@@ -148,10 +153,13 @@ function buildSoloSeasonSubtitle(scopeLabel, formatted) {
       const record = escSubtitleHtml(round.record);
       return `<span class="sd-season-round-chip${toneCls ? ` ${toneCls}` : ''}"><span class="sd-season-round-chip__label">${label}</span><span class="sd-season-round-chip__score">${record}</span></span>`;
     }).join('');
-    roundsHtml = `<span class="sd-season-strip__rounds">${chips}</span>`;
+    if (postseasonNote !== 'active') {
+      parts.push(`${sep}<span class="sd-season-strip__post">POSTSEASON</span>`);
+    }
+    parts.push(`${sep}<span class="sd-season-strip__rounds">${chips}</span>`);
   }
 
-  const suffixHtml = `<span class="sd-season-strip">${countHtml}${roundsHtml ? `<span class="sd-season-strip__sep" aria-hidden="true">·</span>${roundsHtml}` : ''}</span>`;
+  const suffixHtml = `<span class="sd-season-strip">${parts.join('')}</span>`;
 
   return {
     caption: scopeLabel,
@@ -263,6 +271,7 @@ function soloContextSubtitle({
   latestGame,
   latestMove,
   todayIdle,
+  outlook,
   status,
   abbrFor,
 }) {
@@ -281,7 +290,10 @@ function soloContextSubtitle({
     return buildSubtitle([scope, 'Summary unavailable']);
   }
   if (status === 'empty') {
-    return buildSubtitle([scope, todayIdle ? 'No game today' : 'No games in range']);
+    if (todayIdle && outlook) {
+      return buildSubtitle(['Latest', outlook]);
+    }
+    return buildSubtitle([scope, todayIdle ? 'No recent game on reference date' : 'No games in range']);
   }
 
   if (preset === 'season') {
@@ -326,7 +338,10 @@ function soloContextSubtitle({
       const move = formatMoveChip(latestMove);
       return buildSubtitle(['Latest result', summary, move]);
     }
-    return buildSubtitle([scope, 'No game today']);
+    if (todayIdle && outlook) {
+      return buildSubtitle(['Latest', outlook]);
+    }
+    return buildSubtitle(['Latest', 'No recent game on reference date']);
   }
 
   const record = rangeStats?.record;
@@ -480,6 +495,7 @@ export function getContextSubtitle({
     latestGame: stats?.latestGame,
     latestMove: stats?.latestMove,
     todayIdle: stats?.todayIdle,
+    outlook: stats?.outlook,
     status,
     abbrFor: archiveMeta?.abbrFor,
   });

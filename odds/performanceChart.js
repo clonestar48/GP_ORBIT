@@ -12,6 +12,8 @@ import {
 
 const MIN_MARKER_SPACING_PX = 9;
 const MIN_LINE_BUCKET_PX = 1.5;
+const MATCHUP_SEASON_MAJOR_SWING_MIN = 14;
+const MATCHUP_SEASON_EVENT_MOVE_MIN = 9;
 const LANDMARK_MOVE_THRESHOLD_WIN = 0.75;
 const LANDMARK_MOVE_THRESHOLD_INDEX = 1.5;
 const LANDMARK_PROMINENCE_WIN = 0.9;
@@ -340,80 +342,149 @@ function strokeSeriesLine(ctx, path, color, lineWidth, alpha = 1, {
   ctx.restore();
 }
 
-/** Robinhood-style marker: filled core, thin ring, no bloom. */
-function drawSeriesMarker(ctx, x, y, r, fillColor, {
-  isHover = false,
-  isEndpoint = false,
-  isLandmark = false,
-  ringColor = null,
-  headToHead = false,
-  playoffFinale = false,
-} = {}) {
-  const coreR = isEndpoint ? r + 0.35 : (isLandmark ? r + 0.3 : r);
-  const ringR = coreR + (isHover ? 2.75 : (isLandmark ? 2.15 : 1.75));
-  const stroke = ringColor || fillColor;
+const POSTSEASON_ACCENT_GOLD = '#e8c547';
+const POSTSEASON_HALO_WARM = '#fff4d0';
 
+/** @typedef {'hidden'|'meaningful'|'postseason'|'major'|'hover'} MarkerTier */
+
+const MARKER_TIER_STYLE = {
+  meaningful: { radius: 2.05, fillAlpha: 0.9 },
+  postseason: { radius: 2.1, fillAlpha: 0.92 },
+  major: { radius: 2.2, fillAlpha: 0.94 },
+  hover: { radius: 2.3, fillAlpha: 0.98, ring: true },
+};
+
+function parseHexRgb(color) {
+  if (typeof color !== 'string' || !color.startsWith('#') || color.length < 7) return null;
+  return {
+    r: parseInt(color.slice(1, 3), 16),
+    g: parseInt(color.slice(3, 5), 16),
+    b: parseInt(color.slice(5, 7), 16),
+  };
+}
+
+/** Lakers-style gold teams — use warm light halo instead of gold-on-gold. */
+function isWarmGoldTeamColor(color) {
+  const rgb = parseHexRgb(color);
+  if (!rgb) return false;
+  const { r, g, b } = rgb;
+  return r >= 170 && g >= 120 && b <= 90 && (r + g) > b * 2.2;
+}
+
+function postseasonAccentForTeam(teamColor) {
+  return isWarmGoldTeamColor(teamColor) ? POSTSEASON_HALO_WARM : POSTSEASON_ACCENT_GOLD;
+}
+
+/** Crisp filled core — no shadow bloom. */
+function drawCleanMarkerCore(ctx, x, y, r, color, alpha = 0.92) {
   ctx.save();
   ctx.shadowBlur = 0;
-
-  if (isHover) {
-    const hoverCore = coreR + 0.85;
-    ctx.fillStyle = fillColor;
-    ctx.beginPath();
-    ctx.arc(x, y, hoverCore, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = colorWithAlpha(stroke, 0.78);
-    ctx.lineWidth = 1.35;
-    ctx.beginPath();
-    ctx.arc(x, y, hoverCore + 2.35, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-
-  ctx.fillStyle = 'rgba(8, 10, 14, 0.92)';
+  ctx.fillStyle = colorWithAlpha(color, alpha);
   ctx.beginPath();
-  ctx.arc(x, y, ringR + 0.75, 0, Math.PI * 2);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
 
-  ctx.strokeStyle = isLandmark
-    ? colorWithAlpha(stroke, 0.58)
-    : colorWithAlpha(stroke, 0.42);
-  ctx.lineWidth = isLandmark ? 1 : 0.85;
+/** Thin stroke ring — reserved for hover emphasis; no blur. */
+function drawThinMarkerRing(ctx, x, y, ringR, color, { lineWidth = 0.65, alpha = 0.4 } = {}) {
+  ctx.save();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = colorWithAlpha(color, alpha);
+  ctx.lineWidth = lineWidth;
   ctx.beginPath();
   ctx.arc(x, y, ringR, 0, Math.PI * 2);
   ctx.stroke();
-
-  if (headToHead && !isEndpoint) {
-    ctx.strokeStyle = colorWithAlpha(stroke, 0.48);
-    ctx.lineWidth = 0.85;
-    ctx.setLineDash([2.5, 2.5]);
-    ctx.beginPath();
-    ctx.arc(x, y, ringR + 2.1, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  ctx.fillStyle = fillColor;
-  ctx.beginPath();
-  ctx.arc(x, y, coreR, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (isEndpoint) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
-    ctx.beginPath();
-    ctx.arc(x, y, Math.max(1, coreR * 0.34), 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  if (playoffFinale) {
-    ctx.fillStyle = 'rgba(232, 197, 71, 0.82)';
-    ctx.beginPath();
-    ctx.arc(x, y, Math.max(1.05, coreR * 0.26), 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   ctx.restore();
+}
+
+function drawTieredMarker(ctx, x, y, teamColor, tier, { isPlayoff = false } = {}) {
+  if (!tier || tier === 'hidden') return;
+  const style = MARKER_TIER_STYLE[tier];
+  if (!style) return;
+
+  const r = style.radius;
+  const fill = style.fillAlpha ?? 0.9;
+
+  if (style.ring) {
+    drawThinMarkerRing(ctx, x, y, r + 2.2, teamColor, { lineWidth: 0.7, alpha: 0.44 });
+    if (isPlayoff) {
+      drawThinMarkerRing(
+        ctx,
+        x,
+        y,
+        r + 3.4,
+        postseasonAccentForTeam(teamColor),
+        { lineWidth: 0.55, alpha: 0.3 },
+      );
+    }
+  }
+
+  drawCleanMarkerCore(ctx, x, y, r, teamColor, fill);
+}
+
+function formEntryToTier(entry) {
+  const { type, hover, point } = entry;
+  const isPlayoff = Boolean(point?.isPlayoff);
+  const move = Math.abs(point?.movementAmount ?? 0);
+
+  if (hover || type === 'hover') {
+    return { tier: 'hover', isPlayoff };
+  }
+  if (type === 'playoffSwing' || (type === 'largestMove' && move >= MATCHUP_SEASON_MAJOR_SWING_MIN)) {
+    return { tier: 'major', isPlayoff };
+  }
+  if (type === 'endpoint') {
+    return { tier: isPlayoff ? 'postseason' : 'meaningful', isPlayoff };
+  }
+  if (type === 'headToHeadPlayoff' || isPlayoff) {
+    return { tier: 'postseason', isPlayoff: true };
+  }
+  if (type === 'largestMove' || type === 'headToHead' || type === 'regEvent') {
+    return { tier: 'meaningful', isPlayoff: false };
+  }
+  return { tier: 'meaningful', isPlayoff: false };
+}
+
+function resolveSeriesMarkerTier(p, {
+  isHover = false,
+  isEndpoint = false,
+  landmark = null,
+  isPlayoff = false,
+  isHeadToHeadGame = false,
+  isOpponentEvent = false,
+  isHighImpact = false,
+  isFormSwing = false,
+  metric = 'winPct',
+} = {}) {
+  if (isHover) return { tier: 'hover', isPlayoff };
+
+  const move = Math.abs(p?.movementAmount ?? 0);
+  const majorThreshold = metric === 'winPct'
+    ? LANDMARK_MOVE_THRESHOLD_WIN
+    : MATCHUP_SEASON_MAJOR_SWING_MIN;
+  const isMajorMove = move >= majorThreshold
+    || (landmark?.kind === 'swing' && (landmark.prominence ?? 0) >= majorThreshold);
+  const isBlowout = Boolean(p?.isBlowout || p?.impactTier === 'blowout');
+
+  if (isPlayoff && (isMajorMove || isBlowout || isHighImpact || isFormSwing)) {
+    return { tier: 'major', isPlayoff: true };
+  }
+  if (isPlayoff) return { tier: 'postseason', isPlayoff: true };
+  if (isMajorMove || isBlowout || isFormSwing) {
+    return { tier: 'major', isPlayoff: false };
+  }
+  if (isEndpoint || landmark || isHeadToHeadGame || isOpponentEvent || isHighImpact) {
+    return { tier: 'meaningful', isPlayoff: false };
+  }
+  return { tier: 'hidden', isPlayoff: false };
+}
+
+function drawSeriesMarker(ctx, x, y, teamColor, options = {}) {
+  const resolved = options.tier
+    ? { tier: options.tier, isPlayoff: Boolean(options.isPlayoff) }
+    : resolveSeriesMarkerTier(options.point, options);
+  drawTieredMarker(ctx, x, y, teamColor, resolved.tier, { isPlayoff: resolved.isPlayoff });
 }
 
 function colorWithAlpha(color, alpha) {
@@ -544,21 +615,18 @@ function selectMarkerPoints(gamePoints, xFn, {
   if (lastPoint) add(lastPoint, 2);
   if (hoverPoint) add(hoverPoint, 5);
 
-  if (!dense) {
+  if (dense) {
     const sorted = [...gamePoints].sort((a, b) => xFn(a.date) - xFn(b.date));
     let lastX = -Infinity;
-
     for (const p of sorted) {
       const k = pointKey(p);
       const x = xFn(p.date);
       const protectedPt = landmarkKeys.has(k) || p === hoverPoint || p === lastPoint;
-
       if (protectedPt) {
         add(p, landmarkKeys.has(k) ? 3 : p === hoverPoint ? 5 : 2);
         if (!landmarkKeys.has(k)) lastX = x;
         continue;
       }
-
       if (x - lastX >= MIN_MARKER_SPACING_PX) {
         add(p, 1);
         lastX = x;
@@ -596,8 +664,6 @@ function isMatchupSeasonTrajectory(meta = {}) {
 
 const MATCHUP_SEASON_SMOOTH_ALPHA = 0.44;
 const MATCHUP_SEASON_EVENT_ALPHA = 0.82;
-const MATCHUP_SEASON_MAJOR_SWING_MIN = 14;
-const MATCHUP_SEASON_EVENT_MOVE_MIN = 9;
 const MATCHUP_SEASON_EVENT_RAW_BLEND = 0.78;
 const MATCHUP_SEASON_NEIGHBOR_BLEND = 0.68;
 
@@ -681,6 +747,14 @@ function classifyFormTrajectoryMarkers(gamePoints, { hoverPoint = null, lastPoin
   };
 
   for (const p of gamePoints) {
+    if (p.isPlayoff || pointKey(p) === lastKey) continue;
+    const move = Math.abs(p.movementAmount ?? 0);
+    if (move >= MATCHUP_SEASON_EVENT_MOVE_MIN && !chosen.has(pointKey(p))) {
+      add(p, 'regEvent', 2);
+    }
+  }
+
+  for (const p of gamePoints) {
     if (p.isH2h && pointKey(p) !== lastKey) {
       add(p, p.isPlayoff ? 'headToHeadPlayoff' : 'headToHead', 5);
     }
@@ -728,50 +802,9 @@ function classifyFormTrajectoryMarkers(gamePoints, { hoverPoint = null, lastPoin
 }
 
 function drawFormTrajectoryMarker(ctx, x, y, entry, meta, seriesColor) {
-  const { type, hover = false } = entry;
-  const isHover = hover || type === 'hover';
-  const isEndpoint = type === 'endpoint';
-  const isHeadToHead = type === 'headToHead' || type === 'headToHeadPlayoff';
-  const isEvent = isHeadToHead || type === 'largestMove' || type === 'playoffSwing';
   const teamColor = seriesColor || meta.dotColor || '#5da396';
-
-  let r = 2.3;
-  if (isHover) r = 2.75;
-  else if (isEndpoint) r = 2.5;
-  else if (isEvent) r = 2.55;
-
-  ctx.save();
-  ctx.shadowBlur = 0;
-
-  ctx.strokeStyle = colorWithAlpha(teamColor, isHover ? 0.5 : (isEndpoint ? 0.36 : 0.28));
-  ctx.lineWidth = isHover ? 0.95 : 0.7;
-  ctx.beginPath();
-  ctx.arc(x, y, r + (isHover ? 1.45 : 1.05), 0, Math.PI * 2);
-  ctx.stroke();
-
-  if (isHeadToHead && !isEndpoint) {
-    ctx.strokeStyle = colorWithAlpha(teamColor, 0.32);
-    ctx.lineWidth = 0.6;
-    ctx.setLineDash([2, 2.5]);
-    ctx.beginPath();
-    ctx.arc(x, y, r + 2.2, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  ctx.fillStyle = teamColor;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (type === 'headToHeadPlayoff' && !isEndpoint) {
-    ctx.fillStyle = 'rgba(232, 197, 71, 0.72)';
-    ctx.beginPath();
-    ctx.arc(x, y, 0.85, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.restore();
+  const { tier, isPlayoff } = formEntryToTier(entry);
+  drawTieredMarker(ctx, x, y, teamColor, tier, { isPlayoff });
 }
 
 function resolveMatchupSeasonLeader(seriesList) {
@@ -1286,37 +1319,30 @@ function drawOneSeries(ctx, points, color, plot, yFn, hitAreas, meta = {}, hover
         const isHighImpact = p.impactTier === 'playoff' || p.impactTier === 'blowout';
         const isFormSwing = Math.abs(p.movementAmount ?? 0) >= 12;
         const isOpponentEvent = isH2hEvent;
-        let r = isHover ? 3.25 : 2.75;
-        if (isHeadToHeadGame) {
-          r = isHover ? 4.35 : (isHighImpact ? 3.9 : 3.35);
-        } else if (isOpponentEvent) {
-          r = isHover ? 4.1 : 3.45;
-        } else if (isPlayoff || isHighImpact || isFormSwing) {
-          r = isHover ? 3.85 : 3.25;
-        } else if (isLandmark) {
-          r = isHover ? 3.35 : 3;
-        }
-        const fill = meta.dotColor || (p.result === 'W' ? '#6dd4a8' : '#f08080');
-        const oppColor = isOpponentEvent && p.opponentId ? meta.opponentColors?.[p.opponentId] : null;
-        drawSeriesMarker(ctx, x, y, r, fill, {
+
+        drawSeriesMarker(ctx, x, y, color, {
+          point: p,
           isHover,
-          isLandmark: isLandmark || isOpponentEvent || isHeadToHeadGame || isPlayoff,
           isEndpoint,
-          ringColor: oppColor || (isPlayoff ? '#e8c547' : (isHighImpact ? color : null)) || (isLandmark ? color : null),
+          landmark: isLandmark ? landmark : null,
+          isPlayoff,
+          isHeadToHeadGame,
+          isOpponentEvent,
+          isHighImpact,
+          isFormSwing,
+          metric: meta.metric || 'winPct',
         });
       }
 
       const lastDrawnAsMarker = lastGame
         && markerPoints.some((p) => p === lastGame || p.date === lastGame.date);
       if (!lastDrawnAsMarker && lastGame) {
-        drawSeriesMarker(
-          ctx,
-          xFn(lastGame.date),
-          yAt(lastGame),
-          dense ? 2.75 : 3,
-          color,
-          { isEndpoint: true, ringColor: color },
-        );
+        drawSeriesMarker(ctx, xFn(lastGame.date), yAt(lastGame), color, {
+          point: lastGame,
+          isEndpoint: true,
+          isPlayoff: Boolean(lastGame.isPlayoff),
+          metric: meta.metric || 'winPct',
+        });
       }
     }
   } else {
@@ -1721,8 +1747,14 @@ function playoffTooltipTag(playoffEvent) {
       return { label: 'Won Title', cls: 'is-up' };
     case 'won-series':
       return { label: 'Won Series', cls: 'is-up' };
+    case 'sweep':
+      return { label: 'Sweep', cls: 'is-up' };
+    case 'swept':
+      return { label: 'Swept', cls: 'is-down' };
     case 'eliminated':
       return { label: 'Eliminated', cls: 'is-down' };
+    case 'series-ended':
+      return { label: 'Series Ended', cls: '' };
     default:
       return null;
   }
@@ -1752,11 +1784,17 @@ function isLargestMoveInView(point, allHitAreas, metric) {
   return amt >= threshold;
 }
 
+function comebackTooltipTag(comebackEvent) {
+  if (!comebackEvent?.label) return null;
+  return { label: comebackEvent.label, cls: 'is-up' };
+}
+
 function buildTooltipTags(p, hit, {
   metric,
   allHitAreas = [],
   streakEndInfo = null,
   playoffEvent = null,
+  comebackEvent = null,
 } = {}) {
   const ranked = [];
   const add = (priority, tag) => {
@@ -1764,11 +1802,21 @@ function buildTooltipTags(p, hit, {
   };
 
   const playoffTag = playoffTooltipTag(playoffEvent);
-  if (playoffEvent?.kind === 'won-title') add(1, playoffTag);
-  else if (playoffEvent?.kind === 'eliminated') add(2, playoffTag);
-  else if (playoffEvent?.kind === 'won-series') add(3, playoffTag);
+  const comebackTag = comebackTooltipTag(comebackEvent);
+  const historicEvent = comebackEvent && (
+    comebackEvent.tier === 'historic'
+    || String(comebackEvent.kind || '').startsWith('historic')
+  );
 
-  add(4, streakEndTooltipTag(streakEndInfo));
+  if (playoffEvent?.kind === 'won-title') add(1, playoffTag);
+  else if (historicEvent) add(2, comebackTag);
+  else if (playoffEvent?.kind === 'sweep' || playoffEvent?.kind === 'swept') add(3, playoffTag);
+  else if (playoffEvent?.kind === 'won-series' || playoffEvent?.kind === 'eliminated') add(4, playoffTag);
+  else if (playoffEvent?.kind === 'series-ended') add(5, playoffTag);
+  else if (comebackEvent?.kind === 'major-comeback') add(6, comebackTag);
+  else if (comebackEvent) add(7, comebackTag);
+
+  add(8, streakEndTooltipTag(streakEndInfo));
 
   const margin = p.margin ?? (
     p.pointsFor != null && p.pointsAgainst != null
@@ -1779,15 +1827,15 @@ function buildTooltipTags(p, hit, {
   const blowout = p.isBlowout
     || p.impactTier === 'blowout'
     || (margin != null && Math.abs(margin) >= 15);
-  if (blowout) {
-    add(6, p.result === 'W' ? 'Blowout Win' : 'Blowout Loss');
-  }
-
   if (isLargestMoveInView(p, allHitAreas, metric)) {
     const amt = Number(p.movementAmount) || 0;
-    add(5, amt < 0 ? 'Largest Drop' : 'Largest Move');
+    add(9, amt < 0 ? 'Largest Drop' : 'Largest Move');
   } else if (margin != null && Math.abs(margin) <= 3 && p.result) {
-    add(6, p.result === 'W' ? 'Close Win' : 'Close Loss');
+    add(12, p.result === 'W' ? 'Close Win' : 'Close Loss');
+  }
+
+  if (blowout) {
+    add(10, p.result === 'W' ? 'Blowout Win' : 'Blowout Loss');
   }
 
   if (p.isPlayoff || p.impactTier === 'playoff') {
@@ -1830,6 +1878,7 @@ function formatSoloTooltipHtml(hit, allHitAreas = [], options = {}) {
   const metric = hit.metric || 'winPct';
   const streakEndInfo = options.streakEndForPoint?.(p, hit.teamId) ?? null;
   const playoffEvent = options.playoffEventForPoint?.(p, hit.teamId) ?? null;
+  const comebackEvent = options.comebackEventForPoint?.(p, hit.teamId) ?? null;
 
   if (p.flatline || !p.gameId) {
     return `
@@ -1845,6 +1894,7 @@ function formatSoloTooltipHtml(hit, allHitAreas = [], options = {}) {
     allHitAreas,
     streakEndInfo,
     playoffEvent,
+    comebackEvent,
   });
   const resultCls = p.result === 'W' ? 'is-up' : 'is-down';
 
@@ -1897,15 +1947,18 @@ function formatMatchupTooltipHtml(hoverBundle, allHitAreas = [], options = {}) {
 
   const streakEndForPoint = options.streakEndForPoint;
   const playoffEventForPoint = options.playoffEventForPoint;
+  const comebackEventForPoint = options.comebackEventForPoint;
   const tagEntries = [];
   for (const h of hits) {
     const streakEndInfo = streakEndForPoint?.(h.point, h.teamId) ?? null;
     const playoffEvent = playoffEventForPoint?.(h.point, h.teamId) ?? null;
+    const comebackEvent = comebackEventForPoint?.(h.point, h.teamId) ?? null;
     tagEntries.push(...buildTooltipTags(h.point, h, {
       metric: h.metric || 'index',
       allHitAreas,
       streakEndInfo,
       playoffEvent,
+      comebackEvent,
     }));
   }
   const tags = dedupeTooltipTags(tagEntries).slice(0, 3);

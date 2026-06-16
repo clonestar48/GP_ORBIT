@@ -10,21 +10,21 @@ from pathlib import Path
 from typing import Any
 
 RANGE_LABELS = {
-    'today': 'Today',
-    'week': 'Past Week',
-    'month': 'Past Month',
-    'season': 'Current Season',
-    'all': 'All Time',
+    'today': 'Latest',
+    'week': 'Week',
+    'month': 'Month',
+    'season': 'Season',
+    'all': 'Archive',
     'series': 'Series',
 }
 
 # Hero stat block — honest scope labels (not tied to game-log row cap).
 STAT_SCOPE_LABELS = {
-    'today': 'Today',
-    'week': 'Current Week',
-    'month': 'Current Month',
+    'today': 'Latest',
+    'week': 'This week',
+    'month': 'This month',
     'season': 'Current Season',
-    'all': 'Full Archive',
+    'all': 'Loaded archive',
     'matchup': 'Head-to-head',
 }
 

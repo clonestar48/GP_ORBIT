@@ -1,11 +1,23 @@
 /** Flexible range object — presets populate start/end dates internally. */
 
+/** Product-facing aliases — preset keys stay `today` / `all` for API compatibility. */
+export const RANGE_PRESET_ALIASES = {
+  latest: 'today',
+  archive: 'all',
+};
+
+export function normalizeRangePreset(preset) {
+  if (!preset) return preset;
+  const key = String(preset).toLowerCase();
+  return RANGE_PRESET_ALIASES[key] ?? preset;
+}
+
 export const RANGE_LABELS = {
   today: 'Latest',
-  week: 'This week',
-  month: 'This month',
-  season: 'Current Season',
-  all: 'Full archive',
+  week: 'Week',
+  month: 'Month',
+  season: 'Season',
+  all: 'Archive',
   series: 'Series',
 };
 
@@ -38,16 +50,16 @@ export const MATCHUP_RANGE_PRESETS = ['season', 'all'];
 
 /** Right-side range bar — one visible set per mode. */
 export const FRANCHISE_RANGE_CONTROLS = [
-  { preset: 'today', label: 'Today' },
+  { preset: 'today', label: 'Latest' },
   { preset: 'week', label: 'Week' },
   { preset: 'month', label: 'Month' },
   { preset: 'season', label: 'Season' },
-  { preset: 'all', label: 'All' },
+  { preset: 'all', label: 'Archive' },
 ];
 
 export const MATCHUP_RANGE_CONTROLS = [
   { preset: 'season', label: 'Season' },
-  { preset: 'all', label: 'All' },
+  { preset: 'all', label: 'Archive' },
 ];
 
 /** Map legacy or invalid matchup presets to the active comparison lens. */
@@ -84,6 +96,7 @@ function toIsoDateString(d) {
 }
 
 function presetDates(preset, ref = referenceDate()) {
+  preset = normalizeRangePreset(preset);
   const end = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
   const start = new Date(end);
   if (preset === 'today') return { startDate: toIsoDateString(end), endDate: toIsoDateString(end) };
@@ -132,13 +145,14 @@ export function createRange({
     };
   }
   if (preset) {
-    const dates = presetDates(preset);
+    const normalized = normalizeRangePreset(preset);
+    const dates = presetDates(normalized);
     return {
       ...dates,
       teams,
       mode,
       metric,
-      preset,
+      preset: normalized,
     };
   }
   return {
@@ -200,7 +214,7 @@ export function jumpPresetForLastPlayed(currentPreset, isoDate, ref = referenceD
   return target;
 }
 
-/** Anchor chart + filters to a game: Today on ref-today, else the 7-day window ending that day. */
+/** Anchor chart + filters to a game: Latest on ref-today, else the 7-day window ending that day. */
 export function createRangeForGameDate(
   gameDate,
   { mode = 'franchise', metric = 'winPct' } = {},
