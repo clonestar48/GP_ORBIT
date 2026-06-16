@@ -67,6 +67,7 @@ def normalize_balldontlie_game(raw: dict[str, Any]) -> list[dict[str, Any]]:
             'teamScore': int(home_score),
             'opponentScore': int(away_score),
             'result': 'W' if home_score > away_score else 'L',
+            'isHome': True,
         },
         {
             'id': _row_id(game_id, date, home, away, away),
@@ -78,6 +79,7 @@ def normalize_balldontlie_game(raw: dict[str, Any]) -> list[dict[str, Any]]:
             'teamScore': int(away_score),
             'opponentScore': int(home_score),
             'result': 'W' if away_score > home_score else 'L',
+            'isHome': False,
         },
     ]
 

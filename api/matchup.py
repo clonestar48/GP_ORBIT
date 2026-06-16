@@ -19,5 +19,12 @@ class handler(BaseJsonHandler):
         team_b = (qs.get('teamB') or ['NYK'])[0]
         start_date = (qs.get('startDate') or [None])[0]
         end_date = (qs.get('endDate') or [None])[0]
-        time_range = None if start_date and end_date else (qs.get('range') or ['week'])[0]
+        range_param = (qs.get('range') or [None])[0]
+        if range_param:
+            time_range = range_param
+            start_date = end_date = None
+        elif start_date and end_date:
+            time_range = None
+        else:
+            time_range = 'season'
         return get_matchup_payload(team_a, team_b, time_range, start_date, end_date)

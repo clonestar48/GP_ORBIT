@@ -1,0 +1,53 @@
+---
+description: Scope agent work to the ODDS sports analytics lab only
+globs: odds/**,api/**,api_bootstrap.py,data/demo/**,lib/dataSources/**,lib/normalizers/**,lib/calculations/**,lib/teamColors.js,lib/fighterColors.js,lib/fallbackCornerColors.js,lib/normalizers/competitorHistory.js,vercel.json,requirements.txt,.env.example
+alwaysApply: false
+---
+
+# ODDS project scope
+
+You are working on **ODDS** — the NBA sports analytics / market-data lab at `/odds/`.
+
+## In scope
+
+- Frontend: `odds/index.html`, `odds/main.js`, `odds/style.css`, `odds/performanceChart.js`, `odds/comparisonChart.js`
+- Backend: `odds/sports_data.py`, `api/*.py`, `api_bootstrap.py`
+- Data layer: `lib/dataSources/`, `lib/normalizers/`, `lib/calculations/`, `data/demo/`
+- Client libs: `lib/teamColors.js`, `lib/fighterColors.js`, `lib/fallbackCornerColors.js`, `lib/normalizers/competitorHistory.js`
+- Deploy: `vercel.json`, `requirements.txt`
+- Shared assets used by ODDS: `css/tokens.css`, `css/fonts.css`, `fonts/**`
+
+## Out of scope (do not edit unless user explicitly asks)
+
+- Root portfolio: `index.html`, `js/main.js`, `css/styles.css`
+- `sine/**`, `gradient/**`, `worktest/**`, `experiments/**`, `pixel-gallery.html`
+
+## Principles
+
+- **Functionality and clean data first** — ship accurate, readable data; UI serves the numbers, not the other way around
+- Data integrity: no invented scores, odds, or line history; label demo data clearly
+- No gambling CTAs; neutral language (lines, market movement, form score)
+- API keys server-side only (`ODDS_API_KEY` in `.env` / Vercel env)
+- Prefer minimal diffs; do not redesign UI unless requested
+
+## Chart UX (core tenet)
+
+**Hover-first insight** — the chart is a primary exploration surface, not decoration.
+
+- Every meaningful game-day point must be hoverable with a rich tooltip (date, opponent, score, movement, record)
+- **Landmarks are sacred**: range high/low, local peaks/valleys, and significant swings always get visible markers at their apex/crux — never culled for density
+- Dense ranges (Season, All Time): show landmark markers by default; hover reveals any point
+- Visual style: crisp, SVG-like strokes (Schwab/Robinhood nuance) — no aggressive glow, bloom, or chromatic effects
+- Implementation lives in `odds/performanceChart.js` (`findLandmarkPoints`, `selectMarkerPoints`, `findHit`, `formatTooltipHtml`)
+
+When changing charts, preserve or extend landmark + hover behavior — do not regress to hover-only-dense or collision-cull extrema.
+
+## Local dev
+
+```bash
+python3 serve.py   # http://127.0.0.1:8120/odds/
+```
+
+## Key endpoints
+
+- `GET /api/games`, `/api/odds`, `/api/history` — Vercel Python (`api/*.py`) or `serve.py` locally

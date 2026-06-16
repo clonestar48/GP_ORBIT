@@ -1,0 +1,16 @@
+---
+description: Never modify existing projects when starting a fresh project
+alwaysApply: true
+---
+
+# Fresh project safety
+
+When the user asks for a new, fresh, or blank project:
+
+1. **Do not modify, overwrite, or delete any existing files** unless the user explicitly names that project or path.
+2. **Inspect the workspace first** — list the folder and note what already exists.
+3. **Create new work in a new folder** (e.g. `starter/`, or a name the user gives). Never write starter files at the repo root by default.
+4. **If the workspace is not empty**, confirm the target folder before creating files.
+5. **Prefer isolation** — new folder, no packages, no frameworks, no creative decisions unless asked.
+
+Treat "fresh project" as additive only. Existing projects are off-limits unless explicitly referenced.

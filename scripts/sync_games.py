@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Offline NBA game sync → normalized data/games-2025.json (not wired to frontend by default).
+"""Offline NBA game sync → normalized data/games-YYYY.json (not wired to frontend by default).
 
 Usage:
   python3 scripts/sync_games.py --dry-run
   python3 scripts/sync_games.py --dry-run --provider nba_api --season-year 2024
-  python3 scripts/sync_games.py --provider nba_api --season-year 2024 --full
+  python3 scripts/sync_games.py --provider nba_api --season-year 2024
   python3 scripts/sync_games.py --provider balldontlie --season-year 2024 --full
+
+Multi-season archive: use scripts/sync_archive.py
 
 Requires BALLDONTLIE_API_KEY in .env when using --provider balldontlie.
 nba_api provider needs: pip install nba_api
@@ -24,14 +26,11 @@ if str(ROOT) not in sys.path:
 
 from lib.ingest.balldontlie import collect_balldontlie_games  # noqa: E402
 from lib.ingest.env import balldontlie_api_key, load_dotenv  # noqa: E402
-from lib.ingest.nba_api import collect_nba_api_games  # noqa: E402
 from lib.ingest.schema import build_games_document  # noqa: E402
+from lib.ingest.nba_api import SEASON_TYPE_PLAYOFFS, SEASON_TYPE_REGULAR  # noqa: E402
+from lib.ingest.seasons import playoffs_output_path, season_output_path  # noqa: E402
+from lib.ingest.sync_season import sync_nba_api_season  # noqa: E402
 from lib.ingest.validate import summarize_games, validate_games_batch  # noqa: E402
-
-DEFAULT_OUTPUT = ROOT / 'data' / 'games-2025.json'
-SEASON_YEAR_TO_NBA_API = {
-    2024: '2024-25',
-}
 
 
 def _format_bytes(size: int) -> str:
@@ -47,13 +46,18 @@ def _print_report(
     stats: dict,
     summary: dict,
     validation_errors: list[str],
+    season_report: dict | None = None,
     file_size: int | None = None,
 ) -> None:
     print(f"Source:    {document.get('provider')}")
     print(f"Label:     {document.get('label')}")
-    print(f"Pages:     {stats.get('pages', 0)}")
-    print(f"Raw games: {stats.get('rawGames', 0)}")
-    print(f"Skipped:   {stats.get('skipped', 0)}")
+    if season_report:
+        print(f"Season:    {season_report.get('seasonLabel')} "
+              f'({"complete" if season_report.get("complete") else "incomplete"})')
+    if stats:
+        print(f"Pages:     {stats.get('pages', 0)}")
+        print(f"Raw games: {stats.get('rawGames', 0)}")
+        print(f"Skipped:   {stats.get('skipped', 0)}")
     print(f"Games:     {summary['games']}")
     print(f"Rows:      {summary['rows']}")
     print(f"Date span: {summary['dateStart']} → {summary['dateEnd']}")
@@ -63,6 +67,8 @@ def _print_report(
     print(f"Synced at: {document.get('syncedAt')}")
     if file_size is not None:
         print(f"File size: {_format_bytes(file_size)}")
+    if season_report and season_report.get('warning'):
+        print(f"Warning:   {season_report['warning']}")
     if validation_errors:
         print(f'Validation: FAILED ({len(validation_errors)} errors)')
         for err in validation_errors[:10]:
@@ -101,28 +107,9 @@ def sync_balldontlie(args: argparse.Namespace) -> dict:
     return document
 
 
-def sync_nba_api(args: argparse.Namespace) -> dict:
-    season_years = [int(s) for s in args.season_year] if args.season_year else [2024]
-    if len(season_years) != 1:
-        raise SystemExit('nba_api provider supports one --season-year at a time.')
-    season_year = season_years[0]
-    nba_season = SEASON_YEAR_TO_NBA_API.get(season_year, f'{season_year}-{str(season_year + 1)[-2:]}')
-
-    rows, stats = collect_nba_api_games(season=nba_season)
-
-    document = build_games_document(
-        rows,
-        source='nba_api',
-        label=f'NBA {nba_season} regular season (nba_api)',
-        provider='nba_api',
-    )
-    document['_syncStats'] = stats
-    return document
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description='Sync normalized NBA games into data/games-2025.json (offline).',
+        description='Sync normalized NBA games into data/games-YYYY.json (offline).',
     )
     parser.add_argument(
         '--provider',
@@ -133,8 +120,8 @@ def main() -> None:
     parser.add_argument(
         '--output',
         type=Path,
-        default=DEFAULT_OUTPUT,
-        help=f'Output path (default: {DEFAULT_OUTPUT.relative_to(ROOT)})',
+        default=None,
+        help='Output path (default: data/games-{endYear}.json from --season-year)',
     )
     parser.add_argument(
         '--dry-run',
@@ -163,7 +150,7 @@ def main() -> None:
         action='append',
         type=int,
         metavar='YEAR',
-        help='Season start year (default: 2024 for 2024-25). Repeatable for balldontlie.',
+        help='Season start year (default: 2024 → 2024-25 → games-2025.json). Repeatable for balldontlie.',
     )
     parser.add_argument(
         '--start-date',
@@ -177,14 +164,59 @@ def main() -> None:
         default=None,
         help='balldontlie: games on or before YYYY-MM-DD',
     )
+    parser.add_argument(
+        '--season-type',
+        choices=('regular', 'playoffs'),
+        default='regular',
+        help='Season segment to sync (default: regular → Regular Season; playoffs → Playoffs)',
+    )
     args = parser.parse_args()
 
     load_dotenv(ROOT)
 
+    season_type = SEASON_TYPE_PLAYOFFS if args.season_type == 'playoffs' else SEASON_TYPE_REGULAR
+    season_years = [int(s) for s in args.season_year] if args.season_year else [2024]
+    if args.provider == 'nba_api' and len(season_years) != 1:
+        raise SystemExit('nba_api provider supports one --season-year at a time. Use scripts/sync_archive.py for multiple seasons.')
+
+    season_year = season_years[0]
+    if args.output:
+        output = args.output
+    elif season_type == SEASON_TYPE_PLAYOFFS:
+        output = playoffs_output_path(season_year, ROOT)
+    else:
+        output = season_output_path(season_year, ROOT)
+
     if args.provider == 'balldontlie':
         document = sync_balldontlie(args)
+        stats = document.pop('_syncStats', {})
+        season_report = None
     else:
-        document = sync_nba_api(args)
+        document, season_report, validation_errors, sync_stats = sync_nba_api_season(
+            season_year,
+            season_type=season_type,
+        )
+        stats = sync_stats
+        games = document.get('games', [])
+        summary = summarize_games(games)
+        _print_report(document, stats, summary, validation_errors, season_report)
+        if validation_errors and not args.dry_run:
+            raise SystemExit(
+                f'Validation failed with {len(validation_errors)} error(s). '
+                'Use --dry-run to inspect without writing.',
+            )
+        if args.dry_run:
+            print('Dry run — no file written.')
+            if games:
+                print('Sample row:', json.dumps(games[0], indent=2))
+            return
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open('w', encoding='utf-8') as fh:
+            json.dump(document, fh, indent=2)
+            fh.write('\n')
+        print(f'Wrote {output.relative_to(ROOT)}')
+        print(f'File size: {_format_bytes(output.stat().st_size)}')
+        return
 
     stats = document.pop('_syncStats', {})
     games = document.get('games', [])
@@ -205,12 +237,12 @@ def main() -> None:
             print('Sample row:', json.dumps(games[0], indent=2))
         return
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open('w', encoding='utf-8') as fh:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open('w', encoding='utf-8') as fh:
         json.dump(document, fh, indent=2)
         fh.write('\n')
-    file_size = args.output.stat().st_size
-    print(f'Wrote {args.output.relative_to(ROOT)}')
+    file_size = output.stat().st_size
+    print(f'Wrote {output.relative_to(ROOT)}')
     print(f'File size: {_format_bytes(file_size)}')
 
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#080a0e">
-  <title>Orbit</title>
+  <title>Orbit NBA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
@@ -15,27 +15,22 @@
 <body>
   <div class="sd-app">
     <header class="sd-header sd-header--brand">
-      <a class="sd-orbit-logo" href="/">Orbit</a>
+      <a class="sd-orbit-logo" href="/odds/" id="orbit-brand" aria-label="Orbit NBA home">Orbit</a>
     </header>
 
     <div class="sd-status" id="status-banner" hidden></div>
 
     <main class="sd-main">
-      <section class="sd-hero sd-hero--primary" aria-label="Performance chart">
+      <section class="sd-hero sd-hero--primary sd-orbit-layout" aria-label="Performance chart">
         <div class="sd-hero__stack">
           <div class="sd-hero__control-row sd-hero__control-row--split">
             <div class="sd-toggle-group sd-mode-group" role="group" aria-label="Chart mode">
-              <button type="button" class="sd-toggle is-active" data-hero-mode="solo">Solo</button>
+              <button type="button" class="sd-toggle is-active" data-hero-mode="overview">Overview</button>
+              <button type="button" class="sd-toggle" data-hero-mode="solo">Solo</button>
               <button type="button" class="sd-toggle" data-hero-mode="matchup">Matchup</button>
               <button type="button" class="sd-toggle sd-toggle--soon" data-hero-mode="league" disabled title="Coming soon">League</button>
             </div>
-            <div class="sd-toggle-group sd-range-group" role="group" aria-label="Timeline">
-              <button type="button" class="sd-toggle" data-range="today">Today</button>
-              <button type="button" class="sd-toggle is-active" data-range="week">Week</button>
-              <button type="button" class="sd-toggle" data-range="month">Month</button>
-              <button type="button" class="sd-toggle" data-range="season">Season</button>
-              <button type="button" class="sd-toggle" data-range="all">All</button>
-            </div>
+            <div class="sd-toggle-group sd-range-group is-chart-lens" id="hero-range-group" role="group" aria-label="Chart range"></div>
           </div>
 
           <div class="sd-hero__mode-slot">
@@ -66,7 +61,7 @@
 
           <div class="sd-hero__chart-head">
             <div class="sd-hero__chart-intro">
-              <p class="sd-hero__team-name" id="hero-title">—</p>
+              <p class="sd-hero__team-name" id="hero-title">Orbit Overview</p>
               <p class="sd-hero__featured-headline" id="hero-featured-headline" hidden></p>
               <div class="sd-hero__chart-meta">
                 <p class="sd-hero__range-meta" id="hero-chart-caption">—</p>
@@ -87,6 +82,10 @@
 
         <div class="sd-chart-wrap sd-chart-wrap--primary" id="hero-chart-wrap">
           <canvas id="hero-chart" aria-label="Performance chart"></canvas>
+          <div class="sd-bracket" id="playoff-bracket" hidden aria-label="2026 NBA playoff bracket">
+            <svg class="sd-bracket__lines" aria-hidden="true"></svg>
+            <div class="sd-bracket__grid" id="playoff-bracket-grid"></div>
+          </div>
           <div class="sd-chart-skeleton" id="hero-chart-skeleton" hidden aria-hidden="true">
             <div class="sd-skeleton sd-skeleton--chart"></div>
           </div>
@@ -95,15 +94,15 @@
         </div>
 
         <div class="sd-game-log" id="game-log" aria-labelledby="game-log-heading">
-          <h2 class="sd-game-log__heading" id="game-log-heading">Game log</h2>
+          <h2 class="sd-game-log__heading" id="game-log-heading">Event tape</h2>
           <div class="sd-game-log__layout" id="game-log-layout">
             <div class="sd-game-log__scroll-wrap">
-              <div class="sd-game-log__list" id="recent-results" tabindex="0" aria-label="Recent games">
-                <p class="sd-empty">Select a team</p>
+              <div class="sd-game-log__list" id="recent-results" tabindex="0" aria-label="Event tape">
+                <p class="sd-empty">Loading…</p>
               </div>
             </div>
             <div class="sd-game-log__ledger" id="game-log-ledger">
-              <span class="sd-game-log__ledger-label">VS RECORD</span>
+              <span class="sd-game-log__ledger-label" id="game-log-ledger-label">Key Opponents</span>
               <div class="sd-game-log__chips" id="key-opponents"></div>
             </div>
           </div>
