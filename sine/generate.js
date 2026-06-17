@@ -460,6 +460,14 @@ function generateTitle(rng, worldKey) {
   return `${pick(rng, bits.a)} ${pick(rng, bits.b)}`;
 }
 
+/** Random two-word title for hand-built melodies (no world). */
+export function generateCustomTitle(seed = randomSeed()) {
+  const rng = mulberry32(seed >>> 0);
+  const keys = Object.keys(TITLE_BITS).filter((key) => key !== 'disco');
+  const bits = TITLE_BITS[pick(rng, keys)];
+  return `${pick(rng, bits.a)} ${pick(rng, bits.b)}`;
+}
+
 function buildSong(seed, worldKey, rng) {
   const key = resolveWorldKey(worldKey);
   const world = WORLDS[key] || WORLDS['space-age'];

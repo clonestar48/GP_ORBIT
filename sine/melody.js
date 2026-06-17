@@ -37,10 +37,17 @@ let steps = DEFAULT_STEPS;
 let pattern = emptyPattern(DEFAULT_STEPS);
 let tempo = DEFAULT_TEMPO;
 let playing = false;
-let loopMelody = false;
+let loopMelody = true;
 let playTimer = null;
 let playStep = 0;
 let getSynthParams = () => ({});
+
+let painting = false;
+let paintStartRow = -1;
+let paintStartStep = -1;
+let paintMoved = false;
+let noteAtStrokeStart = -1;
+let paintGlobalsBound = false;
 
 function syncStepUi() {
   document.querySelectorAll('.melody-steps-btn').forEach((btn) => {
@@ -72,8 +79,106 @@ function decodeMelody(raw) {
   return true;
 }
 
-function setNote(step, row) {
-  pattern[step] = pattern[step] === row ? -1 : row;
+function updateStepColumn(step) {
+  document.querySelectorAll(`.melody-grid__cell[data-step="${step}"]`).forEach((cell) => {
+    const row = Number(cell.dataset.row);
+    const on = pattern[step] === row;
+    cell.classList.toggle('is-on', on);
+    cell.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  updatePlayhead();
+}
+
+function syncPatternToGrid() {
+  for (let step = 0; step < steps; step++) {
+    updateStepColumn(step);
+  }
+}
+
+function assignStepNote(step, row) {
+  if (pattern[step] === row) return false;
+  pattern[step] = row;
+  if (document.getElementById('melody-grid')?.children.length) {
+    updateStepColumn(step);
+  } else {
+    renderGrid();
+  }
+  if (playing && step === playStep) {
+    triggerStep(step);
+  }
+  return true;
+}
+
+function endPaintStroke() {
+  if (!painting) return;
+  const wasClick = !paintMoved;
+  const step = paintStartStep;
+  const row = paintStartRow;
+  painting = false;
+  if (wasClick && noteAtStrokeStart === row) {
+    pattern[step] = -1;
+    updateStepColumn(step);
+    onMelodyChange();
+  }
+}
+
+function paintAtCell(step, row) {
+  if (step !== paintStartStep || row !== paintStartRow) paintMoved = true;
+  if (assignStepNote(step, row)) onMelodyChange();
+}
+
+function bindCellPointer(cell, step, row) {
+  cell.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    painting = true;
+    paintStartRow = row;
+    paintStartStep = step;
+    paintMoved = false;
+    noteAtStrokeStart = pattern[step];
+    cell.setPointerCapture(e.pointerId);
+    paintAtCell(step, row);
+  });
+
+  cell.addEventListener('pointerenter', (e) => {
+    if (!painting || (e.buttons & 1) === 0) return;
+    paintAtCell(step, row);
+  });
+
+  cell.addEventListener('pointerup', (e) => {
+    if (e.button !== 0) return;
+    endPaintStroke();
+    try {
+      cell.releasePointerCapture(e.pointerId);
+    } catch {
+      /* released outside capture */
+    }
+  });
+
+  cell.addEventListener('pointercancel', () => {
+    painting = false;
+  });
+}
+
+function bindGridPaintMove() {
+  const grid = document.getElementById('melody-grid');
+  if (!grid || grid.dataset.paintMoveBound) return;
+  grid.dataset.paintMoveBound = '1';
+  grid.addEventListener('pointermove', (e) => {
+    if (!painting || (e.buttons & 1) === 0) return;
+    const cell = document.elementFromPoint(e.clientX, e.clientY)?.closest('.melody-grid__cell');
+    if (!cell || !grid.contains(cell)) return;
+    paintAtCell(Number(cell.dataset.step), Number(cell.dataset.row));
+  });
+}
+
+function bindPaintGlobals() {
+  if (paintGlobalsBound) return;
+  paintGlobalsBound = true;
+  document.addEventListener('pointerup', (e) => {
+    if (!painting || e.button !== 0) return;
+    endPaintStroke();
+  });
 }
 
 function renderGrid() {
@@ -117,11 +222,7 @@ function renderGrid() {
       cell.setAttribute('aria-pressed', pattern[step] === row ? 'true' : 'false');
       if (pattern[step] === row) cell.classList.add('is-on');
 
-      cell.addEventListener('click', () => {
-        setNote(step, row);
-        renderGrid();
-        onMelodyChange();
-      });
+      bindCellPointer(cell, step, row);
 
       rowEl.appendChild(cell);
     }
@@ -129,6 +230,7 @@ function renderGrid() {
     grid.appendChild(rowEl);
   });
 
+  bindGridPaintMove();
   updatePlayhead();
 }
 
@@ -191,7 +293,7 @@ function togglePlayback() {
 
 function clearPattern() {
   stopPlayback();
-  setLoopMelody(false);
+  setLoopMelody(true);
   pattern = emptyPattern(steps);
   renderGrid();
   onMelodyChange();
@@ -202,6 +304,7 @@ function setSteps(next) {
   const trimmed = pattern.slice(0, next);
   while (trimmed.length < next) trimmed.push(-1);
   pattern = trimmed;
+  if (playing && playStep >= steps) playStep %= steps;
   syncStepUi();
   renderGrid();
   onMelodyChange();
@@ -238,7 +341,8 @@ export function remixPattern() {
     next[step] = notes[i];
   });
   pattern = next;
-  renderGrid();
+  if (document.getElementById('melody-grid')?.children.length) syncPatternToGrid();
+  else renderGrid();
   onMelodyChange();
 }
 
@@ -256,12 +360,16 @@ export function setLoopMelody(on) {
 }
 
 export function applyMelody({ steps: nextSteps, tempo: nextTempo, pattern: nextPattern }) {
+  const wasPlaying = playing;
+  const savedStep = playStep;
   steps = nextSteps;
   tempo = nextTempo;
   pattern = [...nextPattern];
+  if (wasPlaying && playStep >= steps) playStep = savedStep % steps;
   syncStepUi();
   syncTempoUi();
   renderGrid();
+  if (wasPlaying) updatePlayhead();
   onMelodyChange();
 }
 
@@ -310,6 +418,8 @@ export function initMelody({ getParams, onChange, onPlayStart }) {
 
   document.getElementById('melody-clear-btn').addEventListener('click', clearPattern);
 
+  bindPaintGlobals();
+  setLoopMelody(true);
   syncStepUi();
   syncTempoUi();
   renderGrid();

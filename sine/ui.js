@@ -16,6 +16,7 @@ import {
   MUTATE_INTENSITY,
   generateFromSeed,
   generateFromWorld,
+  generateCustomTitle,
   mutateSong,
   randomSeed,
   replayFromSeed,
@@ -138,10 +139,41 @@ let applyingMacros = false;
 let mutationIntensity = 'medium';
 let soundBasePitch = DEFAULTS.pitch;
 
-function clearGeneration() {
-  currentGeneration = null;
+function syncCustomArtifact() {
+  const melody = getMelodyState();
+  if (isMelodyEmpty()) {
+    currentGeneration = null;
+    updateArtifactCard();
+    updateWorldSelection();
+    return;
+  }
+
+  const forkFromWorld = !!currentGeneration?.worldKey;
+  const keepTitle = currentGeneration?.title && !forkFromWorld;
+  const seed = currentGeneration?.seed ?? randomSeed();
+
+  currentGeneration = {
+    title: keepTitle ? currentGeneration.title : generateCustomTitle(seed),
+    seed,
+    worldKey: null,
+    worldLabel: 'Custom',
+    steps: melody.steps,
+    tempo: melody.tempo,
+    pattern: [...melody.pattern],
+    revision: currentGeneration?.revision || 0,
+  };
   updateArtifactCard();
   updateWorldSelection();
+}
+
+function clearGeneration() {
+  if (isMelodyEmpty()) {
+    currentGeneration = null;
+    updateArtifactCard();
+    updateWorldSelection();
+    return;
+  }
+  syncCustomArtifact();
 }
 
 function updateIntensityUi() {
@@ -666,6 +698,7 @@ function init() {
     if (fromUrl) applyParams(fromUrl);
     if (urlParams.has('mel')) {
       loadMelodyFromUrl(urlParams.get('mel'));
+      if (!isMelodyEmpty()) syncCustomArtifact();
     } else {
       generateSong();
     }
