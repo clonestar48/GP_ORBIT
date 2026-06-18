@@ -1,4 +1,4 @@
-import { play, unlock, stopLoop, updateLoopParams, isLooping } from './synth.js';
+import { play, unlock, stopLoop, updateLoopParams, isLooping, setWorldSoundKey } from './synth.js';
 import {
   initMelody,
   getMelodyUrlParam,
@@ -36,12 +36,13 @@ const DEFAULTS = {
   filter: 0,
   volume: 0.55,
   gap: 0.05,
+  punch: 0.35,
 };
 
 const URL_KEYS = {
   pitch: 'p', tone: 't', decay: 'd', crunch: 'c', noise: 'n',
   attack: 'a', bend: 'b', wobble: 'w', detune: 'dt', filter: 'f',
-  volume: 'v', gap: 'g',
+  volume: 'v', gap: 'g', punch: 'pu',
 };
 
 const CORE_KNOBS = [
@@ -54,15 +55,25 @@ const CORE_KNOBS = [
 
 const SHAPE_KNOBS = [
   { id: 'attack', label: 'Attack', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 180)} ms` },
-  { id: 'bend', label: 'Bend', min: 0, max: 1, step: 0.01, fmt: bendLabel },
   { id: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
-  { id: 'detune', label: 'Detune', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 40)}¢` },
   { id: 'filter', label: 'Filter', min: 0, max: 1, step: 0.01, fmt: (v) => (v < 0.02 ? 'open' : `${Math.round(v * 100)}%`) },
-  { id: 'volume', label: 'Volume', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
   { id: 'gap', label: 'Gap', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 600)} ms` },
+  { id: 'bend', label: 'Bend', min: 0, max: 1, step: 0.01, fmt: bendLabel },
+  { id: 'detune', label: 'Detune', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 40)}¢` },
+  { id: 'volume', label: 'Volume', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
 ];
 
+const PUNCH_KNOB = {
+  id: 'punch',
+  label: 'Punch',
+  min: 0,
+  max: 1,
+  step: 0.01,
+  fmt: (v) => `${Math.round(v * 100)}%`,
+};
+
 const ALL_KNOBS = [...CORE_KNOBS, ...SHAPE_KNOBS];
+const SOUND_PARAMS = [...ALL_KNOBS, PUNCH_KNOB];
 
 const MACROS = [
   { id: 'brightness', label: 'Brightness' },
@@ -72,6 +83,21 @@ const MACROS = [
 ];
 
 const MACRO_DEFAULT = 0.5;
+
+const DESKTOP_LAYOUT = window.matchMedia('(min-width: 1101px)');
+
+const DESKTOP_SLIDER_ROWS = [
+  ['brightness', 'texture', 'energy', 'space', 'attack'],
+  ['wobble', 'filter', 'gap', 'bend', 'punch'],
+];
+
+const DETUNE_KNOB = SHAPE_KNOBS.find((k) => k.id === 'detune');
+
+const MACRO_BY_ID = Object.fromEntries(MACROS.map((m) => [m.id, m]));
+const SHAPE_BY_ID = {
+  ...Object.fromEntries(SHAPE_KNOBS.map((k) => [k.id, k])),
+  punch: PUNCH_KNOB,
+};
 
 function clamp01(v) {
   return Math.max(0, Math.min(1, v));
@@ -84,9 +110,9 @@ function avg(...vals) {
 }
 
 function waveLabel(tone) {
-  if (tone < 0.34) return 'sine';
-  if (tone < 0.67) return 'square';
-  return 'saw';
+  if (tone < 0.34) return 'SINE';
+  if (tone < 0.67) return 'SQUARE';
+  return 'SAW';
 }
 
 function bendLabel(v) {
@@ -101,8 +127,9 @@ function mergeParams(params) {
 
 function readParams() {
   const out = {};
-  for (const k of ALL_KNOBS) {
-    out[k.id] = parseFloat(document.getElementById(`knob-${k.id}`).value);
+  for (const k of SOUND_PARAMS) {
+    const el = document.getElementById(`knob-${k.id}`);
+    out[k.id] = el ? parseFloat(el.value) : DEFAULTS[k.id];
   }
   return out;
 }
@@ -182,19 +209,24 @@ function updateIntensityUi() {
   });
 }
 
+function applyWorldTheme(worldKey) {
+  const shell = document.querySelector('.toy-shell');
+  if (!shell) return;
+  if (worldKey && WORLDS[worldKey]) {
+    shell.dataset.worldTheme = worldKey;
+  } else {
+    delete shell.dataset.worldTheme;
+  }
+}
+
 function updateWorldSelection() {
   const worldKey = currentGeneration?.worldKey;
   document.querySelectorAll('.world-node').forEach((btn) => {
     btn.classList.toggle('is-selected', worldKey === btn.dataset.world);
   });
   document.getElementById('worlds-flyout')?.classList.toggle('is-selected', !!worldKey);
-  updateSoundWorldLabel();
-}
-
-function updateSoundWorldLabel() {
-  const el = document.getElementById('sound-world-name');
-  if (!el) return;
-  el.textContent = currentGeneration?.worldLabel || 'Custom';
+  applyWorldTheme(worldKey);
+  setWorldSoundKey(worldKey ?? null);
 }
 
 function syncWrapperActive(wrapper) {
@@ -242,8 +274,6 @@ function applyGenerated(song) {
   syncUrl();
   stopSynthRepeat();
   stopMelody();
-  unlock();
-  document.getElementById('melody-play-btn')?.click();
 }
 
 function generateSong() {
@@ -251,9 +281,18 @@ function generateSong() {
   applyGenerated({ ...generateFromSeed(seed), revision: 0, intensity: mutationIntensity });
 }
 
+function pulsePanel(el) {
+  if (!el || !DESKTOP_LAYOUT.matches) return;
+  el.classList.remove('is-pulse');
+  void el.offsetWidth;
+  el.classList.add('is-pulse');
+  window.setTimeout(() => el.classList.remove('is-pulse'), 480);
+}
+
 function generateWorldSong(worldKey) {
   const seed = randomSeed();
   applyGenerated({ ...generateFromWorld(worldKey, seed), revision: 0, intensity: mutationIntensity });
+  pulsePanel(document.getElementById('sound-module'));
 }
 
 function renderWorldPresets() {
@@ -282,6 +321,7 @@ function mutateCurrentSong() {
   };
   const next = mutateSong(base, currentGeneration.seed, revision - 1, mutationIntensity);
   applyGenerated({ ...next, seed: currentGeneration.seed, revision, intensity: mutationIntensity });
+  pulsePanel(document.getElementById('melody-panel'));
 }
 
 function macrosFromParams(params) {
@@ -301,7 +341,7 @@ function macrosFromParams(params) {
     energy: clamp01(avg(
       params.attack / 0.7,
       1 - (params.decay - 0.06) / 0.42,
-      (params.volume - 0.32) / 0.58,
+      (params.punch ?? DEFAULTS.punch) / 0.7,
       (params.bend - 0.42) / 0.45 + 0.5,
     )),
     space: clamp01(avg(
@@ -330,7 +370,6 @@ function paramsFromMacros(macros) {
     detune: clamp01(t * 0.5),
     attack: clamp01(e * 0.7),
     decay: clamp01(energyDecay * (1 - s * 0.35) + spaceDecay * (s * 0.5 + 0.15)),
-    volume: clamp01(0.32 + e * 0.58),
     bend: clamp01(0.42 + (e - 0.5) * 0.45),
     wobble: clamp01(s * 0.75),
     gap: clamp01(s * 0.5),
@@ -342,13 +381,15 @@ function syncMacroSliders(params = readParams()) {
   for (const macro of MACROS) {
     const input = document.getElementById(`macro-${macro.id}`);
     if (input) input.value = macros[macro.id].toFixed(2);
+    const val = document.getElementById(`val-macro-${macro.id}`);
+    if (val) val.textContent = `${Math.round(macros[macro.id] * 100)}%`;
   }
 }
 
 function applyMacroValues(macros) {
   applyingMacros = true;
   const next = { ...readParams(), ...paramsFromMacros(macros) };
-  for (const k of ALL_KNOBS) {
+  for (const k of SOUND_PARAMS) {
     const el = document.getElementById(`knob-${k.id}`);
     if (!el) continue;
     el.value = next[k.id];
@@ -365,13 +406,15 @@ function applyMacroValues(macros) {
 function applyParams(params, { keepGeneration = false, skipMacros = false } = {}) {
   const merged = mergeParams(params);
   soundBasePitch = merged.pitch;
-  for (const k of ALL_KNOBS) {
+  for (const k of SOUND_PARAMS) {
     const el = document.getElementById(`knob-${k.id}`);
+    if (!el) continue;
     el.value = merged[k.id];
     if (document.querySelector(`[data-rotary="${k.id}"]`)) {
       setRotaryValue(k, merged[k.id]);
     } else {
-      document.getElementById(`val-${k.id}`).textContent = k.fmt(parseFloat(el.value));
+      const val = document.getElementById(`val-${k.id}`);
+      if (val) val.textContent = k.fmt(parseFloat(el.value));
     }
   }
   if (!skipMacros) syncMacroSliders(merged);
@@ -456,10 +499,176 @@ function buildMacroSliders(root) {
   }
 }
 
-function buildRotaryKnobs(knobs, root) {
+function bindSoundSliderActive(row, input) {
+  const setSliderActive = (active) => row.classList.toggle('is-active', active);
+  input.addEventListener('pointerdown', () => setSliderActive(true));
+  input.addEventListener('pointerup', () => setSliderActive(false));
+  input.addEventListener('pointercancel', () => setSliderActive(false));
+  input.addEventListener('blur', () => setSliderActive(false));
+}
+
+function buildSoundSlider({ id, label, kind, fmt }, root, gridRow, gridCol) {
+  const row = document.createElement('label');
+  row.className = 'sound-slider';
+  row.htmlFor = kind === 'macro' ? `macro-${id}` : `knob-${id}`;
+  if (gridRow != null) row.style.gridRow = String(gridRow);
+  if (gridCol != null) row.style.gridColumn = String(gridCol);
+
+  const head = document.createElement('span');
+  head.className = 'sound-slider__label';
+  head.textContent = label;
+
+  const val = document.createElement('span');
+  val.className = 'sound-slider__value';
+  val.id = kind === 'macro' ? `val-macro-${id}` : `val-${id}`;
+
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.className = 'sound-slider__input';
+  input.id = kind === 'macro' ? `macro-${id}` : `knob-${id}`;
+  input.min = 0;
+  input.max = 1;
+  input.step = 0.01;
+  input.value = kind === 'macro' ? MACRO_DEFAULT : DEFAULTS[id];
+  input.setAttribute('aria-label', label);
+
+  if (kind === 'macro') {
+    const syncMacroValue = () => {
+      val.textContent = `${Math.round(parseFloat(input.value) * 100)}%`;
+    };
+    input.addEventListener('input', () => {
+      syncMacroValue();
+      const macros = Object.fromEntries(
+        MACROS.map((m) => [m.id, parseFloat(document.getElementById(`macro-${m.id}`).value)]),
+      );
+      applyMacroValues(macros);
+      onParamChange();
+    });
+    syncMacroValue();
+  } else {
+    input.addEventListener('input', () => {
+      val.textContent = fmt(parseFloat(input.value));
+      onParamChange();
+    });
+    val.textContent = fmt(parseFloat(input.value));
+  }
+
+  bindSoundSliderActive(row, input);
+
+  const headRow = document.createElement('span');
+  headRow.className = 'sound-slider__head';
+  headRow.append(head, val);
+
+  row.append(headRow, input);
+  root.appendChild(row);
+}
+
+function buildDesktopControlGrid(root) {
+  root.replaceChildren();
+  DESKTOP_SLIDER_ROWS.forEach((slots, rowIndex) => {
+    slots.forEach((slotId, colIndex) => {
+      if (MACRO_BY_ID[slotId]) {
+        buildSoundSlider(
+          { id: slotId, label: MACRO_BY_ID[slotId].label, kind: 'macro' },
+          root,
+          rowIndex + 1,
+          colIndex + 1,
+        );
+        return;
+      }
+      const shape = SHAPE_BY_ID[slotId];
+      if (shape) {
+        buildSoundSlider(
+          { id: shape.id, label: shape.label, kind: 'shape', fmt: shape.fmt },
+          root,
+          rowIndex + 1,
+          colIndex + 1,
+        );
+      }
+    });
+  });
+}
+
+function mountMelodyTempo() {
+  const tempo = document.getElementById('melody-tempo-control');
+  const desktopHost = document.getElementById('sound-utility-row');
+  const mobileHost = document.getElementById('melody-tempo-slot');
+  if (!tempo || !desktopHost || !mobileHost) return;
+  const host = DESKTOP_LAYOUT.matches ? desktopHost : mobileHost;
+  if (tempo.parentElement !== host) host.appendChild(tempo);
+}
+
+function buildDesktopUtilityRow(root) {
+  root.replaceChildren();
+  mountMelodyTempo();
+  const volume = SHAPE_BY_ID.volume;
+  if (volume) {
+    buildSoundSlider(
+      { id: volume.id, label: volume.label, kind: 'shape', fmt: volume.fmt },
+      root,
+      null,
+      null,
+    );
+  }
+}
+
+function ensureHiddenKnob(knob, root) {
+  if (document.getElementById(`knob-${knob.id}`)) return;
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.id = `knob-${knob.id}`;
+  input.value = DEFAULTS[knob.id];
+  const val = document.createElement('span');
+  val.id = `val-${knob.id}`;
+  val.hidden = true;
+  root.append(input, val);
+}
+
+function clearSoundControlMounts() {
+  document.getElementById('macro-sliders')?.replaceChildren();
+  document.getElementById('knobs-shape')?.replaceChildren();
+  document.getElementById('knobs-core')?.replaceChildren();
+  document.getElementById('knobs-core-header')?.replaceChildren();
+  document.getElementById('sound-control-grid')?.replaceChildren();
+  document.getElementById('sound-utility-row')?.replaceChildren();
+  document.getElementById('knob-detune')?.remove();
+  document.getElementById('val-detune')?.remove();
+  document.getElementById('knob-punch')?.remove();
+  document.getElementById('val-punch')?.remove();
+}
+
+function captureSoundUiParams() {
+  const pitchEl = document.getElementById('knob-pitch');
+  if (!pitchEl) return mergeParams({});
+  return readParams();
+}
+
+function buildSoundControls() {
+  const params = captureSoundUiParams();
+  clearSoundControlMounts();
+
+  if (DESKTOP_LAYOUT.matches) {
+    buildDesktopControlGrid(document.getElementById('sound-control-grid'));
+    buildDesktopUtilityRow(document.getElementById('sound-utility-row'));
+    buildRotaryKnobs(CORE_KNOBS, document.getElementById('knobs-core-header'), { header: true });
+    if (DETUNE_KNOB) {
+      ensureHiddenKnob(DETUNE_KNOB, document.getElementById('sound-module'));
+    }
+  } else {
+    mountMelodyTempo();
+    buildMacroSliders(document.getElementById('macro-sliders'));
+    buildRotaryKnobs(CORE_KNOBS, document.getElementById('knobs-core'));
+    buildSliders(SHAPE_KNOBS, document.getElementById('knobs-shape'));
+    ensureHiddenKnob(PUNCH_KNOB, document.getElementById('sound-module'));
+  }
+
+  applyParams(params, { keepGeneration: true });
+}
+
+function buildRotaryKnobs(knobs, root, { header = false } = {}) {
   for (const k of knobs) {
     const wrap = document.createElement('div');
-    wrap.className = 'rotary';
+    wrap.className = header ? 'rotary rotary--header' : 'rotary';
     wrap.dataset.rotary = k.id;
 
     const label = document.createElement('span');
@@ -496,7 +705,18 @@ function buildRotaryKnobs(knobs, root) {
     input.id = `knob-${k.id}`;
     input.value = DEFAULTS[k.id];
 
-    wrap.append(label, dial, val, input);
+    if (header) {
+      const head = document.createElement('span');
+      head.className = 'rotary__head';
+      const sep = document.createElement('span');
+      sep.className = 'rotary__sep';
+      sep.setAttribute('aria-hidden', 'true');
+      sep.textContent = '·';
+      head.append(label, sep, val);
+      wrap.append(head, dial, input);
+    } else {
+      wrap.append(label, dial, val, input);
+    }
     root.appendChild(wrap);
 
     setRotaryValue(k, DEFAULTS[k.id]);
@@ -664,10 +884,20 @@ function stopSynthRepeat() {
   stopLoop();
 }
 
+function syncAdvancedSoundPanel() {
+  const panel = document.getElementById('sound-advanced');
+  if (!panel || DESKTOP_LAYOUT.matches) return;
+  if (!panel.dataset.userToggled) {
+    panel.removeAttribute('open');
+  }
+}
+
 function init() {
-  buildMacroSliders(document.getElementById('macro-sliders'));
-  buildRotaryKnobs(CORE_KNOBS, document.getElementById('knobs-core'));
-  buildSliders(SHAPE_KNOBS, document.getElementById('knobs-shape'));
+  buildSoundControls();
+  DESKTOP_LAYOUT.addEventListener('change', () => {
+    buildSoundControls();
+    syncAdvancedSoundPanel();
+  });
 
   initMelody({
     getParams: readParams,
@@ -706,7 +936,10 @@ function init() {
 
   document.getElementById('melody-share-btn').addEventListener('click', copyShareLink);
   document.getElementById('shuffle-btn').addEventListener('click', generateSong);
-  document.getElementById('remix-btn').addEventListener('click', remixPattern);
+  document.getElementById('remix-btn').addEventListener('click', () => {
+    remixPattern();
+    pulsePanel(document.getElementById('melody-stage'));
+  });
   document.getElementById('mutate-btn').addEventListener('click', mutateCurrentSong);
 
   document.querySelectorAll('.mutate-intensity-btn').forEach((btn) => {
@@ -742,6 +975,14 @@ function init() {
   updateWorldSelection();
   bindWrapperActive(document.getElementById('sound-module'));
   bindWrapperActive(document.getElementById('sound-advanced'));
+  bindWrapperActive(document.getElementById('knobs-core-header'));
+  syncAdvancedSoundPanel();
+  document.getElementById('sound-advanced')?.addEventListener('toggle', (e) => {
+    if (e.target === e.currentTarget) {
+      e.currentTarget.dataset.userToggled = e.currentTarget.open ? '1' : '';
+      if (!e.currentTarget.open) delete e.currentTarget.dataset.userToggled;
+    }
+  });
   updateReadout();
 }
 

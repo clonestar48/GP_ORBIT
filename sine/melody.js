@@ -257,6 +257,7 @@ function stopPlayback() {
   }
   document.getElementById('melody-play-btn')?.classList.remove('is-playing');
   document.getElementById('melody-panel')?.classList.remove('is-playing');
+  document.getElementById('melody-stage')?.classList.remove('is-playing');
   updatePlayhead();
 }
 
@@ -273,7 +274,7 @@ function scheduleStep() {
       return;
     }
   }
-  playTimer = setTimeout(scheduleStep, tempo);
+  playTimer = setTimeout(scheduleStep, Math.max(24, tempo + (Math.random() * 2 - 1) * 2.5));
 }
 
 function startPlayback() {
@@ -283,6 +284,7 @@ function startPlayback() {
   playStep = 0;
   document.getElementById('melody-play-btn')?.classList.add('is-playing');
   document.getElementById('melody-panel')?.classList.add('is-playing');
+  document.getElementById('melody-stage')?.classList.add('is-playing');
   scheduleStep();
 }
 
