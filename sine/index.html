@@ -91,14 +91,14 @@
           <div class="melody-header-row__tone" aria-label="Tone controls">
             <div class="rotary-grid rotary-grid--header" id="knobs-core-header"></div>
           </div>
-          <div class="creator-bar">
-            <button type="button" class="btn btn--ghost btn--small" id="remix-btn">Remix</button>
+          <div class="creator-bar" aria-label="Song actions">
+            <button type="button" class="btn btn--ghost btn--small" id="remix-btn" title="Another song from this world">Another</button>
             <div class="mutate-group">
-              <button type="button" class="btn btn--small" id="mutate-btn">Mutate</button>
-              <div class="mutate-intensity" role="group" aria-label="Mutate intensity">
-                <button type="button" class="preset-btn mutate-intensity-btn" data-intensity="subtle">Subtle</button>
-                <button type="button" class="preset-btn mutate-intensity-btn is-selected" data-intensity="medium">Medium</button>
-                <button type="button" class="preset-btn mutate-intensity-btn" data-intensity="wild">Wild</button>
+              <button type="button" class="btn btn--small" id="mutate-btn" title="Evolve this song and sound">Evolve</button>
+              <div class="mutate-intensity" role="group" aria-label="Evolve amount">
+                <button type="button" class="preset-btn mutate-intensity-btn" data-intensity="subtle" title="Barely nudge">Nudge</button>
+                <button type="button" class="preset-btn mutate-intensity-btn is-selected" data-intensity="medium" title="Noticeable change">Shift</button>
+                <button type="button" class="preset-btn mutate-intensity-btn" data-intensity="wild" title="Big transformation">Wild</button>
               </div>
             </div>
           </div>
@@ -130,11 +130,11 @@
           </div>
           <button type="button" class="btn btn--ghost is-selected" id="melody-loop-btn" aria-pressed="true">Loop</button>
           <button type="button" class="btn btn--ghost" id="melody-clear-btn">Clear</button>
-          <button type="button" class="btn btn--ghost" id="shuffle-btn">Shuffle</button>
+          <button type="button" class="btn btn--ghost" id="shuffle-btn" title="New random world and song">Shuffle</button>
           <button type="button" class="btn btn--ghost" id="melody-share-btn">Copy link</button>
         </div>
 
-        <p class="hint toy-hint">Open Worlds · Shuffle for new · Remix shuffles your notes · space to play</p>
+        <p class="hint toy-hint">Shuffle · surprise world · Another · same world · Evolve · grow this song · space to play</p>
       </div>
     </div>
   </div>

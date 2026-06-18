@@ -1,5 +1,6 @@
 import { play, unlock } from './synth.js';
 import { normalizePattern } from './generate.js';
+import { resolveStepExpression } from './world-expression.js';
 
 const NOTE_ROWS = [
   { label: 'C5', midi: 72 },
@@ -36,12 +37,15 @@ function emptyPattern(steps) {
 
 let steps = DEFAULT_STEPS;
 let pattern = emptyPattern(DEFAULT_STEPS);
+/** Hidden accompaniment lanes from procedural generation (null for hand-built melodies). */
+let sequencer = null;
 let tempo = DEFAULT_TEMPO;
 let playing = false;
 let loopMelody = true;
 let playTimer = null;
 let playStep = 0;
 let getSynthParams = () => ({});
+let getWorldKey = () => null;
 
 let painting = false;
 let paintStartRow = -1;
@@ -96,9 +100,14 @@ function syncPatternToGrid() {
   }
 }
 
+function invalidateSequencer() {
+  sequencer = null;
+}
+
 function assignStepNote(step, row) {
   if (pattern[step] === row) return false;
   pattern[step] = row;
+  invalidateSequencer();
   if (document.getElementById('melody-grid')?.children.length) {
     updateStepColumn(step);
   } else {
@@ -118,6 +127,7 @@ function endPaintStroke() {
   painting = false;
   if (wasClick && noteAtStrokeStart === row) {
     pattern[step] = -1;
+    invalidateSequencer();
     updateStepColumn(step);
     onMelodyChange();
   }
@@ -242,11 +252,77 @@ function updatePlayhead() {
   });
 }
 
+function triggerNote(row, params, { volMul = 1, decayMul = 1, octave = 0, gateMul = 1, releaseMul = 1, punchBias = 1 } = {}) {
+  if (row < 0 || row >= NOTE_ROWS.length) return;
+  const baseVol = params.volume ?? 0.55;
+  const baseDecay = params.decay ?? 0.2;
+  const midi = NOTE_ROWS[row].midi + octave * 12;
+  play({
+    ...params,
+    pitch: midiToHz(midi),
+    volume: Math.min(1, baseVol * volMul),
+    decay: Math.min(1, baseDecay * decayMul),
+    gateMul,
+    releaseMul,
+    punch: Math.min(1, (params.punch ?? params.attack ?? 0) * punchBias),
+  });
+}
+
+function stepExpression(step, lane) {
+  const worldKey = getWorldKey();
+  if (!worldKey) return { volMul: 1, decayMul: 1, gateMul: 1, releaseMul: 1, punchBias: 1 };
+  const meta = sequencer?.expression;
+  const expr = resolveStepExpression(worldKey, {
+    step,
+    steps,
+    barLen: meta?.barLen,
+    hookStep: meta?.hookStep,
+    lane,
+  });
+  return {
+    volMul: expr.volMul,
+    decayMul: 1,
+    gateMul: expr.gateMul,
+    releaseMul: expr.releaseMul,
+    punchBias: expr.punchBias,
+  };
+}
+
 function triggerStep(step) {
-  const row = pattern[step];
-  if (row < 0) return;
   const params = getSynthParams();
-  play({ ...params, pitch: midiToHz(NOTE_ROWS[row].midi) });
+  const row = pattern[step];
+  if (row >= 0) {
+    const expr = stepExpression(step, 'melody');
+    triggerNote(row, params, expr);
+  }
+
+  if (sequencer?.bass && sequencer.bass[step] >= 0) {
+    const bassRow = sequencer.bass[step];
+    const octave = sequencer.bassOctaveMap?.[step] ?? sequencer.bassOctave ?? -1;
+    const bassDecay = sequencer.bassDecayMap?.[step] ?? 1;
+    const expr = stepExpression(step, 'bass');
+    triggerNote(bassRow, params, {
+      volMul: (sequencer.bassVol ?? 0.32) * expr.volMul,
+      decayMul: bassDecay * expr.decayMul,
+      gateMul: expr.gateMul,
+      releaseMul: expr.releaseMul,
+      punchBias: expr.punchBias,
+      octave,
+    });
+  }
+
+  for (const ev of sequencer?.events?.[step] ?? []) {
+    const lane = ev.lane === 'harmony' ? 'harmony' : 'echo';
+    const expr = stepExpression(step, lane);
+    triggerNote(ev.note, params, {
+      volMul: (ev.vol ?? 0.45) * expr.volMul,
+      decayMul: (ev.decay ?? 0.55) * expr.decayMul,
+      gateMul: expr.gateMul,
+      releaseMul: expr.releaseMul,
+      punchBias: expr.punchBias,
+      octave: ev.octave ?? 0,
+    });
+  }
 }
 
 function stopPlayback() {
@@ -298,6 +374,7 @@ function clearPattern() {
   stopPlayback();
   setLoopMelody(true);
   pattern = emptyPattern(steps);
+  sequencer = null;
   renderGrid();
   onMelodyChange();
 }
@@ -305,6 +382,7 @@ function clearPattern() {
 function setSteps(next) {
   steps = next;
   pattern = normalizePattern(pattern, next);
+  invalidateSequencer();
   if (playing && playStep >= steps) playStep %= steps;
   syncStepUi();
   renderGrid();
@@ -314,7 +392,7 @@ function setSteps(next) {
 let onMelodyChange = () => {};
 
 export function getMelodyState() {
-  return { steps, tempo, pattern: [...pattern] };
+  return { steps, tempo, pattern: [...pattern], sequencer };
 }
 
 export function isMelodyEmpty() {
@@ -322,16 +400,28 @@ export function isMelodyEmpty() {
 }
 
 export function remixPattern() {
-  const dense = normalizePattern(pattern, steps);
-  const notes = [...dense];
-  if (notes.length < 2 || notes.filter((n) => n >= 0).length < 2) return;
+  const base = normalizePattern(pattern, steps);
+  const slots = [];
+  const notes = [];
+  for (let i = 0; i < base.length; i++) {
+    if (base[i] >= 0) {
+      slots.push(i);
+      notes.push(base[i]);
+    }
+  }
+  if (notes.length < 2) return;
 
   for (let i = notes.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [notes[i], notes[j]] = [notes[j], notes[i]];
   }
 
-  pattern = notes;
+  const next = [...base];
+  slots.forEach((step, i) => {
+    next[step] = notes[i];
+  });
+  pattern = next;
+  invalidateSequencer();
   if (document.getElementById('melody-grid')?.children.length) syncPatternToGrid();
   else renderGrid();
   onMelodyChange();
@@ -350,12 +440,13 @@ export function setLoopMelody(on) {
   }
 }
 
-export function applyMelody({ steps: nextSteps, tempo: nextTempo, pattern: nextPattern }) {
+export function applyMelody({ steps: nextSteps, tempo: nextTempo, pattern: nextPattern, sequencer: nextSequencer = null }) {
   const wasPlaying = playing;
   const savedStep = playStep;
   steps = nextSteps;
   tempo = nextTempo;
   pattern = normalizePattern(nextPattern, nextSteps);
+  sequencer = nextSequencer;
   if (wasPlaying && playStep >= steps) playStep = savedStep % steps;
   syncStepUi();
   syncTempoUi();
@@ -380,8 +471,9 @@ export function loadMelodyFromUrl(value) {
   renderGrid();
 }
 
-export function initMelody({ getParams, onChange, onPlayStart }) {
+export function initMelody({ getParams, getWorld, onChange, onPlayStart }) {
   getSynthParams = getParams;
+  getWorldKey = getWorld || (() => null);
   onMelodyChange = onChange;
 
   document.querySelectorAll('.melody-steps-btn').forEach((btn) => {

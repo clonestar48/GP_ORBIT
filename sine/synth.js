@@ -243,6 +243,8 @@ export function play(params) {
   const crunch = clamp01(params.crunch);
   const noiseAmt = clamp01(params.noise);
   const punch = clamp01(params.punch ?? 0);
+  const gateMul = Math.max(0.45, Math.min(1.85, params.gateMul ?? 1));
+  const releaseMul = Math.max(0.55, Math.min(1.65, params.releaseMul ?? 1));
   const bend = bendMultiplier(params.bend);
   const wobble = clamp01(params.wobble);
   const userDetune = clamp01(params.detune);
@@ -251,11 +253,11 @@ export function play(params) {
 
   const userAttack = clamp01(params.attack);
   const attackMs = lerp(profile.attackMs, 5 + userAttack * 10, 0.35);
-  const releaseMs = lerp(profile.releaseMs, 42 + (1 - profile.envelopeTight) * 28, 0.25);
+  const releaseMs = lerp(profile.releaseMs, 42 + (1 - profile.envelopeTight) * 28, 0.25) * releaseMul;
   const attackT = Math.max(0.005, attackMs / 1000);
   const releaseT = Math.max(0.04, releaseMs / 1000);
 
-  const sustain = (0.04 + decay * 0.62) * (1 - punch * 0.05) * (1.05 - profile.envelopeTight * 0.12);
+  const sustain = (0.04 + decay * 0.62) * (1 - punch * 0.05) * (1.05 - profile.envelopeTight * 0.12) * gateMul;
   const attackEnd = t0 + attackT;
   const sustainEnd = attackEnd + sustain;
   const releaseEnd = sustainEnd + releaseT;

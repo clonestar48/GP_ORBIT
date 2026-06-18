@@ -188,6 +188,7 @@ function syncCustomArtifact() {
     steps: melody.steps,
     tempo: melody.tempo,
     pattern: [...melody.pattern],
+    sequencer: null,
     revision: currentGeneration?.revision || 0,
   };
   updateArtifactCard();
@@ -269,7 +270,7 @@ function applyGenerated(song, { autoPlay = false } = {}) {
   applyingGeneration = true;
   currentGeneration = song;
   applyParams({ ...song.params, volume }, { keepGeneration: true });
-  applyMelody({ steps: song.steps, tempo: song.tempo, pattern: song.pattern });
+  applyMelody({ steps: song.steps, tempo: song.tempo, pattern: song.pattern, sequencer: song.sequencer ?? null });
   applyingGeneration = false;
   updateArtifactCard();
   updateWorldSelection();
@@ -310,6 +311,24 @@ function renderWorldPresets() {
     },
   });
   updateWorldSelection();
+}
+
+function remixCurrentSong() {
+  const worldKey = currentGeneration?.worldKey;
+  if (worldKey && WORLDS[worldKey]) {
+    const seed = randomSeed();
+    applyGenerated(
+      { ...generateFromWorld(worldKey, seed), revision: 0, intensity: mutationIntensity },
+      { autoPlay: true },
+    );
+    pulsePanel(document.getElementById('melody-panel'));
+    return;
+  }
+
+  remixPattern();
+  stopSynthRepeat();
+  startMelodyPlayback();
+  pulsePanel(document.getElementById('melody-stage'));
 }
 
 function mutateCurrentSong() {
@@ -922,6 +941,7 @@ function init() {
 
   initMelody({
     getParams: readParams,
+    getWorld: () => currentGeneration?.worldKey ?? null,
     onChange: () => {
       if (!applyingGeneration) clearGeneration();
       syncUrl();
@@ -957,12 +977,7 @@ function init() {
 
   document.getElementById('melody-share-btn').addEventListener('click', copyShareLink);
   document.getElementById('shuffle-btn').addEventListener('click', generateSong);
-  document.getElementById('remix-btn').addEventListener('click', () => {
-    remixPattern();
-    stopSynthRepeat();
-    startMelodyPlayback();
-    pulsePanel(document.getElementById('melody-stage'));
-  });
+  document.getElementById('remix-btn').addEventListener('click', remixCurrentSong);
   document.getElementById('mutate-btn').addEventListener('click', mutateCurrentSong);
 
   document.querySelectorAll('.mutate-intensity-btn').forEach((btn) => {

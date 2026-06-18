@@ -2,10 +2,12 @@
  * Procedural song + patch generation — eight distinct sonic territories.
  */
 
+import { expressionMetaForSequencer } from './world-expression.js';
+
 export const MUTATE_INTENSITY = {
-  subtle: { preserve: 0.9, label: 'Subtle' },
-  medium: { preserve: 0.7, label: 'Medium' },
-  wild: { preserve: 0.4, label: 'Wild' },
+  subtle: { preserve: 0.94, label: 'Nudge' },
+  medium: { preserve: 0.6, label: 'Shift' },
+  wild: { preserve: 0.18, label: 'Wild' },
 };
 
 /** Radar + shuffle pool — each world has a unique compositional voice. */
@@ -29,13 +31,13 @@ export const WORLDS = {
     noteDensity: 0.78,
     mutateSpread: 0.95,
     params: {
-      pitch: [920, 1760], tone: [0, 0.22], decay: [0.08, 0.22], crunch: [0.04, 0.18],
-      noise: [0, 0.08], attack: [0, 0.06], bend: [0.58, 0.78], wobble: [0, 0.1],
-      detune: [0.06, 0.18], filter: [0, 0.1], volume: [0.44, 0.58], gap: [0.03, 0.1],
+      pitch: [980, 1980], tone: [0, 0.18], decay: [0.18, 0.38], crunch: [0.02, 0.12],
+      noise: [0, 0.05], attack: [0, 0.04], bend: [0.62, 0.82], wobble: [0, 0.08],
+      detune: [0.12, 0.28], filter: [0, 0.08], volume: [0.44, 0.58], gap: [0.05, 0.14],
     },
-    tempo: [145, 185],
-    restChance: 0.1,
-    leapChance: 0.14,
+    tempo: [138, 178],
+    restChance: 0.09,
+    leapChance: 0.3,
     homeRow: 5,
   },
   arcade: {
@@ -46,13 +48,13 @@ export const WORLDS = {
     noteDensity: 0.94,
     mutateSpread: 1.05,
     params: {
-      pitch: [720, 1480], tone: [0.48, 0.82], decay: [0.04, 0.12], crunch: [0.22, 0.42],
-      noise: [0.02, 0.1], attack: [0, 0.03], bend: [0.55, 0.72], wobble: [0, 0.06],
-      detune: [0.08, 0.2], filter: [0, 0.08], volume: [0.5, 0.64], gap: [0.02, 0.07],
+      pitch: [780, 1560], tone: [0.52, 0.88], decay: [0.02, 0.07], crunch: [0.24, 0.46],
+      noise: [0.02, 0.1], attack: [0, 0.02], bend: [0.58, 0.74], wobble: [0, 0.04],
+      detune: [0.1, 0.22], filter: [0, 0.06], volume: [0.52, 0.66], gap: [0.02, 0.06],
     },
-    tempo: [88, 128],
-    restChance: 0.05,
-    leapChance: 0.32,
+    tempo: [96, 136],
+    restChance: 0.06,
+    leapChance: 0.44,
     homeRow: 2,
   },
   dungeon: {
@@ -80,13 +82,13 @@ export const WORLDS = {
     noteDensity: 0.86,
     mutateSpread: 1.12,
     params: {
-      pitch: [420, 980], tone: [0, 0.32], decay: [0.1, 0.28], crunch: [0.04, 0.16],
-      noise: [0.03, 0.1], attack: [0.18, 0.45], bend: [0.58, 0.8], wobble: [0.35, 0.62],
-      detune: [0.12, 0.28], filter: [0.04, 0.18], volume: [0.42, 0.56], gap: [0.06, 0.16],
+      pitch: [440, 920], tone: [0, 0.22], decay: [0.14, 0.32], crunch: [0.02, 0.1],
+      noise: [0.02, 0.08], attack: [0.22, 0.48], bend: [0.55, 0.76], wobble: [0.42, 0.68],
+      detune: [0.1, 0.22], filter: [0.02, 0.12], volume: [0.42, 0.56], gap: [0.08, 0.18],
     },
     tempo: [155, 205],
-    restChance: 0.08,
-    leapChance: 0.5,
+    restChance: 0.1,
+    leapChance: 0.42,
     homeRow: 3,
   },
   beach: {
@@ -114,13 +116,13 @@ export const WORLDS = {
     noteDensity: 0.32,
     mutateSpread: 0.75,
     params: {
-      pitch: [260, 580], tone: [0.1, 0.4], decay: [0.48, 0.82], crunch: [0.08, 0.24],
-      noise: [0.06, 0.18], attack: [0.02, 0.12], bend: [0.35, 0.5], wobble: [0.02, 0.1],
-      detune: [0.04, 0.14], filter: [0.14, 0.32], volume: [0.34, 0.48], gap: [0.28, 0.48],
+      pitch: [260, 520], tone: [0.12, 0.38], decay: [0.52, 0.78], crunch: [0.1, 0.22],
+      noise: [0.08, 0.2], attack: [0.02, 0.1], bend: [0.32, 0.46], wobble: [0, 0.06],
+      detune: [0.02, 0.1], filter: [0.22, 0.42], volume: [0.32, 0.46], gap: [0.32, 0.52],
     },
-    tempo: [265, 345],
-    restChance: 0.38,
-    leapChance: 0.1,
+    tempo: [275, 355],
+    restChance: 0.4,
+    leapChance: 0.08,
     homeRow: 7,
   },
   'ice-cave': {
@@ -131,13 +133,13 @@ export const WORLDS = {
     noteDensity: 0.72,
     mutateSpread: 0.92,
     params: {
-      pitch: [1040, 2200], tone: [0, 0.28], decay: [0.22, 0.48], crunch: [0.04, 0.14],
-      noise: [0, 0.06], attack: [0, 0.08], bend: [0.52, 0.68], wobble: [0.1, 0.26],
-      detune: [0.22, 0.48], filter: [0.02, 0.14], volume: [0.4, 0.54], gap: [0.08, 0.18],
+      pitch: [1180, 2400], tone: [0.08, 0.32], decay: [0.1, 0.28], crunch: [0.06, 0.18],
+      noise: [0, 0.04], attack: [0, 0.03], bend: [0.58, 0.74], wobble: [0.04, 0.14],
+      detune: [0.28, 0.52], filter: [0, 0.06], volume: [0.42, 0.56], gap: [0.04, 0.12],
     },
-    tempo: [165, 215],
-    restChance: 0.12,
-    leapChance: 0.24,
+    tempo: [172, 222],
+    restChance: 0.08,
+    leapChance: 0.38,
     homeRow: 0,
   },
   speedway: {
@@ -148,13 +150,13 @@ export const WORLDS = {
     noteDensity: 0.97,
     mutateSpread: 1.2,
     params: {
-      pitch: [640, 1380], tone: [0.58, 0.92], decay: [0.04, 0.14], crunch: [0.24, 0.48],
-      noise: [0.05, 0.14], attack: [0, 0.03], bend: [0.54, 0.72], wobble: [0.02, 0.12],
-      detune: [0.1, 0.26], filter: [0, 0.1], volume: [0.52, 0.66], gap: [0.02, 0.06],
+      pitch: [680, 1280], tone: [0.62, 0.94], decay: [0.03, 0.1], crunch: [0.26, 0.5],
+      noise: [0.04, 0.12], attack: [0, 0.02], bend: [0.5, 0.66], wobble: [0, 0.08],
+      detune: [0.06, 0.18], filter: [0, 0.08], volume: [0.54, 0.68], gap: [0.02, 0.05],
     },
-    tempo: [78, 118],
-    restChance: 0.03,
-    leapChance: 0.28,
+    tempo: [72, 108],
+    restChance: 0.02,
+    leapChance: 0.14,
     homeRow: 2,
   },
   /** @deprecated use arcade — kept for shared URLs */
@@ -181,6 +183,11 @@ export const WORLDS = {
 export const FAMILIES = WORLDS;
 
 const PHRASE_STEPS = [8, 12, 16, 24, 32];
+
+const STEP_PREF = {
+  arcade: [8, 8, 12, 12, 16],
+  speedway: [16, 24, 24, 32],
+};
 
 /**
  * Tile a pattern to target length and fill rests so every step has a note.
@@ -215,6 +222,662 @@ export function normalizePattern(pattern, targetSteps) {
 }
 const MAJOR_PENT = [0, 2, 3, 5, 6, 7];
 const MINOR_PENT = [1, 3, 4, 5, 7];
+
+/** @typedef {Object} WorldComposition
+ * @property {number} barLen
+ * @property {number[]} progression scale-degree roots per bar
+ * @property {number} chordBias 0–1 soft pull toward active chord tones
+ */
+
+/** @type {WorldComposition} */
+const DEFAULT_COMPOSITION = {
+  barLen: 4,
+  progression: [0, 3, 4, 0],
+  chordBias: 0.24,
+};
+
+/** Per-world soft harmonic hints — keyed by compose style. */
+const COMPOSE_STYLES = {
+  beacon: { progression: [0, 4, 2, 5], chordBias: 0.22 },
+  hook: { progression: [0, 2, 0, 3], chordBias: 0.28 },
+  wander: { progression: [0, 4, 2, 5], chordBias: 0.22 },
+  bounce: { progression: [0, 2, 0, 3], chordBias: 0.28 },
+  wave: { progression: [0, 2, 4, 3], chordBias: 0.24 },
+  sparse: { progression: [0, 0, 4, 0], chordBias: 0.2 },
+  crystal: { progression: [0, 3, 0, 2], chordBias: 0.24 },
+  race: { progression: [0, 3, 0, 3], chordBias: 0.26 },
+};
+
+function compositionFor(world) {
+  const style = COMPOSE_STYLES[world.compose] || {};
+  return { ...DEFAULT_COMPOSITION, ...style };
+}
+
+function chordTones(scale, degree) {
+  const len = scale.length;
+  const root = ((degree % len) + len) % len;
+  const tones = [
+    scale[root],
+    scale[(root + 2) % len],
+    scale[(root + 4) % len],
+  ];
+  return [...new Set(tones)];
+}
+
+function chordAtStep(comp, step) {
+  const bar = Math.floor(step / comp.barLen);
+  return comp.progression[bar % comp.progression.length];
+}
+
+function nearestChordTone(note, scale, chord) {
+  if (chord.includes(note)) return note;
+  let best = chord[0];
+  let dist = Math.abs(scaleIndex(scale, note) - scaleIndex(scale, best));
+  for (const tone of chord) {
+    const d = Math.abs(scaleIndex(scale, note) - scaleIndex(scale, tone));
+    if (d < dist) { dist = d; best = tone; }
+  }
+  return best;
+}
+
+function biasToChord(rng, note, scale, chord, amount) {
+  if (note < 0 || rng() > amount) return note;
+  return nearestChordTone(note, scale, chord);
+}
+
+function snapToScale(row, scale) {
+  if (scale.includes(row)) return row;
+  let best = scale[0];
+  let dist = Math.abs(row - best);
+  for (const s of scale) {
+    const d = Math.abs(row - s);
+    if (d < dist) { dist = d; best = s; }
+  }
+  return best;
+}
+
+function transposeScaleSteps(note, scale, steps) {
+  if (note < 0) return note;
+  const idx = scaleIndex(scale, snapToScale(note, scale));
+  const next = Math.max(0, Math.min(scale.length - 1, idx + steps));
+  return scale[next];
+}
+
+function collectNoteCells(pattern, minLen, maxLen, end = pattern.length) {
+  const cells = [];
+  for (let s = 0; s <= end - minLen; s++) {
+    for (let len = minLen; len <= maxLen && s + len <= end; len++) {
+      const notes = [];
+      let ok = true;
+      for (let j = 0; j < len; j++) {
+        if (pattern[s + j] < 0) { ok = false; break; }
+        notes.push(pattern[s + j]);
+      }
+      if (ok) cells.push({ start: s, notes });
+    }
+  }
+  return cells;
+}
+
+function restFillTargets(pattern, len, start = 0, end = pattern.length) {
+  const targets = [];
+  for (let t = start; t <= end - len; t++) {
+    let restSlots = 0;
+    for (let j = 0; j < len; j++) if (pattern[t + j] < 0) restSlots++;
+    if (restSlots > 0) targets.push(t);
+  }
+  return targets;
+}
+
+function pasteCellOntoRests(pattern, target, notes) {
+  for (let j = 0; j < notes.length; j++) {
+    if (pattern[target + j] < 0) pattern[target + j] = notes[j];
+  }
+}
+
+/** Light post-pass: motif echoes and soft harmony — never thins the pattern. */
+function refineMelody(rng, world, pattern) {
+  const comp = compositionFor(world);
+  const scale = scaleFor(world.mode);
+  const steps = pattern.length;
+  const out = [...pattern];
+
+  for (let i = 0; i < steps; i++) {
+    if (out[i] < 0) continue;
+    if (rng() < 0.18) {
+      const chord = chordTones(scale, chordAtStep(comp, i));
+      out[i] = biasToChord(rng, out[i], scale, chord, comp.chordBias);
+    }
+  }
+
+  if (rng() < 0.32 && steps >= 6) {
+    const cellLen = 2 + Math.floor(rng() * 3);
+    const cells = collectNoteCells(out, cellLen, cellLen);
+    const targets = cells.length ? restFillTargets(out, cellLen) : [];
+    if (cells.length && targets.length) {
+      pasteCellOntoRests(out, pick(rng, targets), pick(rng, cells).notes);
+    }
+  }
+
+  if (rng() < 0.25 && steps >= 8) {
+    const echoLen = 2 + Math.floor(rng() * 2);
+    const half = Math.floor(steps / 2);
+    const calls = collectNoteCells(out, echoLen, echoLen, half).map((c) => c.notes);
+    const responses = calls.length ? restFillTargets(out, echoLen, half) : [];
+    if (calls.length && responses.length) {
+      const transpose = rng() < 0.34 ? 0 : (rng() < 0.5 ? 1 : -1);
+      const echoed = pick(rng, calls).map((n) => transposeScaleSteps(n, scale, transpose));
+      pasteCellOntoRests(out, pick(rng, responses), echoed);
+    }
+  }
+
+  return out;
+}
+
+/** Soft rhythmic lean per compose style — fills rests only, never thins. */
+const GROOVE_PREFS = {
+  beacon: { restFill: 0.12, beatWeight: [0.78, 0.58, 0.72, 0.52] },
+  hook: { restFill: 0.22, beatWeight: [0.52, 1, 0.48, 0.96] },
+  wander: { restFill: 0.06, beatWeight: [1, 0.38, 0.52, 0.32] },
+  bounce: { restFill: 0.14, beatWeight: [0.55, 0.92, 0.52, 0.88] },
+  wave: { restFill: 0.08, beatWeight: [0.88, 0.48, 0.82, 0.42] },
+  sparse: { restFill: 0.03, beatWeight: [0.95, 0.22, 0.28, 0.18] },
+  crystal: { restFill: 0.14, beatWeight: [0.94, 0.48, 0.92, 0.44] },
+  race: { restFill: 0.32, beatWeight: [1, 0.9, 0.86, 0.88] },
+};
+
+function neighborMelodyNote(pattern, index) {
+  for (let off = 1; off < pattern.length; off++) {
+    const prev = pattern[(index - off + pattern.length) % pattern.length];
+    if (prev >= 0) return prev;
+    const next = pattern[(index + off) % pattern.length];
+    if (next >= 0) return next;
+  }
+  return -1;
+}
+
+/** Prefer certain beats when filling rests — groove hint, not a hard lock. */
+function applyGroovePreference(rng, world, pattern) {
+  const pref = GROOVE_PREFS[world.compose] || GROOVE_PREFS.beacon;
+  const out = [...pattern];
+
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] >= 0) continue;
+    const beat = i % 4;
+    const weight = pref.beatWeight[beat] ?? 0.5;
+    if (rng() > pref.restFill * weight) continue;
+    const neighbor = neighborMelodyNote(out, i);
+    if (neighbor >= 0) out[i] = neighbor;
+  }
+
+  return out;
+}
+
+function hookStepIndex(steps, comp) {
+  const bar = comp.barLen;
+  const half = Math.floor(steps / 2);
+  const midBar = Math.round(half / bar) * bar;
+  const spot = steps >= bar * 3 ? midBar : bar;
+  return Math.min(steps - 2, Math.max(1, spot));
+}
+
+function stepTowardLanding(note, scale, target) {
+  if (note < 0) return target;
+  const snapped = snapToScale(note, scale);
+  const idx = scaleIndex(scale, snapped);
+  const targetIdx = scaleIndex(scale, snapToScale(target, scale));
+  if (idx === targetIdx) return snapped;
+  return scale[idx + (targetIdx > idx ? 1 : -1)];
+}
+
+/** One intentional memorable gesture near midpoint / phrase turn. */
+function applyHookStep(rng, world, pattern) {
+  const scale = scaleFor(world.mode);
+  const comp = compositionFor(world);
+  const steps = pattern.length;
+  if (steps < 4) return pattern;
+
+  const out = [...pattern];
+  const hookAt = hookStepIndex(steps, comp);
+  const prevIdx = hookAt > 0 ? hookAt - 1 : steps - 1;
+  const anchor = out[prevIdx] >= 0 ? snapToScale(out[prevIdx], scale) : world.homeRow;
+  const anchorIdx = scaleIndex(scale, anchor);
+
+  switch (world.compose) {
+    case 'hook': {
+      const leap = Math.min(3, scale.length - 1 - anchorIdx);
+      const high = transposeScaleSteps(anchor, scale, Math.max(2, leap));
+      out[hookAt] = high;
+      if (hookAt + 1 < steps) out[hookAt + 1] = high;
+      if (hookAt + 2 < steps) out[hookAt + 2] = stepInScale(rng, scale, high, -1);
+      break;
+    }
+    case 'race': {
+      let n = anchor;
+      for (let j = 0; j < 3 && hookAt + j < steps; j++) {
+        n = stepInScale(rng, scale, n, 1);
+        out[hookAt + j] = n;
+      }
+      break;
+    }
+    case 'crystal': {
+      const shardPool = scale.filter((row) => row <= 1);
+      const ping = shardPool.length ? pick(rng, shardPool) : scale[0];
+      out[hookAt] = ping;
+      if (hookAt + 1 < steps) {
+        out[hookAt + 1] = transposeScaleSteps(ping, scale, rng() < 0.5 ? 2 : -1);
+      }
+      if (hookAt + 2 < steps) out[hookAt + 2] = ping;
+      break;
+    }
+    case 'beacon': {
+      const leap = 2 + Math.floor(rng() * 2);
+      out[hookAt] = transposeScaleSteps(anchor, scale, leap);
+      if (hookAt + 1 < steps) {
+        out[hookAt + 1] = stepInScale(rng, scale, out[hookAt], rng() < 0.5 ? -1 : 0);
+      }
+      break;
+    }
+    case 'wander': {
+      const lowTarget = scale[Math.max(0, anchorIdx - 2)];
+      out[hookAt] = lowTarget;
+      if (hookAt + 1 < steps) out[hookAt + 1] = stepTowardLanding(anchor, scale, lowTarget);
+      break;
+    }
+    case 'wave': {
+      out[hookAt] = stepInScale(rng, scale, anchor, 1);
+      if (hookAt + 1 < steps) out[hookAt + 1] = stepInScale(rng, scale, out[hookAt], 1);
+      break;
+    }
+    case 'bounce': {
+      out[hookAt] = transposeScaleSteps(anchor, scale, 2);
+      if (hookAt + 1 < steps) out[hookAt + 1] = transposeScaleSteps(out[hookAt], scale, -1);
+      break;
+    }
+    case 'sparse': {
+      out[hookAt] = anchor;
+      if (hookAt + 1 < steps) out[hookAt + 1] = anchor;
+      break;
+    }
+    default:
+      out[hookAt] = transposeScaleSteps(anchor, scale, 2);
+  }
+
+  return out;
+}
+
+/** Gently resolve phrase endings toward landing tones. */
+function applyAnswerCadence(rng, world, pattern, hookAt = -1) {
+  const scale = scaleFor(world.mode);
+  const comp = compositionFor(world);
+  const out = [...pattern];
+  const barLen = comp.barLen;
+
+  for (let bar = 0; bar < Math.ceil(out.length / barLen); bar++) {
+    const start = bar * barLen;
+    const end = Math.min(start + barLen, out.length);
+    const degree = chordAtStep(comp, end - 1);
+    const chord = chordTones(scale, degree);
+    const landings = [chord[0], chord[2] ?? chord[1], world.homeRow];
+
+    const active = [];
+    for (let i = end - 1; i >= start && active.length < 2; i--) {
+      if (i === hookAt) continue;
+      if (out[i] >= 0) active.push(i);
+    }
+
+    active.forEach((idx, rank) => {
+      const chance = rank === 0 ? 0.82 : 0.58;
+      if (rng() > chance) return;
+      const target = pick(rng, landings);
+      out[idx] = rng() < 0.68
+        ? stepTowardLanding(out[idx], scale, target)
+        : snapToScale(target, scale);
+    });
+  }
+
+  const last = out.length - 1;
+  if (last !== hookAt) {
+    const finalChord = chordTones(scale, chordAtStep(comp, last));
+    out[last] = rng() < 0.72
+      ? snapToScale(pick(rng, [world.homeRow, finalChord[0], finalChord[2] ?? finalChord[1]]), scale)
+      : out[last] >= 0 ? out[last] : world.homeRow;
+  }
+
+  if (last > 0 && out[last - 1] >= 0 && last - 1 !== hookAt && rng() < 0.55) {
+    out[last - 1] = stepTowardLanding(out[last - 1], scale, out[last]);
+  }
+
+  return out;
+}
+
+/** @typedef {Object} SequencerEvent
+ * @property {number} note row index 0–7
+ * @property {number} [vol=1] volume multiplier vs melody
+ * @property {number} [decay=1] decay multiplier
+ * @property {number} [octave=0] semitone offset in octaves
+ * @property {'echo'|'harmony'} [lane]
+ */
+
+/** @typedef {Object} SequencerLanes
+ * @property {number[]} bass sparse bass row indices (-1 = rest)
+ * @property {number} bassVol 0–1 relative to melody
+ * @property {number} bassOctave -1 or -2 octaves below melody
+ * @property {number} [bassDecay=1] decay multiplier for bass lane
+ * @property {SequencerEvent[][]} events extra per-step note events
+ */
+
+function bassTargetCount(rng, steps) {
+  const per32 = 4 + Math.floor(rng() * 5);
+  return Math.max(2, Math.round((steps * per32) / 32));
+}
+
+function scaleDegreeRoot(scale, comp, step) {
+  const degree = chordAtStep(comp, step);
+  return chordTones(scale, degree)[0];
+}
+
+function placeBassNote(bass, step, note, placed, maxCount) {
+  if (placed.count >= maxCount || bass[step] >= 0) return false;
+  bass[step] = note;
+  placed.count += 1;
+  return true;
+}
+
+/** Anchor bass to chord roots at phrase boundaries before world fill. */
+function placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps) {
+  const barLen = comp.barLen;
+  for (let i = 0; i < steps && placed.count < maxCount; i += barLen) {
+    placeBassNote(bass, i, scaleDegreeRoot(scale, comp, i), placed, maxCount);
+  }
+}
+
+/** Phrase memory — tile a 2–5 note cell with ~75% repeat, ~25% variation. */
+function applyPhraseMemory(rng, world, pattern) {
+  const scale = scaleFor(world.mode);
+  const steps = pattern.length;
+  if (steps < 4) return pattern;
+
+  const cellLen = 2 + Math.floor(rng() * 4);
+  const cells = collectNoteCells(pattern, cellLen, Math.min(5, cellLen + 1));
+  if (!cells.length) return pattern;
+
+  const cell = pick(rng, cells).notes;
+  const out = [...pattern];
+  const passes = Math.ceil(steps / cellLen);
+
+  for (let pass = 0; pass < passes; pass++) {
+    const base = pass * cellLen;
+    if (base >= steps) break;
+
+    for (let j = 0; j < cellLen && base + j < steps; j++) {
+      const idx = base + j;
+      const repeat = rng() < 0.76;
+
+      if (repeat) {
+        if (out[idx] < 0) out[idx] = cell[j];
+        else if (rng() < 0.22) out[idx] = cell[j];
+      } else {
+        let variant = cell[j];
+        if (rng() < 0.55) {
+          variant = transposeScaleSteps(variant, scale, rng() < 0.5 ? 1 : -1);
+        } else {
+          variant = stepInScale(rng, scale, variant, rng() < 0.5 ? 1 : -1);
+        }
+        if (out[idx] < 0 || rng() < 0.28) out[idx] = variant;
+      }
+    }
+  }
+
+  return out;
+}
+
+function emptyStepEvents(steps) {
+  return Array.from({ length: steps }, () => []);
+}
+
+function echoRateForWorld(worldKey) {
+  const key = worldKey === 'disco' ? 'arcade' : worldKey;
+  const rates = {
+    desert: 0.03,
+    speedway: 0.06,
+    arcade: 0.26,
+    'ice-cave': 0.34,
+    bubble: 0.08,
+    'space-age': 0.1,
+    beach: 0.12,
+    dungeon: 0.05,
+  };
+  return rates[key] ?? 0.16;
+}
+
+/** Sequencer echo — duplicate melody hits 1–3 steps later (not audio delay). */
+function addEchoEvents(rng, worldKey, melody, steps) {
+  const events = emptyStepEvents(steps);
+  const rate = echoRateForWorld(worldKey);
+
+  for (let i = 0; i < steps; i++) {
+    if (melody[i] < 0) continue;
+    if (rng() > rate) continue;
+
+    const offset = 1 + Math.floor(rng() * 3);
+    const target = i + offset;
+    if (target >= steps) continue;
+
+    const isDesert = worldKey === 'desert';
+    events[target].push({
+      note: melody[i],
+      vol: isDesert ? 0.22 + rng() * 0.08 : 0.36 + rng() * 0.16,
+      decay: isDesert ? 0.28 + rng() * 0.12 : 0.42 + rng() * 0.22,
+      octave: 0,
+      lane: 'echo',
+    });
+  }
+
+  return events;
+}
+
+function harmonyCapForWorld(worldKey, steps) {
+  const key = worldKey === 'disco' ? 'arcade' : worldKey;
+  const ratios = {
+    desert: 0,
+    speedway: 0.04,
+    arcade: 0.09,
+    'ice-cave': 0.11,
+    bubble: 0.05,
+    'space-age': 0.07,
+  };
+  return Math.max(0, Math.floor(steps * (ratios[key] ?? 0.09)));
+}
+
+/** Occasional harmony on strong beats — third or fifth, under ~10% density. */
+function addHarmonyEvents(rng, worldKey, world, melody, steps, events) {
+  const scale = scaleFor(world.mode);
+  const comp = compositionFor(world);
+  const cap = harmonyCapForWorld(worldKey, steps);
+  if (cap <= 0) return events;
+  let added = 0;
+
+  for (let i = 0; i < steps; i++) {
+    if (melody[i] < 0) continue;
+    if (i % comp.barLen !== 0) continue;
+    if (added >= cap) break;
+    if (rng() > 0.11) continue;
+
+    const interval = rng() < 0.52 ? 2 : 1;
+    const harmNote = transposeScaleSteps(melody[i], scale, interval);
+    events[i].push({
+      note: harmNote,
+      vol: 0.4 + rng() * 0.14,
+      decay: 0.72 + rng() * 0.18,
+      octave: 0,
+      lane: 'harmony',
+    });
+    added += 1;
+  }
+
+  return events;
+}
+
+function generateArcadeBass(rng, world, scale, comp, melody, steps, bass, maxCount, meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  let lowOct = true;
+  for (let i = 0; i < steps && placed.count < maxCount; i += 2) {
+    if (bass[i] >= 0) { lowOct = !lowOct; continue; }
+    const root = scaleDegreeRoot(scale, comp, i);
+    if (!placeBassNote(bass, i, root, placed, maxCount)) continue;
+    meta.octaveMap[i] = lowOct ? -1 : -2;
+    lowOct = !lowOct;
+    if (placed.count < maxCount && i + 1 < steps && rng() < 0.68 && bass[i + 1] < 0) {
+      bass[i + 1] = root;
+      meta.octaveMap[i + 1] = lowOct ? -2 : -1;
+      lowOct = !lowOct;
+      placed.count += 1;
+    }
+  }
+}
+
+function generateSpeedwayBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  for (let i = 0; i < steps && placed.count < maxCount; i += 1) {
+    if (bass[i] >= 0) continue;
+    const root = scaleDegreeRoot(scale, comp, i);
+    const note = i % 2 === 0 ? root : transposeScaleSteps(root, scale, 2);
+    placeBassNote(bass, i, note, placed, maxCount);
+  }
+}
+
+function generateDungeonBass(rng, world, scale, comp, melody, steps, bass, maxCount, meta) {
+  const placed = { count: 0 };
+  const barLen = comp.barLen;
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+
+  for (let i = barLen; i < steps && placed.count < maxCount; i += barLen) {
+    if (bass[i] >= 0) continue;
+    const root = scaleDegreeRoot(scale, comp, i);
+    const moved = transposeScaleSteps(root, scale, rng() < 0.55 ? 0 : -1);
+    if (placeBassNote(bass, i, moved, placed, maxCount)) {
+      meta.decayMap[i] = 1.45 + rng() * 0.35;
+    }
+  }
+
+  for (let i = 2; i < steps && placed.count < maxCount; i += 3 + Math.floor(rng() * 2)) {
+    if (bass[i] >= 0) continue;
+    const root = scaleDegreeRoot(scale, comp, i);
+    placeBassNote(bass, i, root, placed, maxCount);
+  }
+}
+
+function generateBeachBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  for (let i = 0; i < steps && placed.count < maxCount; i += 4 + Math.floor(rng() * 3)) {
+    if (bass[i] >= 0) continue;
+    placeBassNote(bass, i, scaleDegreeRoot(scale, comp, i), placed, maxCount);
+  }
+}
+
+function generateIceCaveBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  for (let i = 0; i < steps && placed.count < maxCount; i += 2) {
+    if (bass[i] >= 0) continue;
+    const root = scaleDegreeRoot(scale, comp, i);
+    const third = transposeScaleSteps(root, scale, 1);
+    placeBassNote(bass, i, i % 4 < 2 ? root : third, placed, maxCount);
+  }
+}
+
+function generateSpaceAgeBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  let useFifth = false;
+  for (let i = 0; i < steps && placed.count < maxCount; i += 2 + Math.floor(rng() * 2)) {
+    if (bass[i] >= 0) { useFifth = !useFifth; continue; }
+    const root = scaleDegreeRoot(scale, comp, i);
+    const note = useFifth ? transposeScaleSteps(root, scale, 2) : root;
+    useFifth = !useFifth;
+    placeBassNote(bass, i, note, placed, maxCount);
+  }
+}
+
+function generateBubbleBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  for (let i = 0; i < steps && placed.count < maxCount; i += 3 + Math.floor(rng() * 4)) {
+    if (bass[i] >= 0) continue;
+    const root = scaleDegreeRoot(scale, comp, i);
+    const note = rng() < 0.45 ? root : transposeScaleSteps(root, scale, 2);
+    placeBassNote(bass, i, note, placed, maxCount);
+  }
+}
+
+function generateDesertBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  for (let i = 0; i < steps && placed.count < maxCount; i += 6 + Math.floor(rng() * 4)) {
+    if (bass[i] >= 0) continue;
+    placeBassNote(bass, i, scaleDegreeRoot(scale, comp, i), placed, maxCount);
+  }
+}
+
+const BASS_GENERATORS = {
+  arcade: generateArcadeBass,
+  disco: generateArcadeBass,
+  speedway: generateSpeedwayBass,
+  dungeon: generateDungeonBass,
+  beach: generateBeachBass,
+  'ice-cave': generateIceCaveBass,
+  'space-age': generateSpaceAgeBass,
+  bubble: generateBubbleBass,
+  desert: generateDesertBass,
+};
+
+function generateBassLane(rng, worldKey, world, melody, steps) {
+  const scale = scaleFor(world.mode);
+  const comp = compositionFor(world);
+  const bass = Array(steps).fill(-1);
+  const maxCount = bassTargetCount(rng, steps);
+  const meta = { octaveMap: {}, decayMap: {} };
+  const gen = BASS_GENERATORS[worldKey] || generateBeachBass;
+  gen(rng, world, scale, comp, melody, steps, bass, maxCount, meta);
+
+  return {
+    bass,
+    bassVol: 0.25 + rng() * 0.15,
+    bassOctave: rng() < 0.62 ? -1 : -2,
+    bassOctaveMap: meta.octaveMap,
+    bassDecayMap: meta.decayMap,
+  };
+}
+
+/**
+ * Build hidden accompaniment lanes after melody is composed.
+ * @param {() => number} rng
+ * @param {string} worldKey
+ * @param {object} world
+ * @param {number[]} melody
+ * @param {number} steps
+ * @returns {SequencerLanes}
+ */
+export function buildSequencer(rng, worldKey, world, melody, steps) {
+  const bassLane = generateBassLane(rng, worldKey, world, melody, steps);
+  let events = addEchoEvents(rng, worldKey, melody, steps);
+  events = addHarmonyEvents(rng, worldKey, world, melody, steps, events);
+  const comp = compositionFor(world);
+
+  return {
+    bass: bassLane.bass,
+    bassVol: bassLane.bassVol,
+    bassOctave: bassLane.bassOctave,
+    bassDecayMap: bassLane.bassDecayMap,
+    bassOctaveMap: bassLane.bassOctaveMap,
+    events,
+    expression: expressionMetaForSequencer(steps, comp.barLen),
+  };
+}
 
 const TITLE_BITS = {
   'space-age': { a: ['Solar', 'Orbital', 'Beacon', 'Relay', 'Cosmic', 'Uplink'], b: ['Signal', 'Probe', 'Scan', 'Rise', 'Pulse', 'Trail'] },
@@ -405,15 +1068,21 @@ function composeSparse(rng, world, steps) {
 
 function composeCrystal(rng, world, steps) {
   const scale = scaleFor(world.mode);
-  const high = scale.filter((n) => n <= 3);
-  const pool = high.length ? high : scale.slice(0, 3);
+  const shardPool = scale.filter((n) => n <= 1);
+  const pool = shardPool.length ? shardPool : scale.slice(0, 2);
   const out = [];
+  let prev = pool[0];
   for (let i = 0; i < steps; i++) {
     if (rng() < effectiveRestChance(world)) { out.push(-1); continue; }
     if (i % 2 === 0) {
-      out.push(pick(rng, pool));
+      prev = pick(rng, pool);
+      out.push(prev);
+    } else if (rng() < 0.62) {
+      prev = transposeScaleSteps(prev, scale, rng() < 0.5 ? 2 : -2);
+      out.push(prev);
     } else {
-      out.push(stepInScale(rng, scale, out[out.length - 1] >= 0 ? out[out.length - 1] : pool[0], rng() < 0.5 ? 1 : -1));
+      prev = stepInScale(rng, scale, prev, rng() < 0.5 ? 1 : -1);
+      out.push(prev);
     }
   }
   return stitchPhrase(out.slice(0, steps / 2), out.slice(steps / 2), steps, world, scale, rng, 0.5);
@@ -429,11 +1098,11 @@ function composeRace(rng, world, steps) {
     if (run > 0 && run < 4) {
       prev = stepInScale(rng, scale, prev, 1);
       run += 1;
-    } else if (rng() < 0.7) {
+    } else if (rng() < 0.82) {
       prev = stepInScale(rng, scale, prev, 1);
       run = 1;
     } else {
-      prev = stepInScale(rng, scale, prev, -2);
+      prev = stepInScale(rng, scale, prev, -1);
       run = 0;
     }
     out.push(prev);
@@ -465,7 +1134,15 @@ const COMPOSERS = {
 
 function generateMelody(rng, world, steps) {
   const compose = COMPOSERS[world.compose] || composeBeacon;
-  return compose(rng, world, steps);
+  const comp = compositionFor(world);
+  let pattern = compose(rng, world, steps);
+  pattern = refineMelody(rng, world, pattern);
+  pattern = applyPhraseMemory(rng, world, pattern);
+  pattern = applyGroovePreference(rng, world, pattern);
+  const hookAt = hookStepIndex(steps, comp);
+  pattern = applyHookStep(rng, world, pattern);
+  pattern = applyAnswerCadence(rng, world, pattern, hookAt);
+  return pattern;
 }
 
 function generateParams(rng, world) {
@@ -503,8 +1180,9 @@ export function generateCustomTitle(seed = randomSeed()) {
 function buildSong(seed, worldKey, rng) {
   const key = resolveWorldKey(worldKey);
   const world = WORLDS[key] || WORLDS['space-age'];
-  const steps = pick(rng, PHRASE_STEPS);
+  const steps = pick(rng, STEP_PREF[key] || PHRASE_STEPS);
   const tempo = Math.round(lerp(rng, world.tempo));
+  const melody = normalizePattern(generateMelody(rng, world, steps), steps);
   return {
     seed: seed >>> 0,
     worldKey: key,
@@ -512,7 +1190,8 @@ function buildSong(seed, worldKey, rng) {
     title: generateTitle(rng, key),
     steps,
     tempo,
-    pattern: normalizePattern(generateMelody(rng, world, steps), steps),
+    pattern: melody,
+    sequencer: buildSequencer(rng, key, world, melody, steps),
     params: generateParams(rng, world),
   };
 }
@@ -539,7 +1218,8 @@ export function randomSeed() {
 
 function changeChance(intensity, world, base = 1) {
   const level = MUTATE_INTENSITY[intensity] || MUTATE_INTENSITY.medium;
-  return Math.min(0.85, (1 - level.preserve) * (world?.mutateSpread ?? 1) * base);
+  const cap = intensity === 'wild' ? 0.92 : intensity === 'subtle' ? 0.28 : 0.68;
+  return Math.min(cap, (1 - level.preserve) * (world?.mutateSpread ?? 1) * base);
 }
 
 export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
@@ -553,65 +1233,84 @@ export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
 
   const pattern = current.pattern.map((n, i) => {
     if (i === steps - 1) return world.homeRow;
-    return mutateNote(rng, n, scale, world, noteChange);
+    return mutateNote(rng, n, scale, world, noteChange, i, intensity);
   });
 
   const p = world.params;
   const params = {
-    pitch: Math.round(mutateValue(rng, current.params.pitch, p.pitch[0], p.pitch[1], paramChange)),
-    tone: mutateValue(rng, current.params.tone, 0, 1, paramChange),
-    decay: mutateValue(rng, current.params.decay, 0, 1, paramChange),
-    crunch: mutateValue(rng, current.params.crunch, 0, 1, paramChange),
-    noise: mutateValue(rng, current.params.noise, 0, 1, paramChange),
-    attack: mutateValue(rng, current.params.attack, 0, 1, paramChange),
-    bend: mutateValue(rng, current.params.bend, 0, 1, paramChange),
-    wobble: mutateValue(rng, current.params.wobble, 0, 1, paramChange),
-    detune: mutateValue(rng, current.params.detune, 0, 1, paramChange),
-    filter: mutateValue(rng, current.params.filter, 0, 1, paramChange),
+    pitch: Math.round(mutateValue(rng, current.params.pitch, p.pitch[0], p.pitch[1], paramChange, intensity)),
+    tone: mutateValue(rng, current.params.tone, 0, 1, paramChange, intensity),
+    decay: mutateValue(rng, current.params.decay, 0, 1, paramChange, intensity),
+    crunch: mutateValue(rng, current.params.crunch, 0, 1, paramChange, intensity),
+    noise: mutateValue(rng, current.params.noise, 0, 1, paramChange, intensity),
+    attack: mutateValue(rng, current.params.attack, 0, 1, paramChange, intensity),
+    bend: mutateValue(rng, current.params.bend, 0, 1, paramChange, intensity),
+    wobble: mutateValue(rng, current.params.wobble, 0, 1, paramChange, intensity),
+    detune: mutateValue(rng, current.params.detune, 0, 1, paramChange, intensity),
+    filter: mutateValue(rng, current.params.filter, 0, 1, paramChange, intensity),
     volume: current.params.volume,
-    gap: mutateValue(rng, current.params.gap, 0, 1, paramChange),
-    punch: mutateValue(rng, current.params.punch ?? current.params.attack, 0, 1, paramChange),
+    gap: mutateValue(rng, current.params.gap, 0, 1, paramChange, intensity),
+    punch: mutateValue(rng, current.params.punch ?? current.params.attack, 0, 1, paramChange, intensity),
   };
 
   const titleBits = TITLE_BITS[key] || TITLE_BITS.bubble;
-  const retitleChance = intensity === 'wild' ? 0.55 : intensity === 'medium' ? 0.35 : 0.2;
+  const retitleChance = intensity === 'wild' ? 0.72 : intensity === 'medium' ? 0.38 : 0.08;
   const title = rng() < retitleChance
     ? `${pick(rng, titleBits.a)} ${pick(rng, titleBits.b)}`
     : current.title;
 
+  const melody = normalizePattern(pattern, steps);
   return {
     seed: seed >>> 0,
     worldKey: key,
     worldLabel: world.label,
     title,
     steps,
-    tempo: Math.round(mutateValue(rng, current.tempo, world.tempo[0], world.tempo[1], paramChange)),
-    pattern: normalizePattern(pattern, steps),
+    tempo: Math.round(mutateValue(rng, current.tempo, world.tempo[0], world.tempo[1], paramChange, intensity)),
+    pattern: melody,
+    sequencer: buildSequencer(rng, key, world, melody, steps),
     params,
     intensity,
   };
 }
 
-function mutateValue(rng, value, lo, hi, chance) {
+function mutateValue(rng, value, lo, hi, chance, intensity = 'medium') {
   if (rng() > chance) return value;
   const span = hi - lo;
-  const delta = (rng() - 0.5) * span * 0.35;
+  const scale = intensity === 'subtle' ? 0.08 : intensity === 'wild' ? 0.52 : 0.3;
+  const delta = (rng() - 0.5) * span * scale;
   return Math.max(lo, Math.min(hi, value + delta));
 }
 
-function mutateNote(rng, note, scale, world, chance) {
+function mutateNote(rng, note, scale, world, chance, step = 0, intensity = 'medium') {
   if (rng() > chance) return note;
-  if (rng() < effectiveRestChance(world) + 0.08) return -1;
-  if (rng() < world.leapChance + 0.12) return pick(rng, scale);
+  const restBoost = intensity === 'wild' ? 0.14 : intensity === 'subtle' ? 0.02 : 0.08;
+  if (rng() < effectiveRestChance(world) + restBoost) return -1;
+  if (rng() < world.leapChance + 0.12) {
+    let next = pick(rng, scale);
+    if (step >= 0 && rng() < 0.2) {
+      const comp = compositionFor(world);
+      const chord = chordTones(scale, chordAtStep(comp, step));
+      next = biasToChord(rng, next, scale, chord, comp.chordBias);
+    }
+    return next;
+  }
   const prev = note >= 0 ? note : world.homeRow;
   const composer = COMPOSERS[world.compose];
+  let next;
   if (composer === composeWander || composer === composeSparse) {
-    return pick(rng, scale);
+    next = pick(rng, scale);
+  } else if (composer === composeRace) {
+    next = stepInScale(rng, scale, prev, 1);
+  } else {
+    next = stepInScale(rng, scale, prev, rng() < 0.5 ? -1 : 1);
   }
-  if (composer === composeRace) {
-    return stepInScale(rng, scale, prev, 1);
+  if (step >= 0 && rng() < 0.15) {
+    const comp = compositionFor(world);
+    const chord = chordTones(scale, chordAtStep(comp, step));
+    next = biasToChord(rng, next, scale, chord, comp.chordBias);
   }
-  return stepInScale(rng, scale, prev, rng() < 0.5 ? -1 : 1);
+  return next;
 }
 
 export function replayFromSeed(seed, revision = 0, worldKey = null, intensity = 'medium') {
