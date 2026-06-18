@@ -66,7 +66,7 @@ Entry: `index.html` → `ui.js` (ES module). Use `127.0.0.1`, not `file://`.
 | `performanceChart.js` | ODDS chart code |
 | Shared deploy plumbing | Only touch `vercel.json` if sine routing breaks; no odds/API changes for sine work |
 
-Sine uses absolute paths (`/sine/...`). Only external tie is back link `← GP Orbit` → `/`.
+Sine uses absolute paths (`/sine/...`). No outbound navigation links.
 
 ---
 
