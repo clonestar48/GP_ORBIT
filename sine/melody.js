@@ -1,4 +1,5 @@
 import { play, unlock } from './synth.js';
+import { normalizePattern } from './generate.js';
 
 const NOTE_ROWS = [
   { label: 'C5', midi: 72 },
@@ -303,9 +304,7 @@ function clearPattern() {
 
 function setSteps(next) {
   steps = next;
-  const trimmed = pattern.slice(0, next);
-  while (trimmed.length < next) trimmed.push(-1);
-  pattern = trimmed;
+  pattern = normalizePattern(pattern, next);
   if (playing && playStep >= steps) playStep %= steps;
   syncStepUi();
   renderGrid();
@@ -323,26 +322,16 @@ export function isMelodyEmpty() {
 }
 
 export function remixPattern() {
-  const notes = [];
-  const slots = [];
-  for (let i = 0; i < pattern.length; i++) {
-    if (pattern[i] >= 0) {
-      slots.push(i);
-      notes.push(pattern[i]);
-    }
-  }
-  if (notes.length < 2) return;
+  const dense = normalizePattern(pattern, steps);
+  const notes = [...dense];
+  if (notes.length < 2 || notes.filter((n) => n >= 0).length < 2) return;
 
   for (let i = notes.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [notes[i], notes[j]] = [notes[j], notes[i]];
   }
 
-  const next = [...pattern];
-  slots.forEach((step, i) => {
-    next[step] = notes[i];
-  });
-  pattern = next;
+  pattern = notes;
   if (document.getElementById('melody-grid')?.children.length) syncPatternToGrid();
   else renderGrid();
   onMelodyChange();
@@ -366,7 +355,7 @@ export function applyMelody({ steps: nextSteps, tempo: nextTempo, pattern: nextP
   const savedStep = playStep;
   steps = nextSteps;
   tempo = nextTempo;
-  pattern = [...nextPattern];
+  pattern = normalizePattern(nextPattern, nextSteps);
   if (wasPlaying && playStep >= steps) playStep = savedStep % steps;
   syncStepUi();
   syncTempoUi();
@@ -437,4 +426,9 @@ export function isMelodyPlaying() {
 
 export function toggleMelodyPlayback() {
   togglePlayback();
+}
+
+export function startMelodyPlayback() {
+  if (isMelodyEmpty()) return;
+  startPlayback();
 }

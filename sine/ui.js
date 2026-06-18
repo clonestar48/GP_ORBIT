@@ -4,6 +4,7 @@ import {
   getMelodyUrlParam,
   loadMelodyFromUrl,
   stopMelody,
+  startMelodyPlayback,
   isMelodyPlaying,
   toggleMelodyPlayback,
   applyMelody,
@@ -263,22 +264,27 @@ function updateArtifactCard() {
   steps.textContent = `${currentGeneration.steps} steps${rev}`;
 }
 
-function applyGenerated(song) {
+function applyGenerated(song, { autoPlay = false } = {}) {
+  const volume = readParams().volume;
   applyingGeneration = true;
   currentGeneration = song;
-  applyParams(song.params, { keepGeneration: true });
+  applyParams({ ...song.params, volume }, { keepGeneration: true });
   applyMelody({ steps: song.steps, tempo: song.tempo, pattern: song.pattern });
   applyingGeneration = false;
   updateArtifactCard();
   updateWorldSelection();
   syncUrl();
   stopSynthRepeat();
-  stopMelody();
+  if (autoPlay) startMelodyPlayback();
+  else stopMelody();
 }
 
 function generateSong() {
   const seed = randomSeed();
-  applyGenerated({ ...generateFromSeed(seed), revision: 0, intensity: mutationIntensity });
+  applyGenerated(
+    { ...generateFromSeed(seed), revision: 0, intensity: mutationIntensity },
+    { autoPlay: true },
+  );
 }
 
 function pulsePanel(el) {
@@ -320,7 +326,10 @@ function mutateCurrentSong() {
     steps: getMelodyState().steps,
   };
   const next = mutateSong(base, currentGeneration.seed, revision - 1, mutationIntensity);
-  applyGenerated({ ...next, seed: currentGeneration.seed, revision, intensity: mutationIntensity });
+  applyGenerated(
+    { ...next, seed: currentGeneration.seed, revision, intensity: mutationIntensity },
+    { autoPlay: true },
+  );
   pulsePanel(document.getElementById('melody-panel'));
 }
 
@@ -434,6 +443,18 @@ function updateReadout() {
 function doPlay() {
   unlock();
   play(readParams());
+}
+
+function isTextEntryTarget(el) {
+  if (!el || el === document.body) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA') return true;
+  if (tag === 'INPUT') {
+    const type = (el.type || 'text').toLowerCase();
+    return ['text', 'search', 'email', 'password', 'url', 'number', 'tel'].includes(type);
+  }
+  return false;
 }
 
 function togglePlay() {
@@ -938,6 +959,8 @@ function init() {
   document.getElementById('shuffle-btn').addEventListener('click', generateSong);
   document.getElementById('remix-btn').addEventListener('click', () => {
     remixPattern();
+    stopSynthRepeat();
+    startMelodyPlayback();
     pulsePanel(document.getElementById('melody-stage'));
   });
   document.getElementById('mutate-btn').addEventListener('click', mutateCurrentSong);
@@ -952,16 +975,12 @@ function init() {
   updateIntensityUi();
 
   document.addEventListener('keydown', (e) => {
-    if (
-      e.code === 'Space'
-      && e.target.tagName !== 'INPUT'
-      && e.target.tagName !== 'BUTTON'
-      && e.target.getAttribute('role') !== 'slider'
-    ) {
-      e.preventDefault();
-      togglePlay();
-    }
-  });
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    if (e.repeat || isTextEntryTarget(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    togglePlay();
+  }, true);
 
   const unlockOnce = () => {
     unlock();
