@@ -8,72 +8,89 @@
   <link rel="stylesheet" href="/sine/style.css">
 </head>
 <body>
-  <p class="page-title">SINELAB</p>
-
   <div class="toy-shell">
-    <article class="artifact-card" id="artifact-card" aria-live="polite">
-      <p class="artifact-card__label">Now playing</p>
-      <h1 class="artifact-card__title" id="artifact-title">—</h1>
-      <div class="artifact-card__body">
-        <dl class="artifact-card__meta">
-          <div class="artifact-card__row">
-            <dt>World</dt>
-            <dd id="artifact-world">—</dd>
-          </div>
-          <div class="artifact-card__row">
-            <dt>Seed</dt>
-            <dd id="artifact-seed">—</dd>
-          </div>
-          <div class="artifact-card__row">
-            <dt>Steps</dt>
-            <dd id="artifact-steps">—</dd>
-          </div>
-        </dl>
-        <dl class="artifact-card__meta artifact-card__meta--end">
-          <div class="artifact-card__row">
-            <dd id="readout" aria-live="polite">—</dd>
-          </div>
-        </dl>
-      </div>
-    </article>
+    <p class="page-title">SINELAB</p>
 
     <header class="sound-rack" aria-label="Sound controls">
       <section class="sound-module" id="sound-module" aria-label="Sound">
-        <div class="sound-module__head">
-          <details class="worlds-flyout" id="worlds-flyout">
-            <summary class="worlds-flyout__summary">Worlds</summary>
-            <div class="worlds-flyout__panel">
-              <div class="world-radar" id="world-radar" aria-label="Mission select"></div>
-            </div>
-          </details>
-          <p class="sound-module__world">
-            <span class="sound-module__world-label">World</span>
-            <span class="sound-module__world-name" id="sound-world-name">—</span>
-          </p>
-        </div>
-
-        <div class="macro-sliders" id="macro-sliders" aria-label="Sound macros"></div>
-
-        <details class="sound-advanced" id="sound-advanced">
-          <summary class="sound-advanced__summary">Advanced Sound</summary>
-          <div class="sound-advanced__body">
-            <section class="sound-advanced__section" aria-label="Tone details">
-              <h3 class="sound-advanced__section-title">Tone</h3>
-              <div class="rotary-grid rotary-grid--tone" id="knobs-core"></div>
-            </section>
-            <section class="sound-advanced__section" aria-label="Shape details">
-              <h3 class="sound-advanced__section-title">Shape</h3>
-              <div class="knobs knobs--compact" id="knobs-shape"></div>
-            </section>
+        <header class="now-playing" id="artifact-card" aria-live="polite">
+          <div class="now-playing__left">
+            <h1 class="artifact-card__title" id="artifact-title">—</h1>
+            <dl class="artifact-card__meta now-playing__meta">
+              <div class="artifact-card__row">
+                <dt>World</dt>
+                <dd id="artifact-world">—</dd>
+              </div>
+              <div class="artifact-card__row">
+                <dt>Seed</dt>
+                <dd id="artifact-seed">—</dd>
+              </div>
+              <div class="artifact-card__row">
+                <dt>Steps</dt>
+                <dd id="artifact-steps">—</dd>
+              </div>
+            </dl>
           </div>
-        </details>
+          <dl class="artifact-card__meta artifact-card__meta--end now-playing__readout">
+            <div class="artifact-card__row">
+              <dd id="readout" aria-live="polite">—</dd>
+            </div>
+          </dl>
+        </header>
+
+        <div class="sound-module__workspace">
+          <div class="sound-module__head">
+            <details class="worlds-flyout" id="worlds-flyout">
+              <summary class="worlds-flyout__summary">Worlds</summary>
+              <div class="worlds-flyout__panel">
+                <div class="world-radar" id="world-radar" aria-label="Mission select"></div>
+              </div>
+            </details>
+          </div>
+
+          <div class="sound-control-grid" id="sound-control-grid" aria-label="Sound controls"></div>
+
+          <div class="sound-utility-row" id="sound-utility-row" aria-label="Sound utilities"></div>
+
+          <div class="sound-module__mobile-controls">
+            <div class="macro-sliders" id="macro-sliders" aria-label="Sound macros"></div>
+
+            <details class="sound-advanced" id="sound-advanced">
+              <summary class="sound-advanced__summary">Advanced Sound</summary>
+              <div class="sound-advanced__body">
+                <section class="sound-advanced__section" aria-label="Tone details">
+                  <h3 class="sound-advanced__section-title">Tone</h3>
+                  <div class="rotary-grid rotary-grid--tone" id="knobs-core"></div>
+                </section>
+                <section class="sound-advanced__section" aria-label="Shape details">
+                  <h3 class="sound-advanced__section-title">Shape</h3>
+                  <div class="knobs knobs--compact" id="knobs-shape"></div>
+                </section>
+              </div>
+            </details>
+          </div>
+        </div>
       </section>
     </header>
 
-    <div class="workspace workspace--solo">
-      <aside class="panel panel--melody" id="melody-panel" aria-label="Melody toy">
-        <div class="melody-head">
-          <p class="panel__tag">Melody</p>
+    <div class="melody-workspace">
+      <aside class="panel panel--melody" id="melody-panel" aria-label="Melody controls">
+        <div class="melody-header-row">
+          <div class="melody-header-row__left">
+            <span class="melody-strip-label">Steps</span>
+            <div class="melody-steps" aria-label="Step count">
+              <div class="melody-steps__btns">
+                <button type="button" class="preset-btn melody-steps-btn" data-steps="8">8</button>
+                <button type="button" class="preset-btn melody-steps-btn" data-steps="12">12</button>
+                <button type="button" class="preset-btn melody-steps-btn is-selected" data-steps="16">16</button>
+                <button type="button" class="preset-btn melody-steps-btn" data-steps="24">24</button>
+                <button type="button" class="preset-btn melody-steps-btn" data-steps="32">32</button>
+              </div>
+            </div>
+          </div>
+          <div class="melody-header-row__tone" aria-label="Tone controls">
+            <div class="rotary-grid rotary-grid--header" id="knobs-core-header"></div>
+          </div>
           <div class="creator-bar">
             <button type="button" class="btn btn--ghost btn--small" id="remix-btn">Remix</button>
             <div class="mutate-group">
@@ -87,31 +104,25 @@
           </div>
         </div>
 
-        <div class="melody-controls">
-          <div class="melody-steps" aria-label="Step count">
-            <span class="melody-controls__label">Steps</span>
-            <div class="melody-steps__btns">
-              <button type="button" class="preset-btn melody-steps-btn" data-steps="8">8</button>
-              <button type="button" class="preset-btn melody-steps-btn" data-steps="12">12</button>
-              <button type="button" class="preset-btn melody-steps-btn is-selected" data-steps="16">16</button>
-              <button type="button" class="preset-btn melody-steps-btn" data-steps="24">24</button>
-              <button type="button" class="preset-btn melody-steps-btn" data-steps="32">32</button>
-            </div>
-          </div>
-          <label class="melody-tempo melody-tempo--melody">
-            <span class="melody-controls__label">Speed</span>
-            <span class="melody-tempo__val" id="melody-tempo-val">160 ms</span>
-            <input type="range" id="melody-tempo" min="80" max="400" step="10" value="160" aria-label="Milliseconds per step">
+        <div class="melody-tempo-slot" id="melody-tempo-slot">
+          <label class="melody-speed melody-tempo melody-tempo--melody sound-slider" id="melody-tempo-control">
+            <span class="sound-slider__head">
+              <span class="sound-slider__label melody-controls__label">Speed</span>
+              <span class="sound-slider__value melody-tempo__val" id="melody-tempo-val">160 ms</span>
+            </span>
+            <input type="range" class="sound-slider__input" id="melody-tempo" min="80" max="400" step="10" value="160" aria-label="Milliseconds per step">
           </label>
         </div>
+      </aside>
 
-        <div class="melody-stage">
-          <div class="melody-grid-wrap">
-            <div class="melody-grid__head" id="melody-step-head" aria-hidden="true"></div>
-            <div class="melody-grid" id="melody-grid"></div>
-          </div>
+      <section class="melody-stage" id="melody-stage" aria-label="Melody sequence">
+        <div class="melody-grid-wrap">
+          <div class="melody-grid__head" id="melody-step-head" aria-hidden="true"></div>
+          <div class="melody-grid" id="melody-grid"></div>
         </div>
+      </section>
 
+      <div class="melody-footer">
         <div class="actions melody-actions">
           <div class="transport" aria-label="Playback">
             <button type="button" class="btn btn--transport btn--play" id="melody-play-btn" aria-label="Play">▶</button>
@@ -124,7 +135,7 @@
         </div>
 
         <p class="hint toy-hint">Open Worlds · Shuffle for new · Remix shuffles your notes · space to play</p>
-      </aside>
+      </div>
     </div>
   </div>
 

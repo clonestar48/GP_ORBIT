@@ -451,6 +451,7 @@ function generateParams(rng, world) {
     filter: lerp(rng, p.filter),
     volume: lerp(rng, p.volume),
     gap: lerp(rng, p.gap),
+    punch: lerp(rng, p.punch || p.attack),
   };
 }
 
@@ -538,6 +539,7 @@ export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
     filter: mutateValue(rng, current.params.filter, 0, 1, paramChange),
     volume: mutateValue(rng, current.params.volume, 0, 1, paramChange),
     gap: mutateValue(rng, current.params.gap, 0, 1, paramChange),
+    punch: mutateValue(rng, current.params.punch ?? current.params.attack, 0, 1, paramChange),
   };
 
   const titleBits = TITLE_BITS[key] || TITLE_BITS.bubble;
