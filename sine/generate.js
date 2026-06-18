@@ -180,7 +180,39 @@ export const WORLDS = {
 /** @deprecated use WORLDS */
 export const FAMILIES = WORLDS;
 
-const PHRASE_STEPS = [8, 16, 24, 32];
+const PHRASE_STEPS = [8, 12, 16, 24, 32];
+
+/**
+ * Tile a pattern to target length and fill rests so every step has a note.
+ * @param {number[]} pattern
+ * @param {number} targetSteps
+ * @returns {number[]}
+ */
+export function normalizePattern(pattern, targetSteps) {
+  if (targetSteps <= 0) return [];
+  if (!pattern.length) return Array(targetSteps).fill(-1);
+
+  const tiled = new Array(targetSteps);
+  for (let i = 0; i < targetSteps; i++) {
+    tiled[i] = pattern[i % pattern.length];
+  }
+
+  const fallback = tiled.find((n) => n >= 0);
+  if (fallback === undefined) return tiled;
+
+  for (let i = 0; i < targetSteps; i++) {
+    if (tiled[i] >= 0) continue;
+    for (let off = 1; off < targetSteps; off++) {
+      const v = tiled[(i - off + targetSteps) % targetSteps];
+      if (v >= 0) {
+        tiled[i] = v;
+        break;
+      }
+    }
+    if (tiled[i] < 0) tiled[i] = fallback;
+  }
+  return tiled;
+}
 const MAJOR_PENT = [0, 2, 3, 5, 6, 7];
 const MINOR_PENT = [1, 3, 4, 5, 7];
 
@@ -449,7 +481,6 @@ function generateParams(rng, world) {
     wobble: lerp(rng, p.wobble),
     detune: lerp(rng, p.detune),
     filter: lerp(rng, p.filter),
-    volume: lerp(rng, p.volume),
     gap: lerp(rng, p.gap),
     punch: lerp(rng, p.punch || p.attack),
   };
@@ -481,7 +512,7 @@ function buildSong(seed, worldKey, rng) {
     title: generateTitle(rng, key),
     steps,
     tempo,
-    pattern: generateMelody(rng, world, steps),
+    pattern: normalizePattern(generateMelody(rng, world, steps), steps),
     params: generateParams(rng, world),
   };
 }
@@ -537,7 +568,7 @@ export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
     wobble: mutateValue(rng, current.params.wobble, 0, 1, paramChange),
     detune: mutateValue(rng, current.params.detune, 0, 1, paramChange),
     filter: mutateValue(rng, current.params.filter, 0, 1, paramChange),
-    volume: mutateValue(rng, current.params.volume, 0, 1, paramChange),
+    volume: current.params.volume,
     gap: mutateValue(rng, current.params.gap, 0, 1, paramChange),
     punch: mutateValue(rng, current.params.punch ?? current.params.attack, 0, 1, paramChange),
   };
@@ -555,7 +586,7 @@ export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
     title,
     steps,
     tempo: Math.round(mutateValue(rng, current.tempo, world.tempo[0], world.tempo[1], paramChange)),
-    pattern,
+    pattern: normalizePattern(pattern, steps),
     params,
     intensity,
   };
