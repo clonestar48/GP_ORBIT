@@ -164,7 +164,8 @@ function setRotaryValue(k, value) {
 let currentGeneration = null;
 let applyingGeneration = false;
 let applyingMacros = false;
-let mutationIntensity = 'medium';
+let mutationIntensity = 'wild';
+const DEFAULT_MUTATE_INTENSITY = 'wild';
 let soundBasePitch = DEFAULTS.pitch;
 
 function syncCustomArtifact() {
@@ -203,12 +204,6 @@ function clearGeneration() {
     return;
   }
   syncCustomArtifact();
-}
-
-function updateIntensityUi() {
-  document.querySelectorAll('.mutate-intensity-btn').forEach((btn) => {
-    btn.classList.toggle('is-selected', btn.dataset.intensity === mutationIntensity);
-  });
 }
 
 function applyWorldTheme(worldKey) {
@@ -856,7 +851,7 @@ function paramsToSearch(params) {
   if (currentGeneration?.seed != null) {
     const rv = currentGeneration.revision > 0 ? `&rv=${currentGeneration.revision}` : '';
     const world = currentGeneration.worldKey ? `&world=${currentGeneration.worldKey}` : '';
-    const mi = mutationIntensity !== 'medium' ? `&mi=${mutationIntensity}` : '';
+    const mi = mutationIntensity !== DEFAULT_MUTATE_INTENSITY ? `&mi=${mutationIntensity}` : '';
     return `seed=${currentGeneration.seed}${rv}${world}${mi}`;
   }
   const q = new URLSearchParams();
@@ -893,14 +888,23 @@ function syncUrl() {
 
 async function copyText(text, btnId, okLabel = 'Copied') {
   const btn = document.getElementById(btnId);
+  if (!btn) return;
+  const isIcon = btn.classList.contains('seed-copy-btn');
   const prev = btn.textContent;
   try {
     await navigator.clipboard.writeText(text);
-    btn.textContent = okLabel;
-    setTimeout(() => { btn.textContent = prev; }, 1400);
+    if (isIcon) {
+      btn.classList.add('is-copied');
+      setTimeout(() => btn.classList.remove('is-copied'), 1400);
+    } else {
+      btn.textContent = okLabel;
+      setTimeout(() => { btn.textContent = prev; }, 1400);
+    }
   } catch {
-    btn.textContent = 'Failed';
-    setTimeout(() => { btn.textContent = prev; }, 1400);
+    if (!isIcon) {
+      btn.textContent = 'Failed';
+      setTimeout(() => { btn.textContent = prev; }, 1400);
+    }
   }
 }
 
@@ -908,16 +912,16 @@ function seedSnippet() {
   if (!currentGeneration?.seed) return null;
   const rv = currentGeneration.revision > 0 ? `&rv=${currentGeneration.revision}` : '';
   const world = currentGeneration.worldKey ? `&world=${currentGeneration.worldKey}` : '';
-  const mi = mutationIntensity !== 'medium' ? `&mi=${mutationIntensity}` : '';
+  const mi = mutationIntensity !== DEFAULT_MUTATE_INTENSITY ? `&mi=${mutationIntensity}` : '';
   return `seed=${currentGeneration.seed}${rv}${world}${mi}`;
 }
 
-function copyShareLink() {
+function copyShareLink(fromBtnId = 'artifact-seed-copy') {
   const qs = paramsToSearch(readParams());
   const url = `${location.origin}${location.pathname}${qs ? `?${qs}` : ''}`;
   const seed = seedSnippet();
   const text = seed ? `${url}\n${seed}` : url;
-  copyText(text, 'melody-share-btn', 'Copied');
+  copyText(text, fromBtnId, 'Copied');
 }
 
 function stopSynthRepeat() {
@@ -975,19 +979,10 @@ function init() {
     }
   }
 
-  document.getElementById('melody-share-btn').addEventListener('click', copyShareLink);
+  document.getElementById('artifact-seed-copy').addEventListener('click', () => copyShareLink('artifact-seed-copy'));
   document.getElementById('shuffle-btn').addEventListener('click', generateSong);
   document.getElementById('remix-btn').addEventListener('click', remixCurrentSong);
   document.getElementById('mutate-btn').addEventListener('click', mutateCurrentSong);
-
-  document.querySelectorAll('.mutate-intensity-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      mutationIntensity = btn.dataset.intensity;
-      updateIntensityUi();
-      syncUrl();
-    });
-  });
-  updateIntensityUi();
 
   document.addEventListener('keydown', (e) => {
     if (e.code !== 'Space' && e.key !== ' ') return;

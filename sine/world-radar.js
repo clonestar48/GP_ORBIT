@@ -2,15 +2,17 @@
 
 const RADAR_CX = 50;
 const RADAR_CY = 50;
-const RADAR_RX = 38;
-const RADAR_RY = 30;
+const RADAR_RX = 41;
+const RADAR_RY = 18;
+/** Radar stage is 2:1 — scale Y so 8 nodes read as even clock hours. */
+const RADAR_Y_SCALE = 2;
 
-/** Even 45° spacing on the radar ellipse, starting at top (-90°). */
+/** Even 45° spacing on the radar, starting at top (-90°). */
 function radarPoint(deg) {
   const rad = (deg * Math.PI) / 180;
   return {
     x: Math.round((RADAR_CX + RADAR_RX * Math.cos(rad)) * 10) / 10,
-    y: Math.round((RADAR_CY + RADAR_RY * Math.sin(rad)) * 10) / 10,
+    y: Math.round((RADAR_CY + RADAR_RY * RADAR_Y_SCALE * Math.sin(rad)) * 10) / 10,
   };
 }
 

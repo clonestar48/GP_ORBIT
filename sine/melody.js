@@ -325,6 +325,19 @@ function triggerStep(step) {
   }
 }
 
+function syncTransportUi() {
+  const playBtn = document.getElementById('melody-play-btn');
+  const stopBtn = document.getElementById('melody-stop-btn');
+  const loopBtn = document.getElementById('melody-loop-btn');
+  if (!playBtn || !stopBtn || !loopBtn) return;
+
+  playBtn.classList.toggle('is-selected', playing);
+  playBtn.classList.toggle('is-playing', playing);
+  stopBtn.classList.toggle('is-selected', !playing);
+  loopBtn.classList.toggle('is-selected', loopMelody);
+  loopBtn.setAttribute('aria-pressed', loopMelody ? 'true' : 'false');
+}
+
 function stopPlayback() {
   playing = false;
   playStep = 0;
@@ -332,9 +345,9 @@ function stopPlayback() {
     clearTimeout(playTimer);
     playTimer = null;
   }
-  document.getElementById('melody-play-btn')?.classList.remove('is-playing');
   document.getElementById('melody-panel')?.classList.remove('is-playing');
   document.getElementById('melody-stage')?.classList.remove('is-playing');
+  syncTransportUi();
   updatePlayhead();
 }
 
@@ -359,9 +372,9 @@ function startPlayback() {
   stopPlayback();
   playing = true;
   playStep = 0;
-  document.getElementById('melody-play-btn')?.classList.add('is-playing');
   document.getElementById('melody-panel')?.classList.add('is-playing');
   document.getElementById('melody-stage')?.classList.add('is-playing');
+  syncTransportUi();
   scheduleStep();
 }
 
@@ -433,11 +446,7 @@ export function getLoopMelody() {
 
 export function setLoopMelody(on) {
   loopMelody = !!on;
-  const btn = document.getElementById('melody-loop-btn');
-  if (btn) {
-    btn.classList.toggle('is-selected', loopMelody);
-    btn.setAttribute('aria-pressed', loopMelody ? 'true' : 'false');
-  }
+  syncTransportUi();
 }
 
 export function applyMelody({ steps: nextSteps, tempo: nextTempo, pattern: nextPattern, sequencer: nextSequencer = null }) {
@@ -493,6 +502,7 @@ export function initMelody({ getParams, getWorld, onChange, onPlayStart }) {
 
   document.getElementById('melody-stop-btn').addEventListener('click', () => {
     stopPlayback();
+    setLoopMelody(false);
   });
 
   document.getElementById('melody-loop-btn').addEventListener('click', () => {
@@ -503,6 +513,7 @@ export function initMelody({ getParams, getWorld, onChange, onPlayStart }) {
 
   bindPaintGlobals();
   setLoopMelody(true);
+  syncTransportUi();
   syncStepUi();
   syncTempoUi();
   renderGrid();
