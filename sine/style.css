@@ -2359,10 +2359,9 @@ body {
   --melody-row-h: 1.97rem;
   --melody-head-gap: 0.4rem;
   width: 100%;
+  min-width: 0;
   margin-bottom: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--teal-rgb), 0.35) transparent;
+  overflow: hidden;
 }
 
 .melody-grid-wrap[data-density='high'] .melody-grid__step-num {
@@ -2375,6 +2374,8 @@ body {
   grid-template-columns: var(--melody-note-col) repeat(var(--melody-steps), minmax(0, 1fr));
   gap: var(--melody-gap);
   align-items: center;
+  width: 100%;
+  min-width: 0;
 }
 
 .melody-grid__head {
@@ -2389,6 +2390,8 @@ body {
   font-variant-numeric: tabular-nums;
   line-height: 1;
   min-height: 0.58rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .melody-grid__note {
@@ -2408,6 +2411,8 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: var(--melody-row-h);
   touch-action: none;
   user-select: none;
@@ -3214,6 +3219,7 @@ body {
   .melody-grid-wrap {
     --melody-row-h: 2.29rem;
     margin-bottom: 0;
+    overflow: hidden;
   }
 
   .actions.melody-actions {
