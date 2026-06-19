@@ -1924,18 +1924,34 @@ body {
   box-shadow: 0 0 14px var(--accent-glow-soft);
 }
 
-.btn--play {
-  padding-left: 0.18rem;
-}
-
 .btn--transport-circle {
   border-radius: 50%;
 }
 
 .transport-icon {
   display: block;
-  width: 1rem;
-  height: 1rem;
+  width: 42%;
+  height: 42%;
+}
+
+.transport-icon--play {
+  width: 38%;
+  height: 38%;
+}
+
+.transport-icon--stop {
+  width: 34%;
+  height: 34%;
+}
+
+.transport-icon--loop {
+  width: 48%;
+  height: 48%;
+}
+
+.transport-icon--clear {
+  width: 46%;
+  height: 46%;
 }
 
 .btn--transport-circle.btn--play {
@@ -1943,27 +1959,25 @@ body {
   height: 3.2rem;
   color: var(--accent-soft);
   background: transparent;
-  border: 1px solid var(--accent-border-mid);
-  font-size: 1.1rem;
+  border: 0;
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-mid);
 }
 
 .btn--transport-circle.btn--play:hover {
   color: var(--accent-deep);
-  border-color: var(--accent-border-strong);
   background: color-mix(in srgb, var(--accent-glow-soft) 22%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-strong);
 }
 
 .btn--transport-circle.btn--play.is-selected,
 .btn--transport-circle.btn--play.is-selected:hover {
   color: var(--bg-deep);
   background: linear-gradient(180deg, var(--accent-soft) 0%, var(--accent-deep) 100%);
-  border: 1px solid var(--accent-border-mid);
-  box-shadow: 0 0 16px var(--accent-glow-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-mid), 0 0 16px var(--accent-glow-soft);
 }
 
 .btn--transport-circle.btn--play.is-selected:hover {
-  border-color: var(--accent-border-strong);
-  box-shadow: 0 0 20px var(--accent-glow);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-strong), 0 0 20px var(--accent-glow);
 }
 
 .btn--transport-circle.btn--stop {
@@ -1971,78 +1985,68 @@ body {
   height: 2.9rem;
   color: var(--accent-soft);
   background: transparent;
-  border: 1px solid var(--accent-border-mid);
-  font-size: 0.9rem;
+  border: 0;
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-mid);
 }
 
 .btn--transport-circle.btn--stop:hover {
   color: var(--accent-deep);
-  border-color: var(--accent-border-strong);
   background: color-mix(in srgb, var(--accent-glow-soft) 22%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-strong);
 }
 
 .btn--transport-circle.btn--stop.is-selected,
 .btn--transport-circle.btn--stop.is-selected:hover {
   color: var(--bg-deep);
   background: linear-gradient(180deg, var(--accent-soft) 0%, var(--accent-deep) 100%);
-  border: 1px solid var(--accent-border-mid);
-  box-shadow: 0 0 16px var(--accent-glow-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-mid), 0 0 16px var(--accent-glow-soft);
 }
 
 .btn--transport-circle.btn--stop.is-selected:hover {
-  border-color: var(--accent-border-strong);
-  box-shadow: 0 0 20px var(--accent-glow);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-strong), 0 0 20px var(--accent-glow);
 }
 
 .btn--transport-circle.btn--loop {
   width: 2.9rem;
   height: 2.9rem;
   padding: 0;
-  font-size: 0.5rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  line-height: 1;
   color: var(--accent-soft);
   background: transparent;
-  border: 1px solid var(--accent-border-mid);
+  border: 0;
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-mid);
 }
 
 .btn--transport-circle.btn--loop:hover {
   color: var(--accent-deep);
-  border-color: var(--accent-border-strong);
   background: color-mix(in srgb, var(--accent-glow-soft) 22%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-strong);
 }
 
 .btn--transport-circle.btn--loop.is-selected,
 .btn--transport-circle.btn--loop.is-selected:hover {
   color: var(--bg-deep);
   background: linear-gradient(180deg, var(--accent-soft) 0%, var(--accent-deep) 100%);
-  border: 1px solid var(--accent-border-mid);
-  box-shadow: 0 0 16px var(--accent-glow-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-mid), 0 0 16px var(--accent-glow-soft);
 }
 
 .btn--transport-circle.btn--loop.is-selected:hover {
-  border-color: var(--accent-border-strong);
-  box-shadow: 0 0 20px var(--accent-glow);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-strong), 0 0 20px var(--accent-glow);
 }
 
 .btn--transport-circle.btn--clear {
   width: 2.9rem;
   height: 2.9rem;
+  margin-left: 0.3rem;
   color: var(--accent-soft);
   background: transparent;
-  border: 1px solid var(--accent-border-mid);
-}
-
-.btn--transport-circle.btn--clear .transport-icon--clear {
-  width: 1.22rem;
-  height: 1.22rem;
+  border: 0;
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-mid);
 }
 
 .btn--transport-circle.btn--clear:hover {
   color: var(--accent-deep);
-  border-color: var(--accent-border-strong);
   background: color-mix(in srgb, var(--accent-glow-soft) 22%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-strong);
 }
 
 .btn--action-card {
@@ -3237,17 +3241,12 @@ body {
   .melody-actions .btn--transport-circle.btn--loop {
     width: calc(3.1rem * var(--transport-btn-scale));
     height: calc(3.1rem * var(--transport-btn-scale));
-    font-size: calc(0.52rem * var(--transport-btn-scale));
   }
 
   .melody-actions .btn--transport-circle.btn--clear {
     width: calc(3.1rem * var(--transport-btn-scale));
     height: calc(3.1rem * var(--transport-btn-scale));
-  }
-
-  .melody-actions .btn--transport-circle.btn--clear .transport-icon--clear {
-    width: calc(1.28rem * var(--transport-btn-scale));
-    height: calc(1.28rem * var(--transport-btn-scale));
+    margin-left: calc(var(--transport-btn-gap) * 0.55);
   }
 
   .melody-actions .btn--action-card {
