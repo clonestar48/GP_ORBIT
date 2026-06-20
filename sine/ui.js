@@ -22,59 +22,55 @@ import {
   randomSeed,
   replayFromSeed,
 } from './generate.js';
-import { renderWorldRadar } from './world-radar.js';
+// renderWorldRadar stashed — radar visualization preserved in world-radar.js for future use
+import { RADAR_NODES } from './world-radar.js';
 
 const DEFAULTS = {
-  pitch: 880,
-  tone: 0.3,
-  decay: 0.2,
-  crunch: 0.3,
-  noise: 0.3,
-  attack: 0,
-  bend: 0.5,
-  wobble: 0,
-  detune: 0,
-  filter: 0,
-  volume: 0.55,
-  gap: 0.05,
+  pitch: 880, tone: 0.3, decay: 0.2, crunch: 0.3,
+  attack: 0, room: 0.5, echo: 0.5, filter: 0, gap: 0.05, bend: 0.5, volume: 0.55,
   punch: 0.35,
+  // internal defaults — not shown in UI
+  noise: 0.3, wobble: 0, detune: 0,
 };
 
 const URL_KEYS = {
-  pitch: 'p', tone: 't', decay: 'd', crunch: 'c', noise: 'n',
-  attack: 'a', bend: 'b', wobble: 'w', detune: 'dt', filter: 'f',
-  volume: 'v', gap: 'g', punch: 'pu',
+  pitch: 'p', tone: 't', decay: 'd', crunch: 'c',
+  attack: 'a', room: 'ro', echo: 'ec', filter: 'f', gap: 'g', bend: 'b', volume: 'v',
+  punch: 'pu',
+  noise: 'n', wobble: 'w', detune: 'dt',
 };
 
 const CORE_KNOBS = [
-  { id: 'pitch', label: 'Pitch', min: 80, max: 2400, step: 1, fmt: (v) => `${Math.round(v)} Hz` },
-  { id: 'tone', label: 'Tone', min: 0, max: 1, step: 0.01, fmt: (v) => waveLabel(v) },
-  { id: 'decay', label: 'Decay', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(30 + v * 670)} ms` },
-  { id: 'crunch', label: 'Crunch', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
-  { id: 'noise', label: 'Noise', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
+  { id: 'pitch',  label: 'Pitch',  min: 80, max: 2400, step: 1,    fmt: (v) => `${Math.round(v)} Hz` },
+  { id: 'tone',   label: 'Tone',   min: 0,  max: 1,    step: 0.01, fmt: (v) => waveLabel(v) },
+  { id: 'decay',  label: 'Decay',  min: 0,  max: 1,    step: 0.01, fmt: (v) => `${Math.round(30 + v * 670)} ms` },
+  { id: 'crunch', label: 'Crunch', min: 0,  max: 1,    step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
 ];
 
 const SHAPE_KNOBS = [
   { id: 'attack', label: 'Attack', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 180)} ms` },
-  { id: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
+  { id: 'room',   label: 'Room',   min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
+  { id: 'echo',   label: 'Echo',   min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
   { id: 'filter', label: 'Filter', min: 0, max: 1, step: 0.01, fmt: (v) => (v < 0.02 ? 'open' : `${Math.round(v * 100)}%`) },
-  { id: 'gap', label: 'Gap', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 600)} ms` },
-  { id: 'bend', label: 'Bend', min: 0, max: 1, step: 0.01, fmt: bendLabel },
-  { id: 'detune', label: 'Detune', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 40)}¢` },
+  { id: 'gap',    label: 'Gap',    min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 600)} ms` },
+  { id: 'bend',   label: 'Bend',   min: 0, max: 1, step: 0.01, fmt: bendLabel },
   { id: 'volume', label: 'Volume', min: 0, max: 1, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%` },
 ];
 
 const PUNCH_KNOB = {
-  id: 'punch',
-  label: 'Punch',
-  min: 0,
-  max: 1,
-  step: 0.01,
+  id: 'punch', label: 'Punch', min: 0, max: 1, step: 0.01,
   fmt: (v) => `${Math.round(v * 100)}%`,
 };
 
+// Removed from visible UI — synth still reads these at their default values.
+const HIDDEN_KNOBS = [
+  { id: 'noise',  min: 0, max: 1, step: 0.01 },
+  { id: 'wobble', min: 0, max: 1, step: 0.01 },
+  { id: 'detune', min: 0, max: 1, step: 0.01 },
+];
+
 const ALL_KNOBS = [...CORE_KNOBS, ...SHAPE_KNOBS];
-const SOUND_PARAMS = [...ALL_KNOBS, PUNCH_KNOB];
+const SOUND_PARAMS = [...ALL_KNOBS, PUNCH_KNOB, ...HIDDEN_KNOBS];
 
 const MACROS = [
   { id: 'brightness', label: 'Brightness' },
@@ -89,7 +85,7 @@ const DESKTOP_LAYOUT = window.matchMedia('(min-width: 1101px)');
 
 const DESKTOP_SLIDER_ROWS = [
   ['brightness', 'texture', 'energy', 'space', 'attack'],
-  ['wobble', 'filter', 'gap', 'bend', 'punch'],
+  ['room', 'echo', 'filter', 'gap', 'bend'],
 ];
 
 const DETUNE_KNOB = SHAPE_KNOBS.find((k) => k.id === 'detune');
@@ -196,6 +192,33 @@ function syncCustomArtifact() {
   updateWorldSelection();
 }
 
+/**
+ * Like syncCustomArtifact but preserves the current world.
+ * Used for structural melody edits (step count, pattern, tempo) that should
+ * not count as "drifting" — only knob changes can push you into Custom.
+ */
+function syncMelodyEdit() {
+  const melody = getMelodyState();
+  if (isMelodyEmpty()) {
+    currentGeneration = null;
+    updateArtifactCard();
+    updateWorldSelection();
+    return;
+  }
+  if (!currentGeneration) {
+    syncCustomArtifact();
+    return;
+  }
+  currentGeneration = {
+    ...currentGeneration,
+    steps: melody.steps,
+    tempo: melody.tempo,
+    pattern: [...melody.pattern],
+    sequencer: null,
+  };
+  updateArtifactCard();
+}
+
 function clearGeneration() {
   if (isMelodyEmpty()) {
     currentGeneration = null;
@@ -297,14 +320,57 @@ function generateWorldSong(worldKey) {
   pulsePanel(document.getElementById('sound-module'));
 }
 
+let _worldsFlyoutTimer = null;
+
+function closeFlyout() {
+  const flyout = document.getElementById('worlds-flyout');
+  if (flyout) flyout.removeAttribute('open');
+  clearTimeout(_worldsFlyoutTimer);
+  _worldsFlyoutTimer = null;
+}
+
+function resetFlyoutTimer() {
+  clearTimeout(_worldsFlyoutTimer);
+  _worldsFlyoutTimer = setTimeout(closeFlyout, 5000);
+}
+
 function renderWorldPresets() {
-  renderWorldRadar(document.getElementById('world-radar'), {
-    onSelect: (worldKey) => {
-      if (!WORLDS[worldKey]) return;
-      generateWorldSong(worldKey);
-      document.getElementById('worlds-flyout')?.removeAttribute('open');
-    },
+  const list   = document.getElementById('worlds-list');
+  const flyout = document.getElementById('worlds-flyout');
+  if (!list) return;
+  list.innerHTML = '';
+  RADAR_NODES.forEach(({ key, label }) => {
+    if (!WORLDS[key]) return;
+    const li  = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'world-node';
+    btn.dataset.world = key;
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      generateWorldSong(key);
+      closeFlyout();
+    });
+    li.appendChild(btn);
+    list.appendChild(li);
   });
+
+  // Start inactivity timer when dropdown opens; reset on hover; stop on close
+  if (flyout) {
+    flyout.addEventListener('toggle', () => {
+      if (flyout.open) resetFlyoutTimer();
+      else { clearTimeout(_worldsFlyoutTimer); _worldsFlyoutTimer = null; }
+    });
+    flyout.addEventListener('mouseenter', () => { if (flyout.open) clearTimeout(_worldsFlyoutTimer); });
+    flyout.addEventListener('mouseleave', () => { if (flyout.open) resetFlyoutTimer(); });
+  }
+
+  // Click outside closes the flyout
+  document.addEventListener('click', (e) => {
+    const f = document.getElementById('worlds-flyout');
+    if (f && f.open && !f.contains(e.target)) closeFlyout();
+  }, { capture: true });
+
   updateWorldSelection();
 }
 
@@ -358,8 +424,6 @@ function macrosFromParams(params) {
     )),
     texture: clamp01(avg(
       params.crunch / 0.9,
-      params.noise / 0.8,
-      params.detune / 0.5,
     )),
     energy: clamp01(avg(
       params.attack / 0.7,
@@ -367,10 +431,11 @@ function macrosFromParams(params) {
       (params.punch ?? DEFAULTS.punch) / 0.7,
       (params.bend - 0.42) / 0.45 + 0.5,
     )),
+    // Space now controls acoustic environment: reverb (room), delay (echo), note gap
     space: clamp01(avg(
-      params.wobble / 0.75,
+      (params.room  ?? DEFAULTS.room),
+      (params.echo  ?? DEFAULTS.echo),
       params.gap / 0.5,
-      (params.decay - 0.08) / 0.82,
     )),
   };
 }
@@ -382,20 +447,18 @@ function paramsFromMacros(macros) {
   const s = clamp01(macros.space ?? MACRO_DEFAULT);
   const base = soundBasePitch || DEFAULTS.pitch;
   const energyDecay = 0.06 + (1 - e) * 0.42;
-  const spaceDecay = 0.08 + s * 0.82;
 
   return {
     filter: clamp01((1 - b) * 0.65),
-    tone: clamp01(b * 0.92),
-    pitch: Math.max(80, Math.min(2400, base * (0.9 + b * 0.18))),
+    tone:   clamp01(b * 0.92),
+    pitch:  Math.max(80, Math.min(2400, base * (0.9 + b * 0.18))),
     crunch: clamp01(t * 0.9),
-    noise: clamp01(t * 0.8),
-    detune: clamp01(t * 0.5),
     attack: clamp01(e * 0.7),
-    decay: clamp01(energyDecay * (1 - s * 0.35) + spaceDecay * (s * 0.5 + 0.15)),
-    bend: clamp01(0.42 + (e - 0.5) * 0.45),
-    wobble: clamp01(s * 0.75),
-    gap: clamp01(s * 0.5),
+    decay:  clamp01(energyDecay),
+    bend:   clamp01(0.42 + (e - 0.5) * 0.45),
+    room:   clamp01(s),
+    echo:   clamp01(s * 0.85),
+    gap:    clamp01(s * 0.5),
   };
 }
 
@@ -695,6 +758,7 @@ function buildSoundControls() {
     buildRotaryKnobs(CORE_KNOBS, document.getElementById('knobs-core'));
     buildSliders(SHAPE_KNOBS, document.getElementById('knobs-shape'));
     ensureHiddenKnob(PUNCH_KNOB, document.getElementById('sound-module'));
+    for (const k of HIDDEN_KNOBS) ensureHiddenKnob(k, document.getElementById('sound-module'));
   }
 
   applyParams(params, { keepGeneration: true });
@@ -947,7 +1011,7 @@ function init() {
     getParams: readParams,
     getWorld: () => currentGeneration?.worldKey ?? null,
     onChange: () => {
-      if (!applyingGeneration) clearGeneration();
+      if (!applyingGeneration) syncMelodyEdit();
       syncUrl();
     },
     onPlayStart: stopSynthRepeat,
