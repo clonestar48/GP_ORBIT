@@ -24,7 +24,12 @@ export const RADAR_NODES = [
   { key: 'arcade', label: 'Arcade', ...radarPoint(90) },
   { key: 'desert', label: 'Desert', ...radarPoint(135) },
   { key: 'beach', label: 'Beach', ...radarPoint(180) },
-  { key: 'ice-cave', label: 'Ice Cave', ...radarPoint(-135) },
+  // { key: 'ice-cave', label: 'Ice Cave', ...radarPoint(-135) },  // stashed — needs rework
+  // { key: 'neon', label: 'Neon', ...radarPoint(-67) },           // stashed — needs rework
+  // { key: 'music-box', label: 'Music Box', ...radarPoint(22) },  // stashed — needs rework
+  { key: 'western', label: 'Western', ...radarPoint(112) },
+  { key: 'forest', label: 'Forest', ...radarPoint(157) },
+  { key: 'medieval', label: 'Medieval', ...radarPoint(-22) },
 ];
 
 /**

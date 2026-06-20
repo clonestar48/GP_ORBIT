@@ -1,0 +1,73 @@
+/* Footer aux icons (Globe + Share) — stashed 2026-06-19
+   Restore: merge blocks back into sine/style.css */
+
+/* --- base --- */
+
+.melody-actions__aux {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex: 0 0 auto;
+}
+
+.btn--transport-circle.btn--globe,
+.btn--transport-circle.btn--share {
+  box-shadow: none;
+  background: transparent;
+}
+
+.btn--transport-circle.btn--globe .transport-icon--globe,
+.btn--transport-circle.btn--share .transport-icon--share {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.btn--transport-circle.btn--transport-mini {
+  width: calc(2.25rem * 1.1 * 1.062);
+  height: calc(2.25rem * 1.1 * 1.062);
+  color: var(--accent-soft);
+  background: transparent;
+  border: 0;
+  box-shadow: inset 0 0 0 1.5px var(--accent-border-soft);
+  opacity: 0.88;
+  cursor: pointer;
+  transition: color 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
+}
+
+.btn--transport-circle.btn--transport-mini.btn--globe,
+.btn--transport-circle.btn--transport-mini.btn--share {
+  box-shadow: none;
+}
+
+.btn--transport-circle.btn--transport-mini.btn--globe:hover,
+.btn--transport-circle.btn--transport-mini.btn--share:hover,
+.btn--transport-circle.btn--transport-mini.btn--globe:focus-visible,
+.btn--transport-circle.btn--transport-mini.btn--share:focus-visible,
+.btn.btn--transport-circle.btn--transport-mini.btn--globe:hover,
+.btn.btn--transport-circle.btn--transport-mini.btn--share:hover,
+.btn.btn--transport-circle.btn--transport-mini.btn--globe:focus-visible,
+.btn.btn--transport-circle.btn--transport-mini.btn--share:focus-visible {
+  color: var(--accent-deep);
+  background: transparent;
+  opacity: 1;
+  filter: drop-shadow(0 0 7px var(--accent-glow-soft));
+}
+
+/* --- desktop (min-width: 1101px) --- */
+
+@media (min-width: 1101px) {
+  .melody-actions__aux {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+    align-self: start;
+    gap: 0.5rem;
+    z-index: 1;
+  }
+
+  .melody-actions .btn--transport-circle.btn--transport-mini {
+    width: calc(var(--step-btn-size) * 1.062);
+    height: calc(var(--step-btn-size) * 1.062);
+  }
+}

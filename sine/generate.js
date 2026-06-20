@@ -65,8 +65,8 @@ export const WORLDS = {
     noteDensity: 0.52,
     mutateSpread: 0.82,
     params: {
-      pitch: [110, 360], tone: [0.08, 0.38], decay: [0.42, 0.78], crunch: [0.12, 0.35],
-      noise: [0.2, 0.42], attack: [0.06, 0.2], bend: [0.28, 0.45], wobble: [0.08, 0.28],
+      pitch: [110, 360], tone: [0.08, 0.38], decay: [0.42, 0.78], crunch: [0.08, 0.22],
+      noise: [0.14, 0.34], attack: [0.06, 0.2], bend: [0.28, 0.45], wobble: [0.08, 0.28],
       detune: [0.04, 0.16], filter: [0.4, 0.75], volume: [0.34, 0.5], gap: [0.14, 0.3],
     },
     tempo: [215, 295],
@@ -159,6 +159,96 @@ export const WORLDS = {
     leapChance: 0.14,
     homeRow: 2,
   },
+  neon: {
+    label: 'Neon',
+    mood: 'Beverly Hills Cop groove',
+    compose: 'ascend',         // composeRetrowave — motif-based, loops cleanly
+    mode: 'minor',             // Axel F is in F minor — dark and driving
+    noteDensity: 0.65,
+    mutateSpread: 0.75,
+    params: {
+      pitch: [195, 440],       // D3–A4: mid register, not alarm territory
+      tone: [0.04, 0.14],      // square-wave territory
+      decay: [0.28, 0.48], crunch: [0, 0.03],
+      noise: [0, 0.01], attack: [0.03, 0.09], bend: [0.04, 0.14], wobble: [0.01, 0.06],
+      detune: [0.04, 0.10], filter: [0.16, 0.36], volume: [0.44, 0.58], gap: [0.08, 0.20],
+    },
+    tempo: [108, 120],         // 125–138 BPM — Axel F groove
+    restChance: 0.24,          // breathing room in the groove
+    leapChance: 0.18,
+    homeRow: 2,
+  },
+  'music-box': {
+    label: 'Music Box',
+    mood: 'Clockwork lullaby',
+    compose: 'musicbox',
+    mode: 'major',
+    noteDensity: 0.70,
+    mutateSpread: 0.72,
+    params: {
+      pitch: [1280, 2200], tone: [0, 0.14], decay: [0.22, 0.42], crunch: [0, 0.06],
+      noise: [0, 0.02], attack: [0, 0.03], bend: [0.78, 0.92], wobble: [0, 0.06],
+      detune: [0.10, 0.24], filter: [0, 0.06], volume: [0.40, 0.54], gap: [0.03, 0.08],
+    },
+    tempo: [185, 245],
+    restChance: 0.22,
+    leapChance: 0.05,
+    homeRow: 1,
+  },
+  western: {
+    label: 'Western',
+    mood: 'Dusty trail',
+    compose: 'hook',
+    mode: 'major',
+    noteDensity: 0.54,
+    mutateSpread: 0.95,
+    params: {
+      // Pitch: 160–400 Hz — real banjo register (open G3–G4 range).
+      // Upper end was the buzz source: 500+ Hz K-S plucks sound insect-like.
+      pitch: [160, 400],
+      tone: [0.04, 0.18], decay: [0.04, 0.10], crunch: [0, 0.06],
+      noise: [0, 0.02], attack: [0, 0.01], bend: [0.52, 0.66], wobble: [0, 0.02],
+      detune: [0.02, 0.10], filter: [0, 0.02], volume: [0.52, 0.66], gap: [0.06, 0.16],
+    },
+    tempo: [190, 260],
+    restChance: 0.30,
+    leapChance: 0.14,
+    homeRow: 4,
+  },
+  forest: {
+    label: 'Forest',
+    mood: 'Dappled light',
+    compose: 'wander',
+    mode: 'major',
+    noteDensity: 0.55,
+    mutateSpread: 0.88,
+    params: {
+      pitch: [260, 680], tone: [0, 0.22], decay: [0.38, 0.68], crunch: [0, 0.08],
+      noise: [0.04, 0.12], attack: [0.08, 0.24], bend: [0.44, 0.58], wobble: [0.04, 0.18],
+      detune: [0.06, 0.18], filter: [0.08, 0.28], volume: [0.38, 0.52], gap: [0.12, 0.28],
+    },
+    tempo: [198, 268],
+    restChance: 0.26,
+    leapChance: 0.10,
+    homeRow: 4,
+  },
+  medieval: {
+    label: 'Medieval',
+    mood: 'Court and cobblestone',
+    compose: 'crystal',
+    mode: 'minor',
+    noteDensity: 0.72,
+    mutateSpread: 0.85,
+    params: {
+      pitch: [420, 980], tone: [0.58, 0.88], decay: [0.06, 0.18], crunch: [0, 0.04],
+      noise: [0, 0.01], attack: [0, 0.02], bend: [0.54, 0.68], wobble: [0, 0.04],
+      detune: [0.08, 0.22], filter: [0.04, 0.18], volume: [0.44, 0.58], gap: [0.04, 0.12],
+    },
+    tempo: [148, 198],
+    restChance: 0.14,
+    leapChance: 0.24,
+    homeRow: 3,
+  },
   /** @deprecated use arcade — kept for shared URLs */
   disco: {
     label: 'Arcade',
@@ -185,8 +275,12 @@ export const FAMILIES = WORLDS;
 const PHRASE_STEPS = [8, 12, 16, 24, 32];
 
 const STEP_PREF = {
-  arcade: [8, 8, 12, 12, 16],
+  arcade:   [8, 8, 12, 12, 16],
   speedway: [16, 24, 24, 32],
+  neon:       [16, 24, 32, 32],
+  'music-box': [16, 16, 24, 24],
+  western:    [8, 12, 16, 16],   // tight, punchy — short country phrases
+  medieval:   [12, 16, 16, 24],
 };
 
 /**
@@ -245,7 +339,9 @@ const COMPOSE_STYLES = {
   wave: { progression: [0, 2, 4, 3], chordBias: 0.24 },
   sparse: { progression: [0, 0, 4, 0], chordBias: 0.2 },
   crystal: { progression: [0, 3, 0, 2], chordBias: 0.24 },
-  race: { progression: [0, 3, 0, 3], chordBias: 0.26 },
+  race:   { progression: [0, 3, 0, 3], chordBias: 0.26 },
+  ascend: { progression: [0, 4, 2, 3], chordBias: 0.30 }, // I–V–III–IV: textbook 80s chord run
+  musicbox: { progression: [0, 0, 4, 0], chordBias: 0.18 }, // simple lullaby — home chord, brief visit to IV
 };
 
 function compositionFor(world) {
@@ -383,7 +479,9 @@ const GROOVE_PREFS = {
   wave: { restFill: 0.08, beatWeight: [0.88, 0.48, 0.82, 0.42] },
   sparse: { restFill: 0.03, beatWeight: [0.95, 0.22, 0.28, 0.18] },
   crystal: { restFill: 0.14, beatWeight: [0.94, 0.48, 0.92, 0.44] },
-  race: { restFill: 0.32, beatWeight: [1, 0.9, 0.86, 0.88] },
+  race:   { restFill: 0.32, beatWeight: [1, 0.9, 0.86, 0.88] },
+  ascend: { restFill: 0.28, beatWeight: [0.92, 0.44, 0.88, 0.40] }, // downbeat-heavy, lots of space
+  musicbox: { restFill: 0.0, beatWeight: [1, 1, 1, 1] }, // motif has fixed rests already — don't add more
 };
 
 function neighborMelodyNote(pattern, index) {
@@ -497,6 +595,18 @@ function applyHookStep(rng, world, pattern) {
     case 'sparse': {
       out[hookAt] = anchor;
       if (hookAt + 1 < steps) out[hookAt + 1] = anchor;
+      break;
+    }
+    case 'ascend': {
+      // Retrowave hook: one step up from anchor, then resolve cleanly to home
+      out[hookAt] = stepInScale(rng, scale, anchor, 1);
+      if (hookAt + 1 < steps) out[hookAt + 1] = world.homeRow;
+      break;
+    }
+    case 'musicbox': {
+      // Lullaby landing: step down to home, hold the tonic
+      out[hookAt] = stepInScale(rng, scale, anchor, -1);
+      if (hookAt + 1 < steps) out[hookAt + 1] = world.homeRow;
       break;
     }
     default:
@@ -647,6 +757,10 @@ function echoRateForWorld(worldKey) {
     'space-age': 0.1,
     beach: 0.12,
     dungeon: 0.05,
+    'music-box': 0.0,   // no echo — tines ring once and stop
+    western:     0.04,  // nearly dry — a distant creek echo, not a hall reverb
+    forest:      0.10,  // gentle natural echo
+    medieval:    0.18,  // light stone hall echo
   };
   return rates[key] ?? 0.16;
 }
@@ -664,12 +778,23 @@ function addEchoEvents(rng, worldKey, melody, steps) {
     const target = i + offset;
     if (target >= steps) continue;
 
-    const isDesert = worldKey === 'desert';
+    const isDesert    = worldKey === 'desert';
+    const isIceCave   = worldKey === 'ice-cave';
+    const isSpeedway  = worldKey === 'speedway';
+    const isMusicBox  = worldKey === 'music-box';
     events[target].push({
       note: melody[i],
-      vol: isDesert ? 0.22 + rng() * 0.08 : 0.36 + rng() * 0.16,
-      decay: isDesert ? 0.28 + rng() * 0.12 : 0.42 + rng() * 0.22,
-      octave: 0,
+      vol:    isDesert    ? 0.22 + rng() * 0.08
+            : isIceCave   ? 0.28 + rng() * 0.10   // slightly quieter — high-register ping
+            : isSpeedway  ? 0.20 + rng() * 0.08   // very quiet — motion and distance
+            : isMusicBox  ? 0.18 + rng() * 0.06   // faint box resonance — one soft repeat
+            :               0.36 + rng() * 0.16,
+      decay:  isDesert    ? 0.28 + rng() * 0.12
+            : isIceCave   ? 0.30 + rng() * 0.12   // shorter — snappy crystal reflection
+            : isSpeedway  ? 0.16 + rng() * 0.08   // tight — blur of motion, not a tail
+            : isMusicBox  ? 0.22 + rng() * 0.10   // short wooden-box tail
+            :               0.42 + rng() * 0.22,
+      octave: isIceCave ? (rng() < 0.62 ? 1 : 0) : 0,
       lane: 'echo',
     });
   }
@@ -686,6 +811,7 @@ function harmonyCapForWorld(worldKey, steps) {
     'ice-cave': 0.11,
     bubble: 0.05,
     'space-age': 0.07,
+    'music-box': 0.02,
   };
   return Math.max(0, Math.floor(steps * (ratios[key] ?? 0.09)));
 }
@@ -741,30 +867,36 @@ function generateArcadeBass(rng, world, scale, comp, melody, steps, bass, maxCou
 function generateSpeedwayBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
   const placed = { count: 0 };
   placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
-  for (let i = 0; i < steps && placed.count < maxCount; i += 1) {
+  // Mechanical drivetrain cycle: root, root, fifth, root — repeating 4-step engine pattern.
+  const cycle = [0, 0, 2, 0];
+  for (let i = 0; i < steps && placed.count < maxCount; i += 2) {
     if (bass[i] >= 0) continue;
-    const root = scaleDegreeRoot(scale, comp, i);
-    const note = i % 2 === 0 ? root : transposeScaleSteps(root, scale, 2);
-    placeBassNote(bass, i, note, placed, maxCount);
+    const root  = scaleDegreeRoot(scale, comp, i);
+    const shift = cycle[Math.floor(i / 2) % cycle.length];
+    placeBassNote(bass, i, transposeScaleSteps(root, scale, shift), placed, maxCount);
   }
 }
 
 function generateDungeonBass(rng, world, scale, comp, melody, steps, bass, maxCount, meta) {
   const placed = { count: 0 };
   const barLen = comp.barLen;
+
+  // Phrase-boundary anchor — one deep note at the very start
   placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
 
+  // Bar-boundary hits with a 55% skip — most bars get no bass hit at all.
+  // No decayMap override — use the world's natural short envelope so notes
+  // don't ring into each other and create a continuous rumble.
   for (let i = barLen; i < steps && placed.count < maxCount; i += barLen) {
-    if (bass[i] >= 0) continue;
-    const root = scaleDegreeRoot(scale, comp, i);
+    if (bass[i] >= 0 || rng() < 0.55) continue;
+    const root  = scaleDegreeRoot(scale, comp, i);
     const moved = transposeScaleSteps(root, scale, rng() < 0.55 ? 0 : -1);
-    if (placeBassNote(bass, i, moved, placed, maxCount)) {
-      meta.decayMap[i] = 1.45 + rng() * 0.35;
-    }
+    placeBassNote(bass, i, moved, placed, maxCount);
   }
 
-  for (let i = 2; i < steps && placed.count < maxCount; i += 3 + Math.floor(rng() * 2)) {
-    if (bass[i] >= 0) continue;
+  // One rare off-beat hit per phrase, 20% chance — a solitary footstep.
+  for (let i = barLen + 5; i < steps && placed.count < maxCount; i += 12 + Math.floor(rng() * 5)) {
+    if (bass[i] >= 0 || rng() < 0.80) continue;
     const root = scaleDegreeRoot(scale, comp, i);
     placeBassNote(bass, i, root, placed, maxCount);
   }
@@ -823,6 +955,67 @@ function generateDesertBass(rng, world, scale, comp, melody, steps, bass, maxCou
   }
 }
 
+function generateNeonBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  // Root–fifth–octave walking pattern, locked to every 4 steps.
+  // Feels like a synthwave bass sequencer: steady, pulsing, driving beneath the pads.
+  const barLen = comp.barLen;
+  for (let bar = 0; bar < steps; bar += barLen) {
+    const root  = scaleDegreeRoot(scale, comp, bar);
+    const fifth = transposeScaleSteps(root, scale, 2);
+    const walk  = [root, root, fifth, root];
+    for (let j = 0; j < walk.length && placed.count < maxCount; j++) {
+      const step = bar + j * Math.floor(barLen / 4);
+      if (step >= steps || bass[step] >= 0) continue;
+      placeBassNote(bass, step, walk[j], placed, maxCount);
+    }
+  }
+}
+
+function generateWesternBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  // Boom-chick pattern: root on beat 1, fifth on beat 3 — classic country stride
+  for (let i = 0; i < steps && placed.count < maxCount; i++) {
+    if (bass[i] >= 0) continue;
+    const beat = i % comp.barLen;
+    const root = scaleDegreeRoot(scale, comp, i);
+    if (beat === 0) placeBassNote(bass, i, root, placed, maxCount);
+    else if (beat === 2) placeBassNote(bass, i, transposeScaleSteps(root, scale, 2), placed, maxCount);
+  }
+}
+
+function generateForestBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  // Sparse, irregular — occasional low root anchors, like a distant log drum
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  for (let i = comp.barLen; i < steps && placed.count < maxCount; i += 3 + Math.floor(rng() * 5)) {
+    if (bass[i] >= 0) continue;
+    if (rng() < 0.55) placeBassNote(bass, i, scaleDegreeRoot(scale, comp, i), placed, maxCount);
+  }
+}
+
+function generateMedievalBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  // Simple modal bass — root and occasional fifth, 2-step stride
+  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
+  for (let i = 0; i < steps && placed.count < maxCount; i += 2 + Math.floor(rng() * 2)) {
+    if (bass[i] >= 0) continue;
+    const root = scaleDegreeRoot(scale, comp, i);
+    placeBassNote(bass, i, rng() < 0.7 ? root : transposeScaleSteps(root, scale, 2), placed, maxCount);
+  }
+}
+
+function generateMusicBoxBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
+  const placed = { count: 0 };
+  // Music boxes are essentially monophonic — only a few phrase-anchor undertones
+  const limit = Math.min(maxCount, 3);
+  for (let i = 0; i < steps && placed.count < limit; i += comp.barLen * 2) {
+    if (bass[i] >= 0) continue;
+    placeBassNote(bass, i, scaleDegreeRoot(scale, comp, i), placed, maxCount);
+  }
+}
+
 const BASS_GENERATORS = {
   arcade: generateArcadeBass,
   disco: generateArcadeBass,
@@ -833,6 +1026,11 @@ const BASS_GENERATORS = {
   'space-age': generateSpaceAgeBass,
   bubble: generateBubbleBass,
   desert: generateDesertBass,
+  neon: generateNeonBass,
+  'music-box': generateMusicBoxBass,
+  western: generateWesternBass,
+  forest: generateForestBass,
+  medieval: generateMedievalBass,
 };
 
 function generateBassLane(rng, worldKey, world, melody, steps) {
@@ -854,6 +1052,39 @@ function generateBassLane(rng, worldKey, world, melody, steps) {
 }
 
 /**
+ * Speedway acceleration burst — 3 quick ascending melody notes near phrase end.
+ * Fires ~60% of patterns, only on empty steps. Reads as "overtaking" — a brief
+ * moment of speed, not a melodic flourish.
+ */
+function addSpeedwayBursts(rng, world, melody, steps, events) {
+  if (rng() > 0.60) return events; // only ~60% of patterns get a burst
+
+  const scale = scaleFor(world.mode);
+  const comp  = compositionFor(world);
+
+  // Target: last 3 steps before the pattern loops — the "floor it before the restart" moment
+  const burstStart = steps - 3;
+  if (burstStart < 1) return events;
+
+  const root = scaleDegreeRoot(scale, comp, burstStart);
+
+  for (let j = 0; j < 3; j++) {
+    const step = burstStart + j;
+    if (step >= steps) break;
+    if (melody[step] >= 0) continue; // don't stack on existing melody notes
+    events[step].push({
+      note:   transposeScaleSteps(root, scale, j + 1), // +1, +2, +3 scale steps up
+      vol:    0.65 + rng() * 0.18, // punchy — this is the moment of speed
+      decay:  0.13 + rng() * 0.07, // short and snappy
+      octave: 0,
+      lane:   'melody',
+    });
+  }
+
+  return events;
+}
+
+/**
  * Build hidden accompaniment lanes after melody is composed.
  * @param {() => number} rng
  * @param {string} worldKey
@@ -866,6 +1097,9 @@ export function buildSequencer(rng, worldKey, world, melody, steps) {
   const bassLane = generateBassLane(rng, worldKey, world, melody, steps);
   let events = addEchoEvents(rng, worldKey, melody, steps);
   events = addHarmonyEvents(rng, worldKey, world, melody, steps, events);
+  if (worldKey === 'speedway') {
+    events = addSpeedwayBursts(rng, world, melody, steps, events);
+  }
   const comp = compositionFor(world);
 
   return {
@@ -888,6 +1122,10 @@ const TITLE_BITS = {
   desert: { a: ['Mirage', 'Dune', 'Dust', 'Dry', 'Caravan', 'Sage'], b: ['Echo', 'Trail', 'Bloom', 'Wind', 'Wander', 'Haze'] },
   'ice-cave': { a: ['Frost', 'Crystal', 'Frozen', 'Aurora', 'Glacier', 'Shimmer'], b: ['Chime', 'Shard', 'Gleam', 'Spark', 'Bell', 'Glint'] },
   speedway: { a: ['Turbo', 'Rapid', 'Blitz', 'Neon', 'Rocket', 'Hyper'], b: ['Lap', 'Dash', 'Circuit', 'Rush', 'Sprint', 'Heat'] },
+  'music-box': { a: ['Tiny', 'Golden', 'Wind', 'Pocket', 'Brass', 'Ivory'], b: ['Waltz', 'Turn', 'Tune', 'Spring', 'Chime', 'Lullaby'] },
+  western:    { a: ['Dusty', 'Lone', 'Prairie', 'Saddle', 'Sundown', 'Tumbleweed'], b: ['Trail', 'Draw', 'Range', 'Ride', 'Creek', 'Canyon'] },
+  forest:     { a: ['Mossy', 'Birch', 'Fern', 'Hollow', 'Dappled', 'Root'], b: ['Path', 'Canopy', 'Creek', 'Glade', 'Grove', 'Clearing'] },
+  medieval:   { a: ['Cobble', 'Torch', 'Guild', 'Iron', 'Winding', 'Stone'], b: ['Court', 'Gate', 'March', 'Tower', 'Tavern', 'Road'] },
   disco: { a: ['Bonus', 'High', 'Token', 'Pixel', 'Insert', 'Level'], b: ['Score', 'Run', 'Blip', 'Loop', 'Start', 'Coin'] },
 };
 
@@ -1121,6 +1359,96 @@ function stitchPhrase(a, b, steps, world, scale, rng, varyChance = 0.45) {
   return pattern;
 }
 
+/**
+ * Retrowave lead melody — builds a short 4-note motif and tiles/varies it across the phrase.
+ * The motif stays stepwise and resolves to the tonic, giving it that "catchy synth hook" feel.
+ * Think Kavinsky, FM-84, Gunship: a simple idea, repeated with small variations.
+ */
+function composeRetrowave(rng, world, steps) {
+  const scale    = scaleFor(world.mode);
+  const motifLen = 4;
+  const motif    = [];
+  let prev = world.homeRow;
+  if (!scale.includes(prev)) prev = scale[Math.floor(scale.length / 2)];
+
+  // Build motif: mostly stepwise, one occasional small leap, always lands on a scale tone
+  for (let i = 0; i < motifLen; i++) {
+    if (i === 0) { motif.push(prev); continue; }
+    const leap = rng() < 0.2;
+    const dir  = rng() < 0.62 ? 1 : -1;
+    prev = leap
+      ? transposeScaleSteps(prev, scale, dir * 2)
+      : stepInScale(rng, scale, prev, dir);
+    motif.push(prev);
+  }
+  // Resolve motif back toward home so each loop lands cleanly
+  motif[motifLen - 1] = world.homeRow;
+
+  // Tile the motif across the full phrase, adding slight variation every 2nd repeat
+  const out = [];
+  for (let i = 0; i < steps; i++) {
+    if (rng() < effectiveRestChance(world) * 0.55) { out.push(-1); continue; }
+    const rep  = Math.floor(i / motifLen);
+    const slot = i % motifLen;
+    if (rep % 2 === 0 || rng() < 0.72) {
+      out.push(motif[slot]);
+    } else {
+      // Variation: step one above/below the motif note
+      const varied = stepInScale(rng, scale, motif[slot], rng() < 0.5 ? 1 : -1);
+      out.push(varied);
+    }
+  }
+  out[steps - 1] = world.homeRow;
+  return out;
+}
+
+/**
+ * Music box melody — short repeating lullaby motif in the high register.
+ * Stepwise, mostly descending, tiles cleanly: the mechanical "same phrase again" feel.
+ */
+/**
+ * Music box melody — 16-step syncopated motif that tiles exactly.
+ * The irregular rest pattern gives a "staggered clockwork" feel:
+ * quick paired notes, unexpected gaps, and a longer pause near the end.
+ * Notes descend from high register toward home, in the spirit of a real comb.
+ *
+ * Rest map (X = note, . = rest):
+ *   X X . X X . . X . X X . X . . X
+ *   0 1 2 3 4 5 6 7 8 9 A B C D E F
+ * Pairs at (0,1), (3,4), (9,A), (C) with gaps of 1–3 steps between groups.
+ */
+function composeMusicBox(rng, world, steps) {
+  const scale = scaleFor(world.mode);
+  const hi = scale[Math.min(scale.length - 1, 4 + Math.floor(rng() * 2))];
+
+  // Fixed syncopated rhythm mask — 1 = note slot, 0 = rest
+  const mask = [1,1,0,1,1,0,0,1,0,1,1,0,1,0,0,1];
+  const motifLen = mask.length; // 16
+
+  // Melodic shape: a descending arch across the 16 slots
+  // We assign pitches only to the note slots, stepping mostly downward
+  const noteSlots = mask.map((m, i) => m ? i : -1).filter((i) => i >= 0);
+  const pitchMap  = {};
+  let pos = hi;
+  noteSlots.forEach((slot, k) => {
+    // Mostly descend, but step up once in the middle for shape
+    const dir = k < noteSlots.length / 2 ? -1 : (k === Math.floor(noteSlots.length / 2) ? 1 : -1);
+    if (k > 0) pos = stepInScale(rng, scale, pos, dir);
+    pitchMap[slot] = pos;
+  });
+  // Last note always resolves to home
+  pitchMap[noteSlots[noteSlots.length - 1]] = world.homeRow;
+
+  const motif = Array(motifLen).fill(-1);
+  for (const slot of noteSlots) motif[slot] = pitchMap[slot];
+
+  // Tile exactly — mechanical repeat
+  const out = [];
+  for (let i = 0; i < steps; i++) out.push(motif[i % motifLen]);
+  out[steps - 1] = world.homeRow;
+  return out;
+}
+
 const COMPOSERS = {
   beacon: composeBeacon,
   hook: composeHook,
@@ -1130,6 +1458,8 @@ const COMPOSERS = {
   sparse: composeSparse,
   crystal: composeCrystal,
   race: composeRace,
+  ascend: composeRetrowave,
+  musicbox: composeMusicBox,
 };
 
 function generateMelody(rng, world, steps) {

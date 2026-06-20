@@ -1,4 +1,4 @@
-import { play, unlock } from './synth.js';
+import { play, unlock, stopAllBackingVoices } from './synth.js';
 import { normalizePattern } from './generate.js';
 import { resolveStepExpression } from './world-expression.js';
 
@@ -210,6 +210,7 @@ function renderGrid() {
   for (let i = 0; i < steps; i++) {
     const num = document.createElement('span');
     num.className = 'melody-grid__step-num';
+    num.dataset.step = i;
     num.textContent = i + 1;
     head.appendChild(num);
   }
@@ -246,19 +247,23 @@ function renderGrid() {
 }
 
 function updatePlayhead() {
+  const active = playing ? playStep : -1;
   document.querySelectorAll('.melody-grid__cell').forEach((cell) => {
-    const step = Number(cell.dataset.step);
-    cell.classList.toggle('is-playhead', playing && step === playStep);
+    cell.classList.toggle('is-playhead', Number(cell.dataset.step) === active);
+  });
+  document.querySelectorAll('.melody-grid__step-num').forEach((num) => {
+    num.classList.toggle('is-playhead', Number(num.dataset.step) === active);
   });
 }
 
-function triggerNote(row, params, { volMul = 1, decayMul = 1, octave = 0, gateMul = 1, releaseMul = 1, punchBias = 1 } = {}) {
+function triggerNote(row, params, { volMul = 1, decayMul = 1, octave = 0, gateMul = 1, releaseMul = 1, punchBias = 1, lane = 'melody' } = {}) {
   if (row < 0 || row >= NOTE_ROWS.length) return;
   const baseVol = params.volume ?? 0.55;
   const baseDecay = params.decay ?? 0.2;
   const midi = NOTE_ROWS[row].midi + octave * 12;
   play({
     ...params,
+    lane,
     pitch: midiToHz(midi),
     volume: Math.min(1, baseVol * volMul),
     decay: Math.min(1, baseDecay * decayMul),
@@ -308,11 +313,12 @@ function triggerStep(step) {
       releaseMul: expr.releaseMul,
       punchBias: expr.punchBias,
       octave,
+      lane: 'bass',
     });
   }
 
   for (const ev of sequencer?.events?.[step] ?? []) {
-    const lane = ev.lane === 'harmony' ? 'harmony' : 'echo';
+    const lane = ev.lane === 'harmony' ? 'harmony' : ev.lane === 'melody' ? 'melody' : 'echo';
     const expr = stepExpression(step, lane);
     triggerNote(ev.note, params, {
       volMul: (ev.vol ?? 0.45) * expr.volMul,
@@ -321,19 +327,20 @@ function triggerStep(step) {
       releaseMul: expr.releaseMul,
       punchBias: expr.punchBias,
       octave: ev.octave ?? 0,
+      lane,
     });
   }
 }
 
 function syncTransportUi() {
-  const playBtn = document.getElementById('melody-play-btn');
-  const stopBtn = document.getElementById('melody-stop-btn');
+  const toggleBtn = document.getElementById('melody-toggle-btn');
   const loopBtn = document.getElementById('melody-loop-btn');
-  if (!playBtn || !stopBtn || !loopBtn) return;
+  if (!toggleBtn || !loopBtn) return;
 
-  playBtn.classList.toggle('is-selected', playing);
-  playBtn.classList.toggle('is-playing', playing);
-  stopBtn.classList.toggle('is-selected', !playing);
+  toggleBtn.classList.toggle('is-playing', playing);
+  toggleBtn.classList.toggle('is-selected', playing);
+  toggleBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  toggleBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
   loopBtn.classList.toggle('is-selected', loopMelody);
   loopBtn.setAttribute('aria-pressed', loopMelody ? 'true' : 'false');
 }
@@ -345,6 +352,7 @@ function stopPlayback() {
     clearTimeout(playTimer);
     playTimer = null;
   }
+  stopAllBackingVoices();
   document.getElementById('melody-panel')?.classList.remove('is-playing');
   document.getElementById('melody-stage')?.classList.remove('is-playing');
   syncTransportUi();
@@ -495,14 +503,9 @@ export function initMelody({ getParams, getWorld, onChange, onPlayStart }) {
     onMelodyChange();
   });
 
-  document.getElementById('melody-play-btn').addEventListener('click', () => {
-    if (onPlayStart) onPlayStart();
-    if (!playing) startPlayback();
-  });
-
-  document.getElementById('melody-stop-btn').addEventListener('click', () => {
-    stopPlayback();
-    setLoopMelody(false);
+  document.getElementById('melody-toggle-btn').addEventListener('click', () => {
+    if (!playing && onPlayStart) onPlayStart();
+    togglePlayback();
   });
 
   document.getElementById('melody-loop-btn').addEventListener('click', () => {
