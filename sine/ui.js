@@ -1049,11 +1049,23 @@ function init() {
   document.getElementById('mutate-btn').addEventListener('click', mutateCurrentSong);
 
   document.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space' && e.key !== ' ') return;
-    if (e.repeat || isTextEntryTarget(e.target)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    togglePlay();
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isTextEntryTarget(e.target)) return;
+
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      togglePlay();
+    } else if (e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      remixCurrentSong();
+    } else if (e.key === 'm' || e.key === 'M') {
+      e.preventDefault();
+      mutateCurrentSong();
+    } else if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault();
+      generateSong();
+    }
   }, true);
 
   const unlockOnce = () => {

@@ -23,7 +23,7 @@ const WORLD_REVERB = {
   arcade:      { decay: 0.32, preDelayMs: 5,  wet: 0.015 },
   neon:        { decay: 3.2,  preDelayMs: 28, wet: 0.072 }, // long airy diffuse tail — core to retrowave
   'music-box': { decay: 0.28, preDelayMs: 4,  wet: 0.018 }, // tiny wooden-box air — dry and precious
-  forest:      { decay: 1.6,  preDelayMs: 22, wet: 0.048 }, // outdoor air — open canopy, not cavernous
+  forest:      { decay: 0.55, preDelayMs: 8,  wet: 0.020 }, // dense canopy — sound absorbed fast, not open
   medieval:    { decay: 1.8,  preDelayMs: 22, wet: 0.042 }, // stone hall — present but not huge
 };
 
@@ -624,6 +624,302 @@ const BACKING = { whistle: null, choir: null, bubble: null, neonPad: null, weste
 
 const BACKING_FADE_MS = 2200; // ms of silence before a backing voice dissolves
 
+// Beach seagull — step counter; fires roughly every 7-9 melody steps
+let _beachGullStep    = 0;
+let _beachGullEvery   = 8; // re-randomised after each call
+
+// Bubble "ahh" sigh — fires roughly every 12-19 melody steps
+let _bubbleAhhStep  = 0;
+let _bubbleAhhEvery = 14;
+
+// Bubble plop — fires roughly every 8-13 melody steps
+let _bubblePlopStep  = 0;
+let _bubblePlopEvery = 10;
+
+// Arcade orchestra hit — fires every 16-20 melody steps
+let _arcadeOrchStep  = 0;
+let _arcadeOrchEvery = 18;
+
+// Forest cricket — fires roughly every 6-9 melody steps
+let _forestCricketStep  = 0;
+let _forestCricketEvery = 7;
+
+// Forest bird chirp — fires roughly every 18-26 melody steps (rare)
+let _forestBirdStep  = 0;
+let _forestBirdEvery = 22;
+
+function fireBeachSeagull(ac, fx) {
+  const now  = ac.currentTime + 0.02;
+  const pan  = (Math.random() * 2 - 1) * 0.72; // left or right, feels like distance
+
+  // "kee-ah" pitch contour: start slightly below, snap to peak, fall to tail
+  const base     = 620 + Math.random() * 220;      // 620–840 Hz
+  const peak     = base * (1.85 + Math.random() * 0.5); // ~1 octave + minor third above
+  const tail     = base  * (0.82 + Math.random() * 0.1);
+  const riseDur  = 0.10  + Math.random() * 0.06;   // 0.10–0.16 s
+  const fallDur  = 0.30  + Math.random() * 0.14;   // 0.30–0.44 s
+  const totalDur = riseDur + fallDur + 0.06;
+
+  const osc = ac.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(Math.max(20, base * 0.87), now);
+  osc.frequency.exponentialRampToValueAtTime(peak,  now + riseDur);
+  osc.frequency.exponentialRampToValueAtTime(tail,  now + riseDur + fallDur);
+
+  // Bandpass around 1 kHz — seagull's sharp nasal formant
+  const bpf = ac.createBiquadFilter();
+  bpf.type = 'bandpass';
+  bpf.frequency.value = 1000;
+  bpf.Q.value = 2.2;
+
+  const amp = ac.createGain();
+  amp.gain.setValueAtTime(0, now);
+  amp.gain.linearRampToValueAtTime(0.13, now + 0.05);
+  amp.gain.setValueAtTime(0.13, now + riseDur + 0.04);
+  amp.gain.linearRampToValueAtTime(0, now + totalDur);
+
+  const panner = ac.createStereoPanner();
+  panner.pan.value = pan;
+
+  osc.connect(bpf);
+  bpf.connect(amp);
+  amp.connect(panner);
+  panner.connect(fx.dry); // routes through Beach's reverb bus
+
+  osc.start(now);
+  osc.stop(now + totalDur + 0.05);
+}
+
+// Arcade orchestra hit — SNES TMNT:TiT style.
+// A minor chord (A2/C3/E3), three layers, hard gated decay at 170ms, light bitcrush grit.
+// EQ boosts removed — they were overdriving the bitcrusher into mush.
+// All layers connect to masterGain; bitcrusher sits at the very end as light console crunch.
+// Arcade orchestra hit — SNES TMNT:TiT style.
+// A minor chord at A4/C5/E5 (440/523/659 Hz) — sawtooth harmonics stack into the
+// 1–4 kHz "brass bite" zone here. Connects to ac.destination directly so the shared
+// compressor bus can't duck it when a melody note fires simultaneously.
+function fireArcadeOrchHit(ac, fx, volume) {
+  const now     = ac.currentTime + 0.01;
+  const gateDur = 0.18;
+
+  const masterGain = ac.createGain();
+  masterGain.gain.value = volume * 0.7;
+  // Bypass fx.dry/compressor — orch hit on its own final output so it isn't
+  // ducked by simultaneous Arcade melody notes on the shared bus.
+  masterGain.connect(ac.destination);
+
+  // Layer 1 — Brass stab: sawtooth A4/C5/E5
+  [440, 523.3, 659.3].forEach((freq) => {
+    const osc = ac.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    const amp = ac.createGain();
+    amp.gain.setValueAtTime(0, now);
+    amp.gain.linearRampToValueAtTime(0.32, now + 0.003); // 3ms attack
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + gateDur);
+    osc.connect(amp);
+    amp.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + gateDur + 0.01);
+  });
+
+  // Layer 2 — String smear: detuned pairs on third and fifth
+  [[523.3, -13], [659.3, +11]].forEach(([base, cents]) => {
+    const osc = ac.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = base * 2 ** (cents / 1200);
+    const amp = ac.createGain();
+    amp.gain.setValueAtTime(0, now);
+    amp.gain.linearRampToValueAtTime(0.16, now + 0.005);
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + gateDur * 0.75);
+    osc.connect(amp);
+    amp.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + gateDur + 0.01);
+  });
+
+  // Layer 3 — Timpani punch: sine sweep 220→75 Hz
+  const timp = ac.createOscillator();
+  timp.type = 'sine';
+  timp.frequency.setValueAtTime(220, now);
+  timp.frequency.exponentialRampToValueAtTime(75, now + 0.12);
+  const timpAmp = ac.createGain();
+  timpAmp.gain.setValueAtTime(0.28, now);
+  timpAmp.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+  timp.connect(timpAmp);
+  timpAmp.connect(masterGain);
+  timp.start(now);
+  timp.stop(now + 0.16);
+
+  // Attack crack — short noise transient
+  const crack = noiseBurst(ac, 0.018);
+  const crackBpf = ac.createBiquadFilter();
+  crackBpf.type = 'bandpass';
+  crackBpf.frequency.value = 3200;
+  crackBpf.Q.value = 1.4;
+  const crackAmp = ac.createGain();
+  crackAmp.gain.setValueAtTime(0.55, now);
+  crackAmp.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
+  crack.connect(crackBpf);
+  crackBpf.connect(crackAmp);
+  crackAmp.connect(masterGain);
+  crack.start(now);
+  crack.stop(now + 0.025);
+}
+
+// Bubble plop — a water-drop sine that sweeps steeply downward in ~100 ms.
+// Starts at 180-360 Hz and falls to ~28% of that: the classic "bloop" contour.
+function fireBubblePlop(ac, fx) {
+  const now        = ac.currentTime + 0.01;
+  const pan        = (Math.random() * 2 - 1) * 0.65;
+  const startFreq  = 180 + Math.random() * 180;           // 180–360 Hz
+  const endFreq    = Math.max(20, startFreq * (0.24 + Math.random() * 0.10)); // drop to ~25-34%
+  const dur        = 0.075 + Math.random() * 0.065;       // 75–140 ms
+
+  const osc = ac.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(startFreq, now);
+  osc.frequency.exponentialRampToValueAtTime(endFreq, now + dur);
+
+  const amp = ac.createGain();
+  amp.gain.setValueAtTime(0.22, now);
+  amp.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  const panner = ac.createStereoPanner();
+  panner.pan.value = pan;
+
+  osc.connect(amp);
+  amp.connect(panner);
+  panner.connect(fx.dry);
+
+  osc.start(now);
+  osc.stop(now + dur + 0.02);
+}
+
+// Bubble "ahh" — a breathy sighing vowel that floats in occasionally.
+// Sine oscillator with a tiny upward breath glide, gentle vibrato, and a
+// formant peak at 780 Hz to shape the tone toward an "ah" vowel.
+// Slow sigh envelope: rises in 50 ms, holds briefly, then dissolves.
+function fireBubbleAhh(ac, fx) {
+  const now       = ac.currentTime + 0.02;
+  const pan       = (Math.random() * 2 - 1) * 0.38;
+  const basePitch = 400 + Math.random() * 220;         // 400–620 Hz — warm vocal range
+  const peakPitch = basePitch * (1.03 + Math.random() * 0.04); // tiny breath up
+  const dur       = 0.44 + Math.random() * 0.28;        // 0.44–0.72 s
+
+  const osc = ac.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(Math.max(20, basePitch * 0.97), now);
+  osc.frequency.exponentialRampToValueAtTime(peakPitch, now + 0.07); // breath inhale
+  osc.frequency.exponentialRampToValueAtTime(basePitch * 0.98, now + dur); // settle
+
+  // Vibrato — kicks in 60 ms after attack so the start sounds like a breath, not a synth
+  const vibLfo   = ac.createOscillator();
+  const vibDepth = ac.createGain();
+  vibLfo.type = 'sine';
+  vibLfo.frequency.value = 5.8;
+  vibDepth.gain.value = 3; // ±3 Hz — very subtle, human-feeling
+  vibLfo.connect(vibDepth);
+  vibDepth.connect(osc.frequency);
+  vibLfo.start(now + 0.06);
+
+  // Formant at 780 Hz — shapes sine toward "ah" vowel colour
+  const formant = ac.createBiquadFilter();
+  formant.type = 'peaking';
+  formant.frequency.value = 780;
+  formant.Q.value = 1.6;
+  formant.gain.value = 5;
+
+  // Sigh envelope: quick bloom, long slow exhale
+  const amp = ac.createGain();
+  amp.gain.setValueAtTime(0, now);
+  amp.gain.linearRampToValueAtTime(0.13, now + 0.05);
+  amp.gain.setValueAtTime(0.13, now + dur * 0.35);
+  amp.gain.linearRampToValueAtTime(0, now + dur);
+
+  const panner = ac.createStereoPanner();
+  panner.pan.value = pan;
+
+  osc.connect(formant);
+  formant.connect(amp);
+  amp.connect(panner);
+  panner.connect(fx.dry); // through Bubble's reverb bus
+
+  osc.start(now);
+  osc.stop(now + dur + 0.05);
+  vibLfo.stop(now + dur + 0.05);
+}
+
+// Cricket: 2-3 rapid bursts of narrowband filtered noise at 4-5 kHz.
+// Each burst is ~75 ms; bursts are spaced ~90 ms apart — classic stridulation rhythm.
+// Pan is fixed per call so the cricket sounds like it's sitting in one spot.
+function fireForestCricket(ac, fx) {
+  const pan       = (Math.random() * 2 - 1) * 0.68;
+  const chirpFreq = 4000 + Math.random() * 900; // 4.0–4.9 kHz
+  const numBursts = 2 + Math.floor(Math.random() * 2); // 2 or 3 chirps
+  const burstDur  = 0.065 + Math.random() * 0.025;     // 65–90 ms per burst
+  const gapDur    = 0.082 + Math.random() * 0.028;      // 82–110 ms between bursts
+
+  for (let b = 0; b < numBursts; b++) {
+    const t  = ac.currentTime + 0.02 + b * (burstDur + gapDur);
+    const ns = noiseBurst(ac, burstDur + 0.02);
+
+    const bpf = ac.createBiquadFilter();
+    bpf.type = 'bandpass';
+    bpf.frequency.value = chirpFreq;
+    bpf.Q.value = 14; // narrow band — almost tonal, like real stridulation
+
+    const amp = ac.createGain();
+    amp.gain.setValueAtTime(0, t);
+    amp.gain.linearRampToValueAtTime(0.11, t + 0.008);
+    amp.gain.setValueAtTime(0.11, t + burstDur - 0.01);
+    amp.gain.linearRampToValueAtTime(0, t + burstDur);
+
+    const panner = ac.createStereoPanner();
+    panner.pan.value = pan;
+
+    ns.connect(bpf);
+    bpf.connect(amp);
+    amp.connect(panner);
+    panner.connect(fx.dry);
+
+    ns.start(t);
+    ns.stop(t + burstDur + 0.02);
+  }
+}
+
+// Bird chirp: a quick upward whistle — sine, ~1200–2400 Hz, 120–180 ms.
+// Faint and occasional; sounds like a single bird call from somewhere deeper in the trees.
+function fireForestBird(ac, fx) {
+  const now      = ac.currentTime + 0.02;
+  const pan      = (Math.random() * 2 - 1) * 0.55;
+  const basePitch = 1100 + Math.random() * 600;   // 1100–1700 Hz start
+  const peakPitch = basePitch * (1.3 + Math.random() * 0.4); // sharp upward flick
+  const dur       = 0.10 + Math.random() * 0.07;  // 100–170 ms
+
+  const osc = ac.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(basePitch, now);
+  osc.frequency.exponentialRampToValueAtTime(peakPitch, now + dur * 0.6);
+  osc.frequency.exponentialRampToValueAtTime(basePitch * 0.95, now + dur);
+
+  const amp = ac.createGain();
+  amp.gain.setValueAtTime(0, now);
+  amp.gain.linearRampToValueAtTime(0.07, now + 0.012); // very faint
+  amp.gain.setValueAtTime(0.07, now + dur - 0.02);
+  amp.gain.linearRampToValueAtTime(0, now + dur);
+
+  const panner = ac.createStereoPanner();
+  panner.pan.value = pan;
+
+  osc.connect(amp);
+  amp.connect(panner);
+  panner.connect(fx.dry);
+
+  osc.start(now);
+  osc.stop(now + dur + 0.03);
+}
+
 function stopBackingVoice(key) {
   const v = BACKING[key];
   if (!v) return;
@@ -643,7 +939,8 @@ function stopBackingVoice(key) {
       setTimeout(() => {
         v.oscs.forEach(({ osc }) => { try { osc.stop(); } catch {} });
         try { v.lfo.stop(); } catch {}
-        try { v._pitchLfo.stop(); } catch {} // medievalDrone has a second LFO
+        try { v._pitchLfo.stop(); } catch {}
+        try { v._tremoloLfo.stop(); } catch {}
       }, 650);
     }
   } catch {}
@@ -656,6 +953,18 @@ export function stopAllBackingVoices() {
   stopBackingVoice('choir');
   stopBackingVoice('bubble');
   stopBackingVoice('neonPad');
+  _bubbleAhhStep      = 0;
+  _bubbleAhhEvery     = 14;
+  _bubblePlopStep     = 0;
+  _bubblePlopEvery    = 10;
+  _arcadeOrchStep     = 0;
+  _arcadeOrchEvery    = 18;
+  _beachGullStep      = 0;
+  _beachGullEvery     = 8;
+  _forestCricketStep  = 0;
+  _forestCricketEvery = 7;
+  _forestBirdStep     = 0;
+  _forestBirdEvery    = 22;
   stopBackingVoice('medievalDrone');
 }
 
@@ -758,8 +1067,9 @@ function updateSpaceAgeWhistle(ac, pitch, volume, fxComp) {
  * Soft volume (22%) — heard as a lonely background element, not a lead.
  */
 function updateWesternWhistle(ac, pitch, volume, fxComp) {
-  const whistlePitch = Math.min(1400, pitch * 1.5); // perfect fifth above melody
-  const targetVol    = volume * 0.22;
+  // Clamp into true whistle register (B4–E6). Below 500 Hz it reads as voice/moan.
+  const whistlePitch = Math.max(500, Math.min(1300, pitch * 2.0));
+  const targetVol    = volume * 0.19;
   const now          = ac.currentTime;
 
   if (!BACKING.westernWhistle || BACKING.westernWhistle.ctx !== ac) {
@@ -767,45 +1077,65 @@ function updateWesternWhistle(ac, pitch, volume, fxComp) {
     masterGain.gain.setValueAtTime(0, now);
     masterGain.connect(fxComp);
 
-    // Vibrato LFO — 3.5 Hz, ±14 Hz deviation (≈ half-semitone at 500 Hz)
+    // Vibrato LFO — 5.5 Hz, ±7 Hz. Faster + tighter than the sad-dog 3.5 Hz / ±14 Hz.
+    // Morricone's whistle has confident, controlled vibrato — not a moan.
     const lfo      = ac.createOscillator();
     const lfoDepth = ac.createGain();
     lfo.type = 'sine';
-    lfo.frequency.value = 3.5;
-    lfoDepth.gain.value = 14; // fixed Hz deviation — wide, characterful
+    lfo.frequency.value = 5.5;
+    lfoDepth.gain.value = 7;
     lfo.connect(lfoDepth);
     lfo.start(now);
 
+    // Main whistle tone — sine for purity
     const osc = ac.createOscillator();
     osc.type = 'sine';
-    // Approach from below on first entry — starts ~14% flat, glides up to target pitch
-    osc.frequency.setValueAtTime(Math.max(20, whistlePitch * 0.86), now);
-    osc.frequency.exponentialRampToValueAtTime(whistlePitch, now + 0.26);
-    lfoDepth.connect(osc.frequency); // vibrato modulates pitch
+    osc.frequency.setValueAtTime(Math.max(20, whistlePitch * 0.94), now); // subtle 6% entry from below
+    osc.frequency.exponentialRampToValueAtTime(whistlePitch, now + 0.20);
+    lfoDepth.connect(osc.frequency);
     osc.connect(masterGain);
     osc.start(now);
 
-    masterGain.gain.linearRampToValueAtTime(targetVol, now + 0.26); // slow bloom matches pitch rise
+    // Breathiness layer — second sine +12 cents sharp, at 6% gain relative to master.
+    // The slight beating between the two sines gives a real-whistle "lip" imperfection
+    // that separates it from a pure synth tone.
+    const breathGain = ac.createGain();
+    breathGain.gain.value = 0.06;
+    const breathOsc = ac.createOscillator();
+    breathOsc.type = 'sine';
+    breathOsc.frequency.setValueAtTime(Math.max(20, whistlePitch * 0.94 * 1.007), now);
+    breathOsc.frequency.exponentialRampToValueAtTime(whistlePitch * 1.007, now + 0.20);
+    lfoDepth.connect(breathOsc.frequency);
+    breathOsc.connect(breathGain);
+    breathGain.connect(masterGain);
+    breathOsc.start(now);
+
+    masterGain.gain.linearRampToValueAtTime(targetVol, now + 0.20);
 
     BACKING.westernWhistle = {
-      ctx: ac, oscs: [{ osc }], masterGain, lfo,
+      ctx: ac, oscs: [{ osc }, { osc: breathOsc }], masterGain, lfo,
       lastPitch: whistlePitch, fadeTimer: null,
     };
   } else {
     const v = BACKING.westernWhistle;
-    // Slower portamento: 240 ms — the characteristic Morricone lazy glide.
-    // On upward intervals, dip 12% below target first (approach from below),
-    // which sounds like a singer shaping the note before landing on it.
-    v.oscs[0].osc.frequency.cancelScheduledValues(now);
-    v.oscs[0].osc.frequency.setValueAtTime(v.lastPitch, now);
+    // Portamento 220 ms — Morricone's lazy confident glide.
+    // Upward moves: 6% undershoot (one semitone) then resolve — decisive, not mournful.
+    const [mainEntry, breathEntry] = v.oscs;
+    mainEntry.osc.frequency.cancelScheduledValues(now);
+    mainEntry.osc.frequency.setValueAtTime(v.lastPitch, now);
+    breathEntry.osc.frequency.cancelScheduledValues(now);
+    breathEntry.osc.frequency.setValueAtTime(v.lastPitch * 1.007, now);
+
     if (whistlePitch > v.lastPitch * 1.04) {
-      // upward move — undershoot then resolve
-      v.oscs[0].osc.frequency.exponentialRampToValueAtTime(Math.max(20, whistlePitch * 0.88), now + 0.032);
-      v.oscs[0].osc.frequency.exponentialRampToValueAtTime(Math.max(20, whistlePitch), now + 0.24);
+      mainEntry.osc.frequency.exponentialRampToValueAtTime(Math.max(20, whistlePitch * 0.94), now + 0.028);
+      mainEntry.osc.frequency.exponentialRampToValueAtTime(whistlePitch, now + 0.22);
+      breathEntry.osc.frequency.exponentialRampToValueAtTime(Math.max(20, whistlePitch * 0.94 * 1.007), now + 0.028);
+      breathEntry.osc.frequency.exponentialRampToValueAtTime(whistlePitch * 1.007, now + 0.22);
     } else {
-      // downward or same — smooth direct glide
-      v.oscs[0].osc.frequency.exponentialRampToValueAtTime(Math.max(20, whistlePitch), now + 0.24);
+      mainEntry.osc.frequency.exponentialRampToValueAtTime(whistlePitch, now + 0.22);
+      breathEntry.osc.frequency.exponentialRampToValueAtTime(whistlePitch * 1.007, now + 0.22);
     }
+
     v.masterGain.gain.cancelScheduledValues(now);
     v.masterGain.gain.setValueAtTime(v.masterGain.gain.value, now);
     v.masterGain.gain.linearRampToValueAtTime(targetVol, now + 0.08);
@@ -915,44 +1245,98 @@ function updateMedievalDrone(ac, pitch, volume, fxComp) {
  * Routed directly to ac.destination, bypassing the master compressor.
  */
 function updateDungeonChoir(ac, pitch, _volume, _fxComp) {
-  const targetVol = 0.07; // subtle — felt beneath the crunch, not competing with it
-  const voices    = [{ detuneCents: 0 }, { detuneCents: 10 }];
-  const glideMs   = 0.40;
-  const now       = ac.currentTime;
+  // Gothic choir: 4 triangle-wave voices, an octave below the melody,
+  // spread stereo and detuned. Vibrato LFO for pitch instability (human singers
+  // never hold a perfectly steady pitch). Slow amplitude tremolo for breathing.
+  // Formant peak at 900 Hz shapes the vowel toward "ahh".
+  const choirPitch = Math.max(80, pitch); // track melody — octave-down was too low for speakers
+  const targetVol  = 0.18;
+  const glideMs    = 0.65;
+  const now        = ac.currentTime;
+
+  // 4 voices spread across ±20 cents and stereo field — wide, humanised cluster
+  const voices = [
+    { detuneCents: -20, pan: -0.60 },
+    { detuneCents:  -6, pan: +0.25 },
+    { detuneCents:  +6, pan: -0.25 },
+    { detuneCents: +20, pan: +0.60 },
+  ];
 
   if (!BACKING.choir || BACKING.choir.ctx !== ac) {
     const masterGain = ac.createGain();
-    masterGain.gain.setValueAtTime(targetVol, now);
+    masterGain.gain.setValueAtTime(0, now);
+    masterGain.gain.linearRampToValueAtTime(targetVol, now + 0.30);
 
-    // LPF keeps the choir dark and below the melody — presence without harshness
+    // Vibrato — 5.4 Hz, ±6 Hz. Human choir pitch instability, not a synth effect.
+    const vibLfo   = ac.createOscillator();
+    const vibDepth = ac.createGain();
+    vibLfo.type = 'sine';
+    vibLfo.frequency.value = 5.4;
+    vibDepth.gain.value = 6;
+    vibLfo.connect(vibDepth);
+    vibLfo.start(now);
+
+    // Amplitude tremolo — 2.0 Hz, ±7%. Simulates the choir breathing as one body.
+    const tremoloLfo   = ac.createOscillator();
+    const tremoloDepth = ac.createGain();
+    const tremoloMod   = ac.createGain();
+    tremoloMod.gain.value = 1.0;
+    tremoloLfo.type = 'sine';
+    tremoloLfo.frequency.value = 2.0;
+    tremoloDepth.gain.value = 0.07;
+    tremoloLfo.connect(tremoloDepth);
+    tremoloDepth.connect(tremoloMod.gain); // ±0.07 added to 1.0 base
+    tremoloLfo.start(now);
+
+    // Formant peak at 900 Hz — shapes triangle toward an "ahh" vowel colour
+    const formant = ac.createBiquadFilter();
+    formant.type = 'peaking';
+    formant.frequency.value = 900;
+    formant.Q.value = 1.4;
+    formant.gain.value = 5;
+
+    // Dark LPF above — keeps the choir from climbing into the melody's register
     const lpf = ac.createBiquadFilter();
     lpf.type = 'lowpass';
-    lpf.frequency.value = 1100;
-    lpf.Q.value = 0.8;
-    masterGain.connect(lpf);
+    lpf.frequency.value = 1800;
+    lpf.Q.value = 0.65;
+
+    // Signal path: oscs → panners → masterGain → tremoloMod → formant → lpf → destination
+    masterGain.connect(tremoloMod);
+    tremoloMod.connect(formant);
+    formant.connect(lpf);
     lpf.connect(ac.destination);
 
-    const oscs = voices.map(({ detuneCents }) => {
-      const osc = ac.createOscillator();
-      osc.type = 'square';
-      osc.frequency.value = pitch * 2 ** (detuneCents / 1200);
-      osc.connect(masterGain);
+    const oscs = voices.map(({ detuneCents, pan }) => {
+      const freq = Math.max(20, choirPitch * 2 ** (detuneCents / 1200));
+      const osc  = ac.createOscillator();
+      osc.type   = 'triangle';
+      osc.frequency.value = freq;
+      vibDepth.connect(osc.frequency);
+
+      const panner = ac.createStereoPanner();
+      panner.pan.value = pan;
+      osc.connect(panner);
+      panner.connect(masterGain);
       osc.start(now);
       return { osc };
     });
 
-    BACKING.choir = { ctx: ac, oscs, masterGain, lfo: null, lastPitch: pitch, fadeTimer: null };
+    BACKING.choir = {
+      ctx: ac, oscs, masterGain, lfo: vibLfo, _tremoloLfo: tremoloLfo,
+      lastPitch: choirPitch, fadeTimer: null,
+    };
   } else {
     const v = BACKING.choir;
     voices.forEach(({ detuneCents }, i) => {
       const osc      = v.oscs[i].osc;
-      const newFreq  = pitch * 2 ** (detuneCents / 1200);
-      const lastFreq = v.lastPitch * 2 ** (detuneCents / 1200);
+      const newFreq  = Math.max(20, choirPitch * 2 ** (detuneCents / 1200));
+      const lastFreq = Math.max(20, v.lastPitch * 2 ** (detuneCents / 1200));
       osc.frequency.cancelScheduledValues(now);
       osc.frequency.setValueAtTime(lastFreq, now);
       osc.frequency.exponentialRampToValueAtTime(newFreq, now + glideMs);
     });
-    BACKING.choir.lastPitch = pitch;
+    BACKING.choir.lastPitch = choirPitch;
   }
 
   clearTimeout(BACKING.choir.fadeTimer);
@@ -1048,6 +1432,59 @@ export function play(params) {
     if (activeWorldKey === 'bubble')    updateBubbleDrone(ac, rawPitch, rawVol);
     if (activeWorldKey === 'neon')      updateNeonPad(ac, rawPitch, rawVol);
     // no persistent backing voice for medieval — harpsichord stands on its own
+
+    // Bubble sounds — ahh sigh and water plop, independent counters
+    if (activeWorldKey === 'bubble') {
+      _bubbleAhhStep++;
+      if (_bubbleAhhStep >= _bubbleAhhEvery) {
+        _bubbleAhhStep  = 0;
+        _bubbleAhhEvery = 12 + Math.floor(Math.random() * 8);
+        fireBubbleAhh(ac, fx);
+      }
+      _bubblePlopStep++;
+      if (_bubblePlopStep >= _bubblePlopEvery) {
+        _bubblePlopStep  = 0;
+        _bubblePlopEvery = 8 + Math.floor(Math.random() * 6); // 8–13 steps
+        fireBubblePlop(ac, fx);
+      }
+    }
+
+    // Arcade orchestra hit — every 16-20 melody steps
+    if (activeWorldKey === 'arcade') {
+      _arcadeOrchStep++;
+      if (_arcadeOrchStep >= _arcadeOrchEvery) {
+        _arcadeOrchStep  = 0;
+        _arcadeOrchEvery = 16 + Math.floor(Math.random() * 5);
+        fireArcadeOrchHit(ac, fx, clamp01(params.volume ?? 0.55));
+      }
+    }
+
+    // Beach seagull — one-shot, fires every 7-9 melody steps
+    if (activeWorldKey === 'beach') {
+      _beachGullStep++;
+      if (_beachGullStep >= _beachGullEvery) {
+        _beachGullStep  = 0;
+        _beachGullEvery = 7 + Math.floor(Math.random() * 3);
+        fireBeachSeagull(ac, fx);
+      }
+    }
+
+    // Forest cricket — fires every 6-9 melody steps
+    if (activeWorldKey === 'forest') {
+      _forestCricketStep++;
+      if (_forestCricketStep >= _forestCricketEvery) {
+        _forestCricketStep  = 0;
+        _forestCricketEvery = 6 + Math.floor(Math.random() * 4); // 6, 7, 8, or 9
+        fireForestCricket(ac, fx);
+      }
+      // Bird chirp — rarer, independent counter
+      _forestBirdStep++;
+      if (_forestBirdStep >= _forestBirdEvery) {
+        _forestBirdStep  = 0;
+        _forestBirdEvery = 18 + Math.floor(Math.random() * 9); // 18–26 steps
+        fireForestBird(ac, fx);
+      }
+    }
   }
 
   // Bubble: each note gets a randomly-sized filter pop + stereo scatter.
@@ -1073,7 +1510,14 @@ export function play(params) {
     : clamp01(params.tone);
   const decay = clamp01(params.decay);
   const crunch = clamp01(params.crunch);
-  const noiseAmt = clamp01(params.noise);
+  // K-S worlds (Western, Medieval, Forest) set oscAGain to 0 — no main oscillator carrier.
+  // Without any signal, the noise path feeds raw into the crunch waveshaper and gets
+  // amplified ~9× at moderate crunch values, producing harsh static. Suppress it.
+  // Exception: if a harmonic partial is active (harmonicGain > 0), there IS a real signal
+  // so noise is safe to mix in.
+  const hasCarrier = profile.oscAGain >= 0.001 ||
+    (profile.harmonicRatio > 0 && profile.harmonicGain >= 0.01);
+  const noiseAmt = hasCarrier ? clamp01(params.noise) : 0;
   const punch = clamp01(params.punch ?? 0);
   const gateMul = Math.max(0.45, Math.min(1.85, params.gateMul ?? 1));
   const releaseMul = Math.max(0.55, Math.min(1.65, params.releaseMul ?? 1));
@@ -1095,7 +1539,11 @@ export function play(params) {
   const releaseEnd = sustainEnd + releaseT;
   const noteDuration = sustain + releaseT + 0.08;
 
-  const endPitch = Math.max(40, pitch * bend);
+  // Dungeon bass: suppress pitch bend so bass notes don't slide-whistle downward.
+  // The melody keeps its atmospheric downward glide; only the bass is pinned.
+  const endPitch = (activeWorldKey === 'dungeon' && lane === 'bass')
+    ? pitch
+    : Math.max(40, pitch * bend);
   const oscAWave = profile.oscA || waveType(tone);
   const oscBWave = profile.oscB || 'triangle';
   const width = profile.stereoWidth;
@@ -1429,6 +1877,35 @@ export function play(params) {
   if (activeWorldKey === 'forest' && lane === 'bass') {
     const ks = makeKarplusStrong(ac, pitch * 0.5, t0, 0.32, 0.28, 0.94, volume * 0.70);
     ks.connect(fx.dry);
+  }
+
+  // Forest — kalimba voice: JS-DSP Karplus-Strong with bright metallic tine character.
+  // brightness 0.90 = metallic (brighter than banjo 0.72, closer to steel tine).
+  // sustain 0.988 = longer ring — kalimba tines sustain noticeably.
+  // The inharmonic partial at 3.984× (from harmonicGain) rides above as the tine shimmer.
+  if (activeWorldKey === 'forest' && (lane === 'melody' || lane === 'harmony')) {
+    const dur   = 0.42 + Math.random() * 0.20;
+    const ksOut = makeKarplusJsDsp(ac, pitch, t0, dur, 0.90, 0.988, volume * 0.78);
+    ksOut.connect(fx.dry);
+  }
+
+  // Forest — thumb-strike transient: very short noise burst pitched near the note.
+  // Fires on melody only (not harmony — keeps harmony subtle).
+  // The 20 ms impact + K-S ring = physical kalimba pluck feel.
+  if (activeWorldKey === 'forest' && lane === 'melody') {
+    const mallet = noiseBurst(ac, 0.022);
+    const malletBpf = ac.createBiquadFilter();
+    malletBpf.type = 'bandpass';
+    malletBpf.frequency.value = pitch * 0.82;
+    malletBpf.Q.value = 3.0;
+    const malletAmp = ac.createGain();
+    malletAmp.gain.setValueAtTime(volume * 0.48, t0);
+    malletAmp.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.020);
+    mallet.connect(malletBpf);
+    malletBpf.connect(malletAmp);
+    malletAmp.connect(fx.dry);
+    mallet.start(t0);
+    mallet.stop(t0 + 0.028);
   }
 
   noise.start(t0);

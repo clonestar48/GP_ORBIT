@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SINELAB — World Map Preview</title>
+    <style>
+      * { box-sizing: border-box; }
+
+      :root {
+        color-scheme: dark;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        background: #080a0e;
+        color: #3d8b82;
+      }
+
+      main {
+        width: min(1168px, 100vw, calc((100vh - 40px) * 1.4634));
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1200 / 820;
+        background: #5da396;
+        outline: none;
+      }
+
+      canvas:focus-visible {
+        box-shadow: inset 0 0 0 2px #3d8b82;
+      }
+
+      p {
+        margin: 12px 0 0;
+        text-align: center;
+        font-size: 12px;
+        letter-spacing: .04em;
+      }
+
+      p span { color: #5da396; }
+
+      @media (max-width: 700px) {
+        body { align-items: start; }
+        main { margin-top: 8px; }
+        p { margin-top: 8px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas
+        id="map"
+        width="1200"
+        height="820"
+        tabindex="0"
+        aria-label="SINELAB world map. Use arrow keys or WASD to move."
+      ></canvas>
+      <p><span>Arrow keys</span> or <span>WASD</span> to move</p>
+    </main>
+    <script>
+const canvas = document.querySelector("#map");
+const ctx = canvas.getContext("2d");
+
+const GB = {
+  lightest: "#5da396",  // --teal-ui-bright
+  light:    "#3d8b82",  // --teal-glow
+  dark:     "#2a6b65",  // --teal-soft
+  darkest:  "#0e181a",  // --lcd-bg
+};
+
+const COLORS = {
+  background: GB.lightest,
+  sandLight:  GB.light,
+  sandDark:   GB.dark,
+  path:       GB.light,
+  node:       GB.dark,
+  orb:        GB.lightest,
+  orbOutline: GB.darkest,
+};
+
+const NODE_SIZE = 82;
+const MOVE_SPEED = 10.8;
+
+const nodes = [
+  { id: 0, x: 225,  y: 90,  icon: "space"    },
+  { id: 1, x: 535,  y: 90,  icon: "dungeon"  },
+  { id: 2, x: 970,  y: 265, icon: "bubble"   },
+  { id: 3, x: 225,  y: 325, icon: "speedway" },
+  { id: 4, x: 535,  y: 410, icon: "arcade"   },
+  { id: 5, x: 225,  y: 590, icon: "beach"    },
+  { id: 6, x: 375,  y: 590, icon: "desert"   },
+  { id: 7, x: 870,  y: 590, icon: "western"  },
+  { id: 8, x: 225,  y: 735, icon: "forest"   },
+  { id: 9, x: 535,  y: 735, icon: "medieval" },
+];
+
+const points = [
+  ...nodes,
+  { id: 10, x: 870, y: 90  },
+  { id: 11, x: 870, y: 265 },
+  { id: 12, x: 535, y: 265 },
+  { id: 13, x: 225, y: 410 },
+  { id: 14, x: 535, y: 590 },
+];
+
+const segments = [
+  [0, 1], [0, 3],
+  [1, 10], [10, 11], [11, 2], [11, 12], [12, 1], [12, 4],
+  [3, 13], [13, 4], [13, 5],
+  [5, 6], [6, 14], [14, 7], [14, 9],
+  [5, 8], [8, 9],
+];
+
+const neighbors = points.map(() => []);
+for (const [a, b] of segments) {
+  neighbors[a].push(b);
+  neighbors[b].push(a);
+}
+
+let currentPoint = 8;
+let targetPoint = null;
+let queuedDirection = null;
+let moving = false;
+let animationTime = 0;
+const orb = { x: points[currentPoint].x, y: points[currentPoint].y };
+
+function pixel(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), w, h);
+}
+
+function drawPath(a, b) {
+  ctx.strokeStyle = COLORS.path;
+  ctx.lineWidth = 20;
+  ctx.lineCap = "square";
+  ctx.beginPath();
+  ctx.moveTo(points[a].x, points[a].y);
+  ctx.lineTo(points[b].x, points[b].y);
+  ctx.stroke();
+}
+
+function drawBackground() {
+  ctx.fillStyle = COLORS.background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let y = 12; y < canvas.height; y += 32) {
+    const offset = ((y / 32) % 2) * 16;
+    for (let x = 12 + offset; x < canvas.width; x += 32) {
+      pixel(x, y, 4, 4, COLORS.sandLight);
+    }
+  }
+  for (let y = 25; y < canvas.height; y += 64) {
+    for (let x = 42; x < canvas.width; x += 96) {
+      pixel(x, y, 3, 3, COLORS.sandDark);
+    }
+  }
+}
+
+function drawNode(node) {
+  const hovered =
+    Math.abs(orb.x - node.x) <= NODE_SIZE / 2 &&
+    Math.abs(orb.y - node.y) <= NODE_SIZE / 2;
+
+  if (hovered) {
+    ctx.fillStyle = GB.darkest;
+    ctx.fillRect(node.x - NODE_SIZE/2 - 6, node.y - NODE_SIZE/2 - 6, NODE_SIZE + 12, NODE_SIZE + 12);
+  }
+
+  ctx.fillStyle = hovered ? GB.light : COLORS.node;
+  ctx.fillRect(node.x - NODE_SIZE/2, node.y - NODE_SIZE/2, NODE_SIZE, NODE_SIZE);
+
+  if (node.icon !== "space") {
+    const breathe = Math.round(Math.sin(animationTime + node.id * 0.7) * 3);
+    ctx.save();
+    ctx.translate(0, breathe);
+    drawIcon(node.icon, node.x - NODE_SIZE/2, node.y - NODE_SIZE/2);
+    ctx.restore();
+  }
+}
+
+function drawIcon(type, x, y) {
+  const unit = 4;
+  const ox = x + 9;
+  const oy = y + 9;
+  const p = (px, py, w, h, color) =>
+    pixel(ox + px * unit, oy + py * unit, w * unit, h * unit, color);
+
+  if (type === "space") {
+    p(6, 3, 4, 1, GB.darkest);
+    p(5, 4, 6, 1, GB.darkest);
+    p(6, 4, 4, 1, GB.light);
+    p(3, 6, 10, 1, GB.darkest);
+    p(2, 7, 12, 2, GB.darkest);
+    p(3, 7, 10, 1, GB.lightest);
+    p(3, 8, 10, 1, GB.dark);
+    p(4, 7, 1, 1, GB.light);
+    p(7, 7, 1, 1, GB.light);
+    p(10, 7, 1, 1, GB.light);
+  }
+
+  if (type === "dungeon") {
+    p(2, 7, 12, 8, GB.darkest);
+    p(1, 8, 3, 7, GB.darkest);
+    p(12, 8, 3, 7, GB.darkest);
+    p(5, 3, 6, 8, GB.darkest);
+    p(3, 8, 10, 6, GB.light);
+    p(2, 9, 1, 5, GB.light);
+    p(13, 9, 1, 5, GB.light);
+    p(6, 4, 4, 6, GB.lightest);
+    p(2, 7, 1, 1, GB.light);
+    p(4, 7, 1, 1, GB.light);
+    p(7, 3, 1, 1, GB.lightest);
+    p(10, 7, 1, 1, GB.light);
+    p(13, 7, 1, 1, GB.light);
+    p(7, 11, 2, 3, GB.darkest);
+    p(6, 12, 4, 2, GB.darkest);
+    p(3, 10, 1, 2, GB.darkest);
+    p(12, 10, 1, 2, GB.darkest);
+    p(7, 6, 2, 2, GB.darkest);
+    p(4, 9, 2, 1, GB.dark);
+    p(10, 9, 2, 1, GB.dark);
+    p(5, 12, 1, 1, GB.dark);
+    p(10, 12, 1, 1, GB.dark);
+    p(8, 1, 1, 3, GB.darkest);
+    p(9, 1, 3, 1, GB.dark);
+    p(9, 2, 2, 1, GB.dark);
+  }
+
+  if (type === "bubble") {
+    p(5, 8, 6, 1, GB.darkest);
+    p(4, 9, 1, 4, GB.darkest);
+    p(11, 9, 1, 4, GB.darkest);
+    p(5, 13, 6, 1, GB.darkest);
+    p(5, 9, 6, 4, GB.lightest);
+    p(5, 9, 2, 2, GB.light);
+    p(1, 2, 4, 1, GB.darkest);
+    p(0, 3, 1, 3, GB.darkest);
+    p(5, 3, 1, 3, GB.darkest);
+    p(1, 6, 4, 1, GB.darkest);
+    p(1, 3, 4, 3, GB.light);
+    p(1, 3, 2, 1, GB.lightest);
+    p(11, 0, 2, 1, GB.darkest);
+    p(10, 1, 1, 2, GB.darkest);
+    p(13, 1, 1, 2, GB.darkest);
+    p(11, 3, 2, 1, GB.darkest);
+    p(11, 1, 2, 2, GB.light);
+    p(11, 1, 1, 1, GB.lightest);
+  }
+
+  if (type === "speedway") {
+    p(1, 0, 2, 15, GB.darkest);
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 4; col++) {
+        p(3 + col * 2, row * 2, 2, 2, (row + col) % 2 === 0 ? GB.darkest : GB.light);
+      }
+    }
+    p(0, 14, 5, 2, GB.darkest);
+  }
+
+  if (type === "arcade") {
+    p(2, 0, 12, 3, GB.darkest);
+    p(1, 3, 14, 10, GB.darkest);
+    p(3, 4, 10, 5, GB.light);
+    p(4, 5, 8, 3, GB.dark);
+    p(4, 5, 3, 1, GB.lightest);
+    p(3, 9, 10, 2, GB.light);
+    p(4, 9, 2, 2, GB.lightest);
+    p(8, 9, 1, 1, GB.darkest);
+    p(10, 9, 1, 1, GB.darkest);
+    p(12, 10, 1, 1, GB.darkest);
+    p(5, 12, 6, 1, GB.lightest);
+    p(2, 13, 3, 3, GB.darkest);
+    p(11, 13, 3, 3, GB.darkest);
+  }
+
+  if (type === "beach") {
+    p(8, 6, 2, 4, GB.darkest);
+    p(7, 10, 2, 5, GB.darkest);
+    p(6, 0, 4, 3, GB.darkest);
+    p(3, 2, 5, 2, GB.darkest);
+    p(8, 2, 5, 2, GB.darkest);
+    p(1, 4, 5, 2, GB.darkest);
+    p(10, 4, 5, 2, GB.darkest);
+    p(4, 5, 8, 2, GB.darkest);
+    p(7, 1, 2, 1, GB.light);
+    p(4, 3, 2, 1, GB.light);
+    p(10, 3, 2, 1, GB.light);
+    p(0, 15, 16, 1, GB.darkest);
+  }
+
+  if (type === "desert") {
+    for (let i = 0; i < 8; i++) {
+      const w = 2 * (i + 1);
+      const startCol = (16 - w) / 2;
+      p(startCol, i * 2, w, 2, i % 2 === 0 ? GB.darkest : GB.light);
+    }
+  }
+
+  if (type === "western") {
+    p(6, 1, 4, 14, GB.lightest);
+    p(3, 6, 3, 3, GB.lightest);
+    p(3, 3, 3, 3, GB.lightest);
+    p(10, 6, 3, 3, GB.lightest);
+    p(10, 9, 3, 3, GB.lightest);
+    p(9, 2, 1, 12, GB.darkest);
+    p(5, 4, 1, 5, GB.darkest);
+    p(12, 7, 1, 5, GB.darkest);
+    p(5, 15, 6, 1, GB.darkest);
+  }
+
+  if (type === "forest") {
+    p(7, 0, 2, 2, GB.darkest);
+    p(6, 2, 4, 2, GB.darkest);
+    p(5, 4, 6, 2, GB.darkest);
+    p(4, 6, 8, 2, GB.darkest);
+    p(5, 7, 6, 2, GB.darkest);
+    p(4, 9, 8, 2, GB.darkest);
+    p(3, 11, 10, 2, GB.darkest);
+    p(7, 13, 2, 2, GB.darkest);
+    p(3, 15, 10, 1, GB.darkest);
+    p(7, 0, 1, 1, GB.lightest);
+    p(10, 5, 1, 1, GB.lightest);
+    p(5, 10, 1, 1, GB.lightest);
+  }
+
+  if (type === "medieval") {
+    p(1, 2, 3, 4, GB.darkest);
+    p(6, 2, 4, 4, GB.darkest);
+    p(12, 2, 3, 4, GB.darkest);
+    p(1, 6, 14, 4, GB.darkest);
+    p(2, 7, 12, 2, GB.light);
+    p(3, 7, 2, 2, GB.lightest);
+    p(7, 7, 2, 2, GB.lightest);
+    p(11, 7, 2, 2, GB.lightest);
+    p(1, 10, 14, 4, GB.darkest);
+    p(2, 11, 12, 2, GB.light);
+    p(3, 12, 10, 1, GB.lightest);
+    p(4, 3, 2, 2, GB.light);
+    p(10, 3, 2, 2, GB.light);
+  }
+}
+
+function orbIsUnderUfo() {
+  const ufoNode = nodes[0];
+  return Math.hypot(orb.x - ufoNode.x, orb.y - ufoNode.y) < 35;
+}
+
+function drawUfoShadow() {
+  const { x, y } = nodes[0];
+  ctx.fillStyle = GB.darkest;
+  ctx.fillRect(x - 28, y - 10, 56, 20);
+  ctx.fillRect(x - 36, y - 4, 72, 8);
+}
+
+function drawFloatingUfo() {
+  const node = nodes[0];
+  const bob = Math.round(Math.sin(animationTime) * 4);
+  ctx.save();
+  ctx.translate(node.x, node.y - 28 + bob);
+  ctx.scale(1.18, 1.18);
+  drawIcon("space", -NODE_SIZE / 2, -NODE_SIZE / 2);
+  ctx.restore();
+}
+
+function drawOrb() {
+  const shaded = orbIsUnderUfo();
+  ctx.fillStyle = COLORS.orbOutline;
+  ctx.beginPath();
+  ctx.arc(orb.x, orb.y, 17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = shaded ? GB.dark : COLORS.orb;
+  ctx.beginPath();
+  ctx.arc(orb.x, orb.y, 11, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function draw() {
+  drawBackground();
+  segments.forEach(([a, b]) => drawPath(a, b));
+  nodes.forEach(drawNode);
+  drawUfoShadow();
+  drawOrb();
+  drawFloatingUfo();
+}
+
+function findNeighbor(dx, dy) {
+  const origin = points[currentPoint];
+  return neighbors[currentPoint].find((index) => {
+    const candidate = points[index];
+    return Math.sign(candidate.x - origin.x) === dx &&
+           Math.sign(candidate.y - origin.y) === dy;
+  });
+}
+
+function move(dx, dy) {
+  if (moving) { queuedDirection = [dx, dy]; return; }
+  const nextPoint = findNeighbor(dx, dy);
+  if (nextPoint === undefined) return;
+  targetPoint = nextPoint;
+  moving = true;
+}
+
+function finishMove() {
+  currentPoint = targetPoint;
+  targetPoint = null;
+  moving = false;
+  if (queuedDirection) {
+    const d = queuedDirection;
+    queuedDirection = null;
+    move(...d);
+  }
+}
+
+function update() {
+  animationTime += 0.055;
+  if (moving) {
+    const target = points[targetPoint];
+    const dx = target.x - orb.x;
+    const dy = target.y - orb.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= MOVE_SPEED) {
+      orb.x = target.x;
+      orb.y = target.y;
+      finishMove();
+    } else {
+      orb.x += (dx / dist) * MOVE_SPEED;
+      orb.y += (dy / dist) * MOVE_SPEED;
+    }
+  }
+  draw();
+  requestAnimationFrame(update);
+}
+
+const directions = {
+  ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+  ArrowUp: [0, -1],   ArrowDown: [0, 1],
+  a: [-1, 0], d: [1, 0], w: [0, -1], s: [0, 1],
+};
+
+window.addEventListener("keydown", (e) => {
+  const d = directions[e.key];
+  if (!d) return;
+  e.preventDefault();
+  move(...d);
+});
+
+canvas.addEventListener("pointerdown", () => canvas.focus());
+canvas.focus();
+update();
+    </script>
+  </body>
+</html>
