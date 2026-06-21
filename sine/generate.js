@@ -65,8 +65,8 @@ export const WORLDS = {
     noteDensity: 0.52,
     mutateSpread: 0.82,
     params: {
-      pitch: [110, 360], tone: [0.08, 0.38], decay: [0.42, 0.78], crunch: [0.08, 0.22],
-      noise: [0.14, 0.34], attack: [0.06, 0.2], bend: [0.28, 0.45], wobble: [0.08, 0.28],
+      pitch: [110, 360], tone: [0.08, 0.38], decay: [0.26, 0.50], crunch: [0.08, 0.22],
+      noise: [0.14, 0.34], attack: [0.06, 0.2], bend: [0.38, 0.50], wobble: [0.08, 0.28],
       detune: [0.04, 0.16], filter: [0.4, 0.75], volume: [0.34, 0.5], gap: [0.14, 0.3],
     },
     tempo: [215, 295],
@@ -116,8 +116,8 @@ export const WORLDS = {
     noteDensity: 0.32,
     mutateSpread: 0.75,
     params: {
-      pitch: [260, 520], tone: [0.12, 0.38], decay: [0.52, 0.78], crunch: [0.1, 0.22],
-      noise: [0.08, 0.2], attack: [0.02, 0.1], bend: [0.32, 0.46], wobble: [0, 0.06],
+      pitch: [260, 520], tone: [0.12, 0.38], decay: [0.22, 0.44], crunch: [0.1, 0.22],
+      noise: [0.08, 0.2], attack: [0.02, 0.1], bend: [0.40, 0.50], wobble: [0, 0.06],
       detune: [0.02, 0.1], filter: [0.22, 0.42], volume: [0.32, 0.46], gap: [0.32, 0.52],
     },
     tempo: [275, 355],
@@ -223,8 +223,8 @@ export const WORLDS = {
     noteDensity: 0.55,
     mutateSpread: 0.88,
     params: {
-      pitch: [260, 680], tone: [0, 0.22], decay: [0.38, 0.68], crunch: [0, 0.08],
-      noise: [0.04, 0.12], attack: [0.08, 0.24], bend: [0.44, 0.58], wobble: [0.04, 0.18],
+      pitch: [260, 680], tone: [0, 0.22], decay: [0.14, 0.36], crunch: [0, 0.08],
+      noise: [0.04, 0.10], attack: [0.01, 0.05], bend: [0.44, 0.58], wobble: [0, 0.04],
       detune: [0.06, 0.18], filter: [0.08, 0.28], volume: [0.38, 0.52], gap: [0.12, 0.28],
     },
     tempo: [198, 268],
@@ -948,9 +948,17 @@ function generateBubbleBass(rng, world, scale, comp, melody, steps, bass, maxCou
 
 function generateDesertBass(rng, world, scale, comp, melody, steps, bass, maxCount, _meta) {
   const placed = { count: 0 };
-  placePhraseBoundaryBass(bass, placed, maxCount, scale, comp, steps);
-  for (let i = 0; i < steps && placed.count < maxCount; i += 6 + Math.floor(rng() * 4)) {
+  const barLen = comp.barLen;
+  // Anchor beat 1 only — skip most other phrase boundaries.
+  // Desert bass should feel like isolated thuds in open space, not a pulse.
+  for (let i = 0; i < steps && placed.count < maxCount; i += barLen) {
+    if (i > 0 && rng() < 0.60) continue; // skip ~60% of bar boundaries after the first
+    placeBassNote(bass, i, scaleDegreeRoot(scale, comp, i), placed, maxCount);
+  }
+  // Sparse fill — wide gaps, extra skip chance to keep density very low
+  for (let i = 2; i < steps && placed.count < maxCount; i += 10 + Math.floor(rng() * 6)) {
     if (bass[i] >= 0) continue;
+    if (rng() < 0.55) continue; // skip ~55% of candidates
     placeBassNote(bass, i, scaleDegreeRoot(scale, comp, i), placed, maxCount);
   }
 }
@@ -1582,6 +1590,13 @@ export function mutateSong(current, seed, revision = 0, intensity = 'medium') {
     gap: mutateValue(rng, current.params.gap, 0, 1, paramChange, intensity),
     punch: mutateValue(rng, current.params.punch ?? current.params.attack, 0, 1, paramChange, intensity),
   };
+
+  // Hard safety caps — prevent unbearably harsh sound regardless of world or revision count
+  params.crunch = Math.min(params.crunch, 0.72);
+  params.noise  = Math.min(params.noise,  0.55);
+  params.filter = Math.max(params.filter, 0.05);
+  params.decay  = Math.min(params.decay,  0.88);
+  params.attack = Math.min(params.attack, 0.82);
 
   const titleBits = TITLE_BITS[key] || TITLE_BITS.bubble;
   const retitleChance = intensity === 'wild' ? 0.72 : intensity === 'medium' ? 0.38 : 0.08;

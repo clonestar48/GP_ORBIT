@@ -389,29 +389,29 @@ const WORLD_OVERRIDES = {
   forest: {
     id: 'forest',
     oscA: 'triangle',
-    oscAGain: 0.58,
+    oscAGain: 0.0,        // K-S JS-DSP is the primary voice — silence the generic triangle
     oscB: 'sine',
-    oscBGain: 0.14,
-    oscBDetuneCents: 5.5,
-    harmonicRatio: 3.984, // marimba-bar partial — the audible wood signature
-    harmonicGain: 0.34,   // prominent enough to hear clearly
-    attackMs: 3,          // hard transient — this is the biggest difference from Beach
-    releaseMs: 140,
-    envelopeTight: 0.42,
+    oscBGain: 0.0,
+    oscBDetuneCents: 0,
+    harmonicRatio: 3.984, // inharmonic tine overtone — the metallic shimmer above the fundamental
+    harmonicGain: 0.44,   // present but not overpowering — sits above the K-S body
+    attackMs: 1,          // instant — mallet strike
+    releaseMs: 80,        // shorter tail — wood damps fast
+    envelopeTight: 0.62,  // tighter gate = more percussive feel
     filterCutoffHz: 5400,
-    filterQ: 0.50,
-    filterEnvAmount: 0.10,
-    filterCutoffStart: 0.55,
-    filterCutoffEnd: 0.78,
-    filterEnvAttackMs: 12,
-    satAmount: 0.04,
-    chorusDepth: 0.0010,
-    chorusRate: 0.20,
-    chorusMix: 0.08,
-    delayTimeMs: 82,
-    delayFeedback: 0.10,
-    delayMix: 0.03,
-    stereoWidth: 0.28,
+    filterQ: 0.55,
+    filterEnvAmount: 0.32, // bright transient → dark sustain = struck-wood behavior
+    filterCutoffStart: 0.42,
+    filterCutoffEnd: 0.88,
+    filterEnvAttackMs: 4,
+    satAmount: 0.06,
+    chorusDepth: 0.0006,
+    chorusRate: 0.18,
+    chorusMix: 0.02,
+    delayTimeMs: 68,
+    delayFeedback: 0.06,
+    delayMix: 0.02,
+    stereoWidth: 0.16,
     toneBias: 0.04,
   },
 
